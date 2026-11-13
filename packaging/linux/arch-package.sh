@@ -85,7 +85,7 @@ tarball="$work_dir/mikai-$version.tar.gz"
 git archive --format=tar.gz --prefix="mikai-$version/" -o "$tarball" HEAD
 digest="$(sha256sum "$tarball" | cut -d' ' -f1)"
 
-mpv_archive="${mpv_archive:-$repo_root/release-artifacts/mpv-linux-x64-2026-10-24-c493f1c-tls.tar.zst}"
+mpv_archive="${mpv_archive:-$repo_root/release-artifacts/mpv-linux-x64-2026-11-11-5bbd4c1-tls.tar.zst}"
 if [[ ! -f "$mpv_archive" ]]; then
   printf 'The bundled runtime archive is missing: %s\n' "$mpv_archive" >&2
   printf 'Build it with: bash packaging/mpv/build-tls-archive.sh\n' >&2
@@ -114,7 +114,7 @@ sed -e "s/@VERSION@/$version/" -e "s/@SHA256@/$digest/" -e "s/@MPV_SHA256@/$mpv_
   -e "s/@REVISION@/$revision/" \
   packaging/arch/PKGBUILD > "$build_dir/PKGBUILD"
 cp "$tarball" "$build_dir/mikai-$version.tar.gz"
-cp "$mpv_archive" "$build_dir/mpv-linux-x64-2026-10-24-c493f1c-tls.tar.zst"
+cp "$mpv_archive" "$build_dir/mpv-linux-x64-2026-11-11-5bbd4c1-tls.tar.zst"
 
 # Dependency resolution is done above: the host may carry a build tool outside
 # pacman (patchelf is commonly installed from source), and makepkg would refuse

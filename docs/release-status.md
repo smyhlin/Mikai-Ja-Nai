@@ -20,6 +20,24 @@ public-release approval.
 | Settings and storage | Settings cover appearance, processing, components and benchmarks. Watch history and quality cache are local; native/model storage resolves through `MIKAI_NATIVE_ROOT`, a writable executable-adjacent store, then app-local data. | Existing settings, models and caches are not disposable test fixtures. See [architecture](architecture.md) and [building](building.md). |
 | Updates | In-app update notification, automatic updates and nightly builds remain listed in [TODO](../TODO.md). | These are planned items, not shipped updater guarantees. |
 
+### November mpv input update
+
+The current pins are the Windows `2026-11-12-042613482d-addons-43119200800` DEV archive
+and Linux `2026-11-11-5bbd4c1` with a local FFmpeg TLS rebuild. Both live libmpv runtimes
+reported client API 2.6 and decoded the 320×180 HEVC fixture from a local file and a
+certificate-verified local HTTPS server. Both ABI 1 scene detectors distinguished a
+localized cut missed by the legacy threshold from an unchanged frame. Focused Windows
+Qt regressions also passed asynchronous property/node replies, client API identity and
+the numeric-C-locale child scenario; this was not a full-suite run.
+The Linux rebuild used isolated Ubuntu 22.04 build inputs, preserving the baseline rather
+than substituting host FFmpeg libraries.
+
+These checks are not RIFE inference, native-model throughput, Qt fullscreen/VRR or new
+installer evidence. The upstream G-SYNC note describes `mpv.exe`; it does not prove the
+same behavior in the Qt/libmpv window. Exact input hashes and remaining source/license
+obligations are in the [Windows](../packaging/provenance/windows-runtime.json) and
+[Linux](../packaging/provenance/linux-runtime.json) provenance ledgers.
+
 ### Current Windows review build and scoped checks
 
 The local `release-artifacts/` top level was rebuilt from `edfc45b-dirty` on 2026-11-13

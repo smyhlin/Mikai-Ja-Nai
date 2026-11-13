@@ -684,7 +684,18 @@ bool stageMpvRuntime(const QString& moduleSource, const QString& runtimeRoot,
     if (!moduleInfo.isFile() || moduleInfo.isSymLink() || !moduleInfo.isReadable()) return false;
     if (runtimeRoot.isEmpty()) {
         *stagedModule = QDir(mpvDirectory).filePath(moduleInfo.fileName());
-        return QFile::copy(moduleSource, *stagedModule);
+        if (!QFile::copy(moduleSource, *stagedModule)) return false;
+        const QString sceneName =
+#ifdef Q_OS_WIN
+            QStringLiteral("ajn-mvtools.dll");
+#else
+            QStringLiteral("ajn-mvtools.so");
+#endif
+        const QString sceneSource = QDir(moduleInfo.absolutePath()).filePath(sceneName);
+        if (!QFileInfo::exists(sceneSource)) return true;
+        const QFileInfo sceneInfo(sceneSource);
+        return sceneInfo.isFile() && !sceneInfo.isSymLink() &&
+               QFile::copy(sceneSource, QDir(mpvDirectory).filePath(sceneName));
     }
 #ifdef Q_OS_LINUX
     const QFileInfo rootInfo(runtimeRoot);

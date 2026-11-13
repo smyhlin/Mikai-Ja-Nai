@@ -59,11 +59,11 @@ endif()
 set(MIKAI_DIST_MPV_ARCHIVE "" CACHE FILEPATH
   "Optional local copy of the pinned mpv-dev archive (its published SHA-256 is always checked)")
 set(MIKAI_DIST_MPV_CACHE_DIR "${CMAKE_BINARY_DIR}/_dist-cache/mpv")
-set(MIKAI_MPV_ARCHIVE_NAME "mpv-dev-x86_64-20261024-git-b4f9f5bfed.7z")
+set(MIKAI_MPV_ARCHIVE_NAME "mpv-dev-x86_64-20261111-git-042613482d.7z")
 set(MIKAI_MPV_ARCHIVE_URL
-  "https://github.com/the-database/mpv-winbuild/releases/download/2026-10-24-b4f9f5bfed/${MIKAI_MPV_ARCHIVE_NAME}")
+  "https://github.com/the-database/mpv-winbuild/releases/download/2026-11-12-042613482d-addons-43119200800/${MIKAI_MPV_ARCHIVE_NAME}")
 set(MIKAI_MPV_ARCHIVE_SHA256
-  "2efe77b9e3028c32cd74c9d871c5d2cd8315758d0da3f59bf64c867c8e7e6d0c")
+  "6a4ee99fbcba03e99af3190ff60bd8124fc112946646f86e1b6f3d674724c2dc")
 file(MAKE_DIRECTORY "${MIKAI_DIST_MPV_CACHE_DIR}")
 set(MIKAI_USE_SYSTEM_MPV FALSE)
 
@@ -102,6 +102,7 @@ if(NOT MIKAI_USE_SYSTEM_MPV)
   if(NOT EXISTS "${MIKAI_MPV_HEADERS_DIR}/include/mpv/client.h"
       OR NOT EXISTS "${MIKAI_MPV_HEADERS_DIR}/include/mpv/render_gl.h"
       OR NOT EXISTS "${MIKAI_MPV_HEADERS_DIR}/libmpv-2.dll"
+      OR NOT EXISTS "${MIKAI_MPV_HEADERS_DIR}/ajn-mvtools.dll"
       OR NOT EXISTS "${MIKAI_MPV_HEADERS_STAMP}")
     set(_mikai_mpv_headers_need_refresh TRUE)
   else()
@@ -135,4 +136,12 @@ if(NOT MIKAI_USE_SYSTEM_MPV)
       "The verified mpv archive must contain exactly one libmpv-2.dll; found ${MIKAI_MPV_DLL_COUNT}")
   endif()
   list(GET MIKAI_MPV_DLL_CANDIDATES 0 MIKAI_MPV_DLL)
+  set(MIKAI_MPV_SCENE_LIBRARY "${MIKAI_MPV_HEADERS_DIR}/ajn-mvtools.dll")
+  set(MIKAI_MPV_SCENE_LICENSE_DIR "${MIKAI_MPV_HEADERS_DIR}/licenses/mvtools")
+  foreach(_scene_file IN ITEMS "${MIKAI_MPV_SCENE_LIBRARY}"
+      "${MIKAI_MPV_SCENE_LICENSE_DIR}/LICENSE" "${MIKAI_MPV_SCENE_LICENSE_DIR}/UPSTREAM.md")
+    if(NOT EXISTS "${_scene_file}")
+      message(FATAL_ERROR "The verified mpv archive is missing scene-detector input: ${_scene_file}")
+    endif()
+  endforeach()
 endif()

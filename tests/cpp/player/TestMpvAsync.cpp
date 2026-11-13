@@ -7,6 +7,7 @@
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
+#include <QLibrary>
 #include <QLibraryInfo>
 #include <QProcess>
 #include <QProcessEnvironment>
@@ -15,6 +16,8 @@
 #include <QTimer>
 #include <QXmlStreamReader>
 
+#include <algorithm>
+#include <cstddef>
 #include <clocale>
 #include <exception>
 #include <limits>
@@ -235,6 +238,69 @@ void TestMpvAsync::aDifferentModuleIsRefusedWhileOneIsPinned() {
     QVERIFY(MpvApi::instance().load(pinned, &reason));
     QVERIFY(reason.isEmpty());
     QCOMPARE(MpvApi::instance().bundle().modulePath, pinned.modulePath);
+}
+
+void TestMpvAsync::enhancedSceneDetectionFindsLocalCutsWithoutBreakingStaticFrames() {
+#if defined(Q_OS_LINUX) && (!defined(MIKAI_LINUX_BUNDLE_MPV) || !MIKAI_LINUX_BUNDLE_MPV)
+    QSKIP("The host libmpv profile does not include the AnimeJaNai scene detector.");
+#endif
+    if (!requireRuntime()) return;
+#ifdef Q_OS_WIN
+    const QString name = QStringLiteral("ajn-mvtools.dll");
+#else
+    const QString name = QStringLiteral("ajn-mvtools.so");
+#endif
+    QLibrary library(QDir(envBundle().root).filePath(name));
+    QVERIFY2(library.load(), qPrintable(library.errorString()));
+
+    // ABI 1: video/filter/mvtools/ajn_mvtools.h at mpv commit 5bbd4c161.
+    struct Frame {
+        qint32 width, height, bits, subWidth, subHeight;
+        const quint8* planes[3];
+        std::ptrdiff_t strides[3];
+        double pts;
+    };
+    struct Decision {
+        qint32 cut, changedBlocks, totalBlocks, blockCountThreshold;
+        qint64 blockSadThreshold;
+    };
+    using Analyze = int (*)(void*, const Frame*, const Frame*, int, int, Decision*);
+    using Destroy = void (*)(void*);
+    const auto version = reinterpret_cast<int (*)()>(library.resolve("ajn_mvtools_version"));
+    const auto create = reinterpret_cast<void* (*)()>(library.resolve("ajn_mvtools_create"));
+    const auto destroy = reinterpret_cast<Destroy>(library.resolve("ajn_mvtools_destroy"));
+    const auto reset = reinterpret_cast<Destroy>(library.resolve("ajn_mvtools_reset"));
+    const auto legacyAnalyze = reinterpret_cast<Analyze>(library.resolve("ajn_mvtools_analyze"));
+    const auto enhancedAnalyze =
+        reinterpret_cast<Analyze>(library.resolve("ajn_mvtools_analyze_enhanced"));
+    QVERIFY(version && create && destroy && reset && legacyAnalyze && enhancedAnalyze);
+    QCOMPARE(version(), 1);
+    std::unique_ptr<void, Destroy> context(create(), destroy);
+    QVERIFY(context != nullptr);
+
+    constexpr int width = 128;
+    constexpr int height = 64;
+    QByteArray before(width * height, '\0');
+    QByteArray after(width * height, '\0');
+    for (int y = 0; y < height; ++y)
+        std::fill_n(before.data() + y * width + 40, 48, char(80));
+    const Frame previous{width, height, 8, 0, 0,
+                         {reinterpret_cast<const quint8*>(before.constData()), nullptr, nullptr},
+                         {width, 0, 0}, 0.0};
+    Frame current{width, height, 8, 0, 0,
+                  {reinterpret_cast<const quint8*>(after.constData()), nullptr, nullptr},
+                  {width, 0, 0}, 1.0};
+    Decision legacy{};
+    QCOMPARE(legacyAnalyze(context.get(), &previous, &current, 240, 130, &legacy), 0);
+    QCOMPARE(legacy.cut, 0);
+    reset(context.get());
+    Decision enhanced{};
+    QCOMPARE(enhancedAnalyze(context.get(), &previous, &current, 240, 130, &enhanced), 0);
+    QCOMPARE(enhanced.cut, 1);
+    reset(context.get());
+    current.planes[0] = previous.planes[0];
+    QCOMPARE(enhancedAnalyze(context.get(), &previous, &current, 240, 130, &enhanced), 0);
+    QCOMPARE(enhanced.cut, 0);
 }
 
 void TestMpvAsync::theHeaderApiVersionIsAlwaysReported() {

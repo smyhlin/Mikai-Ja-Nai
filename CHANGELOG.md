@@ -7,6 +7,7 @@ Published changes are recorded with their downloads on the [GitHub releases page
 This release introduces the player-only Qt Quick/QML frontend while retaining the C++ playback engine and Widgets application pages.
 
 - Fix a fatal QML lifetime error when closing an episode player: the player is disposed after the close-button handler returns, leaving the title page open.
+- Update the pinned Windows and Linux mpv forks to the November 11/12 releases, deploy the enhanced-scene companion and its notices, and retain HTTPS support through the Linux FFmpeg TLS rebuild.
 
 - Upgrade Standard AnimeJaNai to v0.24.0 (ABI 9) across Windows and Linux, updating official runtime assets and SHA-256 cryptographic pins.
 - Add a Cut moment editor for selecting, previewing and exporting a short MP4:

@@ -751,6 +751,8 @@ if(WIN32 AND MIKAI_MPV_DLL AND EXISTS "${MIKAI_MPV_DLL}")
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:mikai>/mpv"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
       "${MIKAI_MPV_DLL}" "$<TARGET_FILE_DIR:mikai>/mpv/libmpv-2.dll"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${MIKAI_MPV_SCENE_LIBRARY}" "$<TARGET_FILE_DIR:mikai>/mpv/ajn-mvtools.dll"
     COMMENT "Deploying the pinned libmpv runtime library"
     VERBATIM
   )

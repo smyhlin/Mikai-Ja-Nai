@@ -1,10 +1,10 @@
 {
   "schema": "mikai.packaging.provenance/1",
-  "generated": "2026-10-24",
+  "generated": "2026-11-13",
   "platform": "windows-x64",
   "releaseArtifact": "../../release-artifacts/windows-runtime-review/mikai-0.1.0-windows-x64-release.json",
   "releaseArtifactSha256": "7782b102b7096e4e8f00d51ad818a636b99e87231cb6a61260a82a944cce555d",
-  "historicalRun37965200722NotCurrentEvidence": "Superseded run metadata, dependency claims and GPL/FFmpeg findings are retained only as historical evidence; they do not describe the 2026-10-24 binary.",
+  "historicalRun37965200722NotCurrentEvidence": "Superseded run metadata and dependency claims are historical only; they do not characterize the current 2026-11-12 runtime.",
   "publicReleaseReady": false,
   "blockers": [
     "Current-run exact dependency source identities, source-cache contents, patch bytes, complete linked closure and corresponding-source fulfillment are not established by retained evidence.",
@@ -15,49 +15,103 @@
   "build": {
     "mpv": {
       "upstream": "https://github.com/the-database/mpv",
-      "sourceCommit": "b4f9f5bfed18d5ce610af28024986410dd9bdaae",
-      "release": "https://github.com/the-database/mpv-winbuild/releases/tag/2026-10-24-b4f9f5bfed",
-      "workflowRun": "https://github.com/the-database/mpv-winbuild/actions/runs/40115095739",
-      "runMetadata": "https://api.github.com/repos/the-database/mpv-winbuild/actions/runs/40115095739",
+      "sourceCommit": "042613482dd6fad51a0cf8dc728cd74d2a9ad665",
+      "release": "https://github.com/the-database/mpv-winbuild/releases/tag/2026-11-12-042613482d-addons-43119200800",
+      "workflowRun": "https://github.com/the-database/mpv-winbuild/actions/runs/43119200800",
+      "runMetadata": "https://api.github.com/repos/the-database/mpv-winbuild/actions/runs/43119200800",
       "workflow": null,
       "job": null,
       "compiler": "Not established from retained evidence for this run.",
-      "configuration": "For the 2026-10-24 release, retained evidence establishes the runtime-reported mpv version and FFmpeg revision only; Meson/compiler versions, build flags, feature configuration, dependency versions, patches and source-cache contents for this run are not yet available.",
-      "patches": "The 2026-10-24 run's patch bytes, downstream modifications and build recipe details have not been recovered; do not attribute older workflow patches to this binary.",
+      "configuration": "The SHA-verified native-addon sidecar declares GPL, static FFmpeg linkage, libmpv, ajn-mvtools and privateEnhancedSceneAbi=1. These flags and source commits do not establish complete transitive source/license correspondence.",
+      "patches": "Current fork and build-helper commits are identified by the native-addon sidecar; complete dependency source cache and corresponding-source delivery remain unresolved.",
       "loggedDependencyVersions": null,
       "ffmpeg": {
-        "revision": "The deployed DLL's strings report FFmpeg N-128018-ga881f0a9a. This is a runtime version marker only; it does not establish build-time source correspondence, patches or behavior.",
-        "versionProbe": "String markers extracted from the verified deployed libmpv-2.dll; marker evidence only, not runtime behavior proof.",
+        "revision": "N-128820-g72f8c3376",
+        "versionProbe": "Actual libmpv ffmpeg-version property during local and certificate-verified HTTPS HEVC playback; not a complete corresponding-source claim.",
         "primaryCommit": null,
         "sourceArchive": null,
         "sourceArchiveSha256": null,
         "sourceArchiveBytes": null,
         "siblingCliArchive": {
-          "url": "https://github.com/the-database/mpv-winbuild/releases/download/2026-10-24-b4f9f5bfed/mpv-x86_64-20261024-git-b4f9f5bfed.7z",
-          "sha256": "3ba568335b83fa19f2b3c2a63b5264ffd57406e173e0401faebb1ac2f59b3154",
-          "bytes": 33755796,
+          "url": "https://github.com/the-database/mpv-winbuild/releases/download/2026-11-12-042613482d-addons-43119200800/mpv-x86_64-20261111-git-042613482d.7z",
+          "sha256": "768f6526d252b9da65dc47b2c048574c85397fd5b8da57cd4fded57f72206e9d",
+          "bytes": 34057825,
           "role": "Verified CLI sibling; not a usable build input because it contains no development headers or libmpv DLL."
         },
         "historicalRun37965200722NotCurrentEvidence": {
           "workflowRun": "https://github.com/the-database/mpv-winbuild/actions/runs/37965200722",
-          "historicalDependencyVersions": {"libplacebo":"7.374.0", "libass":"0.17.5", "libcurl":"8.23.0-DEV", "shaderc":"2026.5.0", "vulkan":"1.4.365"},
+          "historicalDependencyVersions": {
+            "libplacebo": "7.374.0",
+            "libass": "0.17.5",
+            "libcurl": "8.23.0-DEV",
+            "shaderc": "2026.5.0",
+            "vulkan": "1.4.365"
+          },
           "historicalFFmpegMarker": "N-127263-g3fe6c8dee; applies only to the older DLL, not the current binary."
         }
       },
       "asset": {
-        "url": "https://github.com/the-database/mpv-winbuild/releases/download/2026-10-24-b4f9f5bfed/mpv-dev-x86_64-20261024-git-b4f9f5bfed.7z",
-        "sha256": "2efe77b9e3028c32cd74c9d871c5d2cd8315758d0da3f59bf64c867c8e7e6d0c",
-        "bytes": 32965168,
+        "url": "https://github.com/the-database/mpv-winbuild/releases/download/2026-11-12-042613482d-addons-43119200800/mpv-dev-x86_64-20261111-git-042613482d.7z",
+        "sha256": "6a4ee99fbcba03e99af3190ff60bd8124fc112946646f86e1b6f3d674724c2dc",
+        "bytes": 33256459,
         "containsCorrespondingSource": false
       },
       "deployedFile": {
         "path": "mpv/libmpv-2.dll",
-        "version": "v0.41.0-dev-gb4f9f5bfe",
-        "sha256": "d22a8a765abe26ac94614b0f09d1d78b3ceafb4f2d70fd904909232e0784c4a3",
-        "bytes": 122579968,
-        "abiMarker": "ABI-9 host entrypoint string markers observed: aji_ingest, aji_infer_seq, aji_temporal_radius, aji_temporal_reset, aji_rife_before_upscale, aji_pre_resize, aji_resize, aji_infer_rife. String markers only; not runtime behavior proof."
+        "version": "v0.42.0-dev-g042613482",
+        "sha256": "77fec11d11a566c612f68f7fc70863412f9975cf1caa7e2b203442fed4d743b2",
+        "bytes": 123007488,
+        "abiMarker": "ABI-9 host entrypoint string markers observed: aji_ingest, aji_infer_seq, aji_temporal_radius, aji_temporal_reset, aji_rife_before_upscale, aji_pre_resize, aji_resize, aji_infer_rife. String markers only; not runtime behavior proof.",
+        "status": "Pinned archive member and deployment destination; the historical releaseArtifact does not inventory this new file."
       },
-      "licenseStatus": "Current-run license/build configuration is not established by the retained evidence. Do not infer LGPL-only status or claim a specific GPL configuration from the superseded run. Dependency license/source closure and distributor source delivery remain unresolved."
+      "licenseStatus": "The current sidecar explicitly declares GPL. Complete static-dependency license/source closure and distributor-controlled corresponding-source delivery remain unresolved; publicReleaseReady stays false.",
+      "sceneDetector": {
+        "path": "mpv/ajn-mvtools.dll",
+        "bytes": 1709056,
+        "sha256": "61afdd139763e1d76ad0d74bed413505f279fb60ceb06921b6d51618efbb571b",
+        "abi": 1,
+        "license": "GPL-2.0-or-later",
+        "source": "https://github.com/dubhatervapoursynth/vapoursynth-mvtools/tree/17250aa979616ac48dfb0e18abfdcf2bd4e3afc0",
+        "adaptations": "AJN frame adapter and enhanced classifier; see the archived licenses/mvtools/UPSTREAM.md. No VapourSynth runtime is shipped.",
+        "notices": [
+          "licenses/mvtools/LICENSE",
+          "licenses/mvtools/UPSTREAM.md"
+        ],
+        "verification": "ajn_mvtools_create/reset/destroy succeeded and analyze_enhanced export was present; this is not RIFE inference or real-time throughput proof."
+      },
+      "nativeAddonMetadata": {
+        "url": "https://github.com/the-database/mpv-winbuild/releases/download/2026-11-12-042613482d-addons-43119200800/mpv-addon-native-x86_64.json",
+        "bytes": 5687,
+        "sha256": "35fc6412a6a10e899315c428e0e13137c8bbc838d43609b95c03533a3773c10d",
+        "buildHelperCommit": "ca38487e28304e4af70de6cee243469883c0f8b5",
+        "configurationSha256": "76bec463d6eb9533f4547f5c9d35c24d95914c08abe0d95811c0fafc3a518c3d",
+        "privateEnhancedSceneAbi": 1
+      },
+      "runtimeSmoke": {
+        "mpv": "v0.42.0-dev-g042613482",
+        "clientApi": "2.6",
+        "codec": "HEVC",
+        "geometry": "320x180",
+        "localFile": true,
+        "httpsWithCertificateVerification": true,
+        "gpuInference": false,
+        "qtFullscreenVrr": "Not verified. The upstream release note concerns mpv.exe; it is not proof of Qt/libmpv window behavior.",
+        "enhancedSceneClassifier": {
+          "localizedCutMissedByLegacy": true,
+          "localizedCutDetectedByEnhanced": true,
+          "staticFrameRemainsContinuous": true,
+          "geometry": "128x64",
+          "gpuInference": false
+        },
+        "focusedCppRegressions": {
+          "sceneClassifier": true,
+          "asyncPropertyReply": true,
+          "asyncNodeReply": true,
+          "numericCLocaleChild": true,
+          "headerApiVersion": true,
+          "fullSuite": false
+        }
+      }
     },
     "qt": {
       "version": "6.12.0",
@@ -75,24 +129,56 @@
     "mingw": {
       "compiler": "GNU 16.2.0; local w64devkit recipe / MinGW-w64 v14.0.0; exact provenance of deployed Qt-deployed DLLs remains to be resolved.",
       "payload": [
-        {"path":"libgcc_s_seh-1.dll","sha256":"5e27589147caa6d7a30f4cc058a14c455dc62233901ffff9a1797ede425e9f86","bytes":109056,"fileVersion":null},
-        {"path":"libstdc++-6.dll","sha256":"8013488c5528bad7966ca07f3ea2e7a9b743cacb258fe76b46a326f821cc83b0","bytes":2243072,"fileVersion":null},
-        {"path":"libwinpthread-1.dll","sha256":"c7c7dced65fff71c7bb61f80c771c562f533d26d72722d9d6091129a3b03d5ce","bytes":53248,"fileVersion":"1, 0, 0, 0"}
+        {
+          "path": "libgcc_s_seh-1.dll",
+          "sha256": "5e27589147caa6d7a30f4cc058a14c455dc62233901ffff9a1797ede425e9f86",
+          "bytes": 109056,
+          "fileVersion": null
+        },
+        {
+          "path": "libstdc++-6.dll",
+          "sha256": "8013488c5528bad7966ca07f3ea2e7a9b743cacb258fe76b46a326f821cc83b0",
+          "bytes": 2243072,
+          "fileVersion": null
+        },
+        {
+          "path": "libwinpthread-1.dll",
+          "sha256": "c7c7dced65fff71c7bb61f80c771c562f533d26d72722d9d6091129a3b03d5ce",
+          "bytes": 53248,
+          "fileVersion": "1, 0, 0, 0"
+        }
       ],
-      "notices": ["../licenses/GCC-Runtime-Library-Exception-3.1.txt", "../licenses/MinGW-w64-runtime.txt", "../licenses/winpthreads-COPYING.txt"],
+      "notices": [
+        "../licenses/GCC-Runtime-Library-Exception-3.1.txt",
+        "../licenses/MinGW-w64-runtime.txt",
+        "../licenses/winpthreads-COPYING.txt"
+      ],
       "sourceDelivery": "Not assembled; exact originating compiler/runtime binary package and corresponding source/build recipe are not yet identified."
     },
     "tls": {
       "backend": "Windows Schannel via Qt; OS certificate provider, not redistributed.",
       "payload": [
-        {"path":"tls/qschannelbackend.dll","sha256":"27df29799ebb736baae00877fde7ab1f482130b233cf72239f7947ce94ca6dd5","bytes":292712,"version":"6.12.0.0"},
-        {"path":"tls/qcertonlybackend.dll","sha256":"c8c30cbe0d22ba66d25e70c9fdf7bba3e5c897a6c365a950249801b2047d6c39","bytes":115048,"version":"6.12.0.0"}
+        {
+          "path": "tls/qschannelbackend.dll",
+          "sha256": "27df29799ebb736baae00877fde7ab1f482130b233cf72239f7947ce94ca6dd5",
+          "bytes": 292712,
+          "version": "6.12.0.0"
+        },
+        {
+          "path": "tls/qcertonlybackend.dll",
+          "sha256": "c8c30cbe0d22ba66d25e70c9fdf7bba3e5c897a6c365a950249801b2047d6c39",
+          "bytes": 115048,
+          "version": "6.12.0.0"
+        }
       ],
       "opensslOrLibresslPayload": false,
-      "referenceNoticesAreNotDeploymentEvidence": ["../licenses/OpenSSL-3.6.5-LICENSE.txt", "../licenses/LibreSSL-COPYING.txt"]
+      "referenceNoticesAreNotDeploymentEvidence": [
+        "../licenses/OpenSSL-3.6.5-LICENSE.txt",
+        "../licenses/LibreSSL-COPYING.txt"
+      ]
     }
   },
-  "payloadEvidence": "Qt 6.12.0 DLLs/plugins/translations, TLS plugins, MinGW runtime hashes and deployed libmpv hash are recorded in the final release manifest payload; that payload is authoritative for exact full inventory.",
+  "payloadEvidence": "The referenced releaseArtifact inventories the historical payload only. Current pinned archive-member identities and narrowly scoped runtime smoke are recorded here; a new final package needs its own payload manifest.",
   "sourceAndRelinkingPlan": {
     "sourceAcquisition": {
       "historicalRun37965200722NotCurrentEvidence": {
@@ -121,5 +207,6 @@
     "qt": "Use the retained official source archive at ../../release-artifacts/corresponding-source/qt-everywhere-src-6.12.0.tar.xz; match final modules to the exact deployed SDK, collect source modifications and build/install scripts, provide a distributor-controlled corresponding-source bundle and demonstrate replacement/relinking under LGPL-3.0 with any applicable installation information.",
     "mingw": "Identify exact originating runtime package from the deployed hashes, then retain its matching source, modifications, build instructions and original applicable notices; document embedded-vs-separate runtime code.",
     "status": "Qt source materials and historical workflow logs are retained, but no complete matching corresponding-source bundle or compliant source delivery/fulfillment is currently offered or delivered. Current-run mpv dependency sources and build evidence remain unresolved."
-  }
+  },
+  "releaseArtifactRole": "Historical reviewed 0.1.0 payload only; not an inventory of the current pinned runtime or a newly assembled release."
 }

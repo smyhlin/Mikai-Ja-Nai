@@ -45,20 +45,21 @@ sudo apt-get install patchelf
 - This test-launcher argument is not an application command-line option.
 - The Linux CI recipe configures both `MIKAI_LINUX_BUNDLE_MPV=ON` and `MIKAI_LINUX_DEPLOY_QT=ON`; that configuration alone is not evidence of a completed build, runtime check or redistribution clearance.
 
-- On Windows, the pinned mpv DEV archive is `mpv-dev-x86_64-20261024-git-b4f9f5bfed.7z` (release `2026-10-24-b4f9f5bfed`, 33.0 MB (32,965,168 B), SHA-256 pin `2efe77b9e302`; full digest: `../packaging/provenance/windows-runtime.json`).
-- It supplies headers, import library (`libmpv.dll.a`, 53,308 bytes) and `libmpv-2.dll` (122.6 MB (122,579,968 B), SHA-256 pin `d22a8a765abe`; full digest: `../packaging/provenance/windows-runtime.json`).
-- Its version is `mpv v0.41.0-dev-gb4f9f5bfe` (FFmpeg `N-128018-ga881f0a9a`, upstream commit `b4f9f5bfed18d5ce610af28024986410dd9bdaae`).
+- On Windows, the pinned DEV archive is `mpv-dev-x86_64-20261111-git-042613482d.7z` (release `2026-11-12-042613482d-addons-43119200800`, 33,256,459 bytes, SHA-256 prefix `6a4ee99fbcba`; full digest: `../packaging/provenance/windows-runtime.json`).
+- It supplies headers, `libmpv.dll.a` (54,414 bytes) and `libmpv-2.dll` (123,007,488 bytes, SHA-256 prefix `77fec11d11a5`).
+- The live runtime reports `mpv v0.42.0-dev-g042613482` and FFmpeg `N-128820-g72f8c3376`; the sidecar identifies mpv source `042613482dd6fad51a0cf8dc728cd74d2a9ad665`.
+- The same verified DEV archive supplies `ajn-mvtools.dll` and `licenses/mvtools/{LICENSE,UPSTREAM.md}`. Deploy the companion beside libmpv and preserve both notices; enhanced scene detection cannot start without it.
 
 - CMake fetches the DEV archive or accepts a local copy through `MIKAI_DIST_MPV_ARCHIVE`, verifying the archive digest.
 
 - The Anime4K shaders are third-party content and are not stored in this repository: `packaging/shaders/anime4k-manifest.json` pins one `bloc97/Anime4K` commit with a SHA-256 per file, and `cmake/FindOrFetchAnime4K.cmake` materialises them into `<build>/shaders` during configure through `cmake -P cmake/FetchAnime4K.cmake` (no interpreter beyond CMake). One tarball of the pinned commit is downloaded into `<build>/_dist-cache/anime4k/`; a staged tree whose pin already matches is reused with no network access, and `-DMIKAI_ANIME4K_ARCHIVE=<local tar.gz>` builds fully offline. Every staged file is digest-checked against the manifest, and the `mikai_anime4k_shaders` CTest entry re-checks the staged tree. A source checkout therefore contains no shader blobs at all; a pin bump is one `cmake -DMODE=pin -DCOMMIT=<sha> -P cmake/FetchAnime4K.cmake` run, documented in that README. See [`packaging/shaders/README.md`](../packaging/shaders/README.md).
 - This is the build/runtime input; the separate CLI/updater archive is neither used nor bundled.
-- The CLI archive, `mpv-x86_64-20261024-git-b4f9f5bfed.7z`, is 33.8 MB (33,755,796 B) with SHA-256 pin `3ba568335b83`; its full digest is in `../packaging/provenance/windows-runtime.json`.
+- The separate CLI archive, `mpv-x86_64-20261111-git-042613482d.7z`, is 34,057,825 bytes with SHA-256 prefix `768f6526d252`; its full digest is in `../packaging/provenance/windows-runtime.json`.
 - It contains no libmpv DLL.
 
 - The pinned DEV archive is not corresponding source, which remains a redistribution gate.
 - The mpv DLL imports `vulkan-1.dll`, normally supplied by graphics drivers.
-- HTTPS trust comes from the platform, not from the mpv archive: the deployed Windows Qt TLS plugin is Schannel, which uses the OS certificate store, and no OpenSSL/LibreSSL payload is shipped (see `tls` in `../packaging/provenance/windows-runtime.json`).
+- Qt networking uses Schannel and the OS certificate store. libmpv's statically linked FFmpeg is a separate TLS implementation; the new DLL passed local and certificate-verified HTTPS HEVC playback. No separate OpenSSL/LibreSSL DLL is added to the Windows payload.
 - A deployed Mikai Ja Nai app also needs Qt, image-format/TLS, MinGW and mpv runtime files; use the packaging path rather than copying the executable alone.
 
 - For CI, `packaging/ci/provision.py` acquires Qt 6.12.0 for `win64_mingw` or `linux_gcc_64`.
@@ -123,15 +124,16 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_PREFIX_PATH=/path/to/Qt/6.12+/gcc_64 \
   -DCMAKE_CXX_COMPILER=/path/to/Qt/6.12+/gcc_64/bin/g++ \
   -DMIKAI_LINUX_BUNDLE_MPV=ON \
-  -DMIKAI_LINUX_MPV_ARCHIVE=/path/to/mpv-linux-x64-2026-10-24-c493f1c-tls.tar.zst
+  -DMIKAI_LINUX_MPV_ARCHIVE=/path/to/mpv-linux-x64-2026-11-11-5bbd4c1-tls.tar.zst
 cmake --build build --parallel 2 --target mikai
 ```
 
-The pinned Linux runtime is `mpv-linux-x64-2026-10-24-c493f1c-tls.tar.zst`, 39.6 MB (41,533,948 B), SHA-256 pin `6796d922cfd3`; full digest: `../packaging/provenance/linux-runtime.json`. It comes from mpv source commit `c493f1c7e10a6b2301653596e7deeb91295d3148`.
+The pinned Linux runtime is `mpv-linux-x64-2026-11-11-5bbd4c1-tls.tar.zst`, 42,823,270 bytes, SHA-256 prefix `84cd7729076c`; full digest: `../packaging/provenance/linux-runtime.json`. Its mpv source is `5bbd4c16181f30b729cdff9b9a81725cc8efa38d`; the live runtime reports `v0.42.0-dev-g5bbd4c161`.
 
 - It is produced by `packaging/mpv/build-tls-archive.sh` from the archive published at that commit: the published archive was configured without an FFmpeg TLS backend, so every https URL failed with "No protocol handler found".
 - The script rebuilds FFmpeg at the same tag with the same flags plus `--enable-openssl`, replaces that family inside the archive and adds OpenSSL 3.0 from the Ubuntu 22.04 baseline.
-- Everything else — the mpv fork with `vf_animejanai`, libplacebo, shaderc, libass, and the Vulkan 1.4.363 loader (upstream mpv needs ≥ 1.4.309; `vkEnumerateInstanceVersion` reports `1.4.363`) — is the published archive's bytes.
+- Everything else — the mpv fork, `ajn-mvtools.so`, libplacebo, shaderc, libass and the Vulkan loader — retains the verified upstream archive's bytes before the normal RUNPATH postprocessing.
+- The companion's GPL-2.0-or-later `LICENSE` and `UPSTREAM.md` install to `share/licenses/mikai/mpv/mvtools/`.
 
 - `release-artifacts/` is the default search location; `-DMIKAI_LINUX_MPV_ARCHIVE=` overrides it, and configure fails rather than falling back to the TLS-less archive.
 - CI builds the file on demand (`packaging/ci/build.py` runs the script when it is absent); it is not committed.
@@ -139,7 +141,8 @@ The pinned Linux runtime is `mpv-linux-x64-2026-10-24-c493f1c-tls.tar.zst`, 39.6
 - The mode requires `patchelf`; requested bundle failures are fatal and never fall back to system libmpv.
 - Its developer build still uses system development headers; the archive is a runtime bundle, not a Linux development SDK.
 
-- The archive carries OpenSSL 3.0 and no CA bundle; certificate trust is whatever the host's OpenSSL default paths resolve, so a packaged player on a machine without a system CA store cannot verify `https` endpoints. That is a host requirement like glibc and the graphics driver, not something the bundle ends.
+- The archive carries OpenSSL 3.0, not a CA bundle. `MpvHandle` supplies a host CA file; `MIKAI_TLS_CA_FILE` overrides discovery. A missing host trust store still prevents certificate verification.
+- The new TLS rebuild passed actual local and certificate-verified HTTPS HEVC decoding, and the scene-detector ABI 1 context initialized. These checks do not establish GPU inference or Qt fullscreen/VRR behavior.
 - A rebuild of the TLS runtime is not byte-reproducible — `packaging/mpv/build-tls-archive.sh` compiles FFmpeg inside a distribution image whose package set drifts — so CI builds its own, passes `-DMIKAI_LINUX_MPV_EXPECTED_SHA256=<digest of that build>` and records the digest in `evidence/linux-mpv-runtime.json`.
 - The runtime receipt then reports `archivePinnedRelease: false`, and configure still refuses any archive that does not match the digest it was given.
 - Without the override the shipped pin applies, so an ordinary configure cannot bundle a different runtime.
@@ -236,7 +239,7 @@ ctest --test-dir build/linux-release --output-on-failure -R '^mikai_tests_(TestM
 - Undo any integrations after testing.
 - In Settings → Processing and Components, verify unsupported choices are reported; on supported NVIDIA hardware with compatible fork libmpv, CUDA 13 and TensorRT 11, acquire the current official AnimeJaNai v0.22.2 API/ABI-9 runtime/model, select it explicitly and verify real processed frames on the same video.
 - The current Windows DEV archive's runtime exposes ABI-9 host entrypoint markers (`aji_ingest`, `aji_infer_seq`, `aji_temporal_radius`, and peers); those are string markers in the binary, not a behaviour guarantee.
-- The `mpv-fork` source entry still points to ABI-8 commit `63d127174d8f70336c82a22408929e2bc301edcb`; the Windows archive has separate source commit `b4f9f5bfed18d5ce610af28024986410dd9bdaae`, while corresponding-source/build evidence for the Linux runtime is not established.
+- The optional legacy `mpv-fork` source entry still identifies ABI-8 commit `63d127174d8f70336c82a22408929e2bc301edcb`; it is not the current Standard runtime. The Windows and Linux runtime source commits are recorded separately above; complete transitive corresponding-source fulfillment remains unresolved.
 - Archive identity does not establish hardware operation or inference.
 - The old official v0.9.0 ABI-8 pair and separately patched private MSVC AJI ABI-8 build are historical, distinct builds, not substitutes.
 - Manager temporal frame count, scene threshold, upscale enable/disable and temporal-fix controls are available in Processing; v0.22.2 source maps RIFE code 4262 to regular `rife_v4.26`, not heavy RIFE, which is not inference evidence.

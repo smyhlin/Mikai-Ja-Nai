@@ -1,6 +1,6 @@
 {
   "schema": "mikai.packaging.provenance/1",
-  "generated": "2026-10-24",
+  "generated": "2026-11-13",
   "platform": "linux-x86_64",
   "publicReleaseReady": false,
   "sourceEvidenceDirectory": "../licenses/linux/",
@@ -22,69 +22,166 @@
       "host": "Ubuntu 24.04 WSL2; glibc 2.39",
       "sourceRevision": "unknown (source archive without Git metadata)",
       "runtimeTestStatus": "not represented by this inventory"
-    }
+    },
+    "evidenceRole": "Historical reviewed 0.1.0 stage only; not an inventory of the current pinned runtime or a newly assembled release."
   },
   "hostDependenciesNotShipped": [
-    {"component":"glibc and ELF dynamic loader", "evidence":"Stage VERSION reports packaging host glibc 2.39; upstream portable bundle recipe excludes libc, loader, libm, libdl, pthread, rt, libresolv. No minimum compatible glibc is claimed."},
-    {"component":"GPU/display graphics and driver stack", "evidence":"Pinned build recipe explicitly excludes host-coupled GL/EGL/GLX/DRM/GBM, CUDA/NVIDIA driver libraries and display libraries; NVIDIA ICD is host-provided. Vulkan loader is bundled by recipe. Host GPU/display compatibility is not guaranteed."},
-    {"component":"Host audio/device/session services", "evidence":"The package carries several private audio/client libraries, but actual audio backends/devices, session services and display server are host services. No host compatibility guarantee is implied."}
+    {
+      "component": "glibc and ELF dynamic loader",
+      "evidence": "Stage VERSION reports packaging host glibc 2.39; upstream portable bundle recipe excludes libc, loader, libm, libdl, pthread, rt, libresolv. No minimum compatible glibc is claimed."
+    },
+    {
+      "component": "GPU/display graphics and driver stack",
+      "evidence": "Pinned build recipe explicitly excludes host-coupled GL/EGL/GLX/DRM/GBM, CUDA/NVIDIA driver libraries and display libraries; NVIDIA ICD is host-provided. Vulkan loader is bundled by recipe. Host GPU/display compatibility is not guaranteed."
+    },
+    {
+      "component": "Host audio/device/session services",
+      "evidence": "The package carries several private audio/client libraries, but actual audio backends/devices, session services and display server are host services. No host compatibility guarantee is implied."
+    }
   ],
   "components": [
     {
-      "id":"qt-deployed-runtime",
-      "version":"6.12.0",
-      "provider":"The Qt Company / official Qt 6.12.0 GCC 64-bit SDK deployed with Qt CMake deployment tooling",
-      "sourceUrl":"https://download.qt.io/official_releases/qt/6.12/6.12.0/",
-      "sourceBuildInputs":"The exact Qt 6.12.0 official source archive is retained at release-artifacts/corresponding-source/qt-everywhere-src-6.12.0.tar.xz (443394020 bytes; SHA-256 98ff4f44bac6ec3e1e62ee2a4316ae0e3d15badb015d753cc0268a20db52f165, matching the primary official checksum). release-artifacts/corresponding-source/source-materials.json records completeCorrespondingSource=false. The installed SDK remains a separate binary deployment input; matching SDK/module provenance, build/deployment scripts, modifications and source/relink fulfillment remain unresolved.",
-      "license":"Qt modules can have alternative terms; deployed module/plugin attribution records are in the package at share/licenses/mikai/third-party/Qt-6.12.0-*-attributions.txt and share/licenses/mikai/third-party/qt/. Do not infer one license for the whole SDK; review each selected module and third-party attribution.",
-      "payloadGlobs":["lib/libQt6*.so.6.12.0", "lib/libicu*.so.73.2", "plugins/**/*.so", "translations/*.qm", "bin/qt.conf"],
-      "payloadInventory":"Exact paths and SHA-256 digests of each final stage file are recorded in the stage SHA256SUMS. 6.12.0 Qt Core/DBus/EGLFS/Gui/Network/OpenGL/OpenGLWidgets/Svg/Wayland/Widgets/Xcb platform modules, ICU 73.2 and deployed Qt plugins/translations were observed in the actual stage.",
-      "sourceStatus":"partial: provider/version and shipped module scope established; upstream source archive retained, but exact binary SDK/source correspondence, source-build recipe, Qt deployment tool version/options and per-module rights/fulfillment evidence remain missing",
-      "fulfillment":"Retained Qt source archive resolves availability only. Establish exact correspondence to the selected binary SDK/modules, acquire build/deployment scripts and modifications, retain module-specific attributions/license texts, and provide an applicable source/relinking/replacement route and required installation information before distribution."
+      "id": "qt-deployed-runtime",
+      "version": "6.12.0",
+      "provider": "The Qt Company / official Qt 6.12.0 GCC 64-bit SDK deployed with Qt CMake deployment tooling",
+      "sourceUrl": "https://download.qt.io/official_releases/qt/6.12/6.12.0/",
+      "sourceBuildInputs": "The exact Qt 6.12.0 official source archive is retained at release-artifacts/corresponding-source/qt-everywhere-src-6.12.0.tar.xz (443394020 bytes; SHA-256 98ff4f44bac6ec3e1e62ee2a4316ae0e3d15badb015d753cc0268a20db52f165, matching the primary official checksum). release-artifacts/corresponding-source/source-materials.json records completeCorrespondingSource=false. The installed SDK remains a separate binary deployment input; matching SDK/module provenance, build/deployment scripts, modifications and source/relink fulfillment remain unresolved.",
+      "license": "Qt modules can have alternative terms; deployed module/plugin attribution records are in the package at share/licenses/mikai/third-party/Qt-6.12.0-*-attributions.txt and share/licenses/mikai/third-party/qt/. Do not infer one license for the whole SDK; review each selected module and third-party attribution.",
+      "payloadGlobs": [
+        "lib/libQt6*.so.6.12.0",
+        "lib/libicu*.so.73.2",
+        "plugins/**/*.so",
+        "translations/*.qm",
+        "bin/qt.conf"
+      ],
+      "payloadInventory": "Exact paths and SHA-256 digests of each final stage file are recorded in the stage SHA256SUMS. 6.12.0 Qt Core/DBus/EGLFS/Gui/Network/OpenGL/OpenGLWidgets/Svg/Wayland/Widgets/Xcb platform modules, ICU 73.2 and deployed Qt plugins/translations were observed in the actual stage.",
+      "sourceStatus": "partial: provider/version and shipped module scope established; upstream source archive retained, but exact binary SDK/source correspondence, source-build recipe, Qt deployment tool version/options and per-module rights/fulfillment evidence remain missing",
+      "fulfillment": "Retained Qt source archive resolves availability only. Establish exact correspondence to the selected binary SDK/modules, acquire build/deployment scripts and modifications, retain module-specific attributions/license texts, and provide an applicable source/relinking/replacement route and required installation information before distribution."
     },
     {
-      "id":"pinned-mpv-bundle-and-private-closure",
-      "version":"mpv source commit c493f1c7e10a6b2301653596e7deeb91295d3148; release asset identifies 2026-10-24-c493f1c",
-      "provider":"the-database AnimeJaNai mpv fork; exact current build recipe and dependency closure not established",
-      "sourceUrl":"https://github.com/the-database/mpv/releases/tag/2026-10-24-c493f1c",
-      "archive":{"file":"mpv-linux-x64-2026-10-24-c493f1c-tls.tar.zst","bytes":41533948,"sha256":"6796d922cfd3ffb9bcd8948f77c609a4055ac343a9898f2433d2aa4b0eb6a17d","runtimeIdentity":"mpv-linux-x64-2026-10-24-c493f1c7e10a6b2301653596e7deeb91295d3148+tls","regularMemberCount":79,"retainedLocalInput":"built by packaging/mpv/build-tls-archive.sh into release-artifacts/; cmake/MikaiLinuxMpv.cmake re-verifies the pinned SHA-256 on every configure","derivedFrom":{"file":"mpv-linux-x64-2026-10-24-c493f1c.tar.zst","bytes":41650081,"sha256":"b6281a2c924157a01f4a66f49dda3029b11378ffd982a974cdcbdb474c0befc7"},"bundledVulkanLoader":"1.4.363 (vkEnumerateInstanceVersion); upstream mpv requires >= 1.4.309 at build time, and the loader is bundled because the runtime links it and an older host loader would disable mpv's Vulkan path","modification":"Only the FFmpeg family is replaced (same tag n9.0.2, the same configure flags plus --enable-openssl) and OpenSSL 3.0 from the Ubuntu 22.04 baseline is added; the published archive was configured without a TLS backend, so https streams could not be opened. The mpv fork, libplacebo, shaderc, libass and libvulkan bytes are the upstream archive's."},
-      "workflow":null,
-      "recipe":null,
-      "recipePatchEvidence":"No current-run upstream build recipe or exact source patch evidence is retained. The local Mikai wrapper verifies the archive SHA-256, extracts in an owned directory, removes versioned libmpv members, removes host-provided libc/loader/graphics/driver and Qt SONAME patterns, copies internal symlinks to regular files, validates ELF magic, runs patchelf --set-rpath `$ORIGIN` on each retained ELF library and records its resulting SHA-256 in its cache stamp. Stage final hashes are in package SHA256SUMS.",
-      "sourceBuildInputs":"Current-run upstream build recipe, dependency source revisions, patches and build logs are not retained. The verified binary archive is not corresponding source and does not establish exact build inputs or source-to-binary correspondence.",
-      "license":"Unresolved per actual library/component. Upstream package includes no headers/notices. Current-run build configuration and component license closure are not established; do not infer LGPL-only status or transfer license conclusions from the historical 2026-10-09 asset. Existing mpv/FFmpeg license texts in packaging/licenses are reference texts, not per-component closure proof. Primary mpv copyright/GPL/LGPL texts are shipped at share/licenses/mikai/third-party/mpv/; FFmpeg license texts at share/licenses/mikai/third-party/ffmpeg/.",
-      "payloadPaths":["bin/mpv/libmpv.so.2", "bin/mpv/lib*.so*"],
-      "sourceStatus":"unresolved: exact per-library source, license, provider/version/build inputs and complete corresponding sources/fulfillment route not established for the actual release asset",
-      "sourceArchiveStatus":"the verified binary release archive is not corresponding source and contains no headers or notices",
-      "fulfillment":"Obtain current-run corresponding sources, exact patches (including all transitive/submodule content), build scripts/container digest and matching build/install instructions. If these cannot be obtained, do not claim compliant source fulfillment. Preserve archive-member identity separately from any final postprocessed file hash; never substitute a host library selected only by SONAME."
+      "id": "pinned-mpv-bundle-and-private-closure",
+      "version": "mpv source commit 5bbd4c16181f30b729cdff9b9a81725cc8efa38d; release 2026-11-11-5bbd4c1 plus local TLS rebuild",
+      "provider": "the-database mpv fork and private closure; locally rebuilt FFmpeg TLS family",
+      "sourceUrl": "https://github.com/the-database/mpv/releases/tag/2026-11-11-5bbd4c1",
+      "archive": {
+        "file": "mpv-linux-x64-2026-11-11-5bbd4c1-tls.tar.zst",
+        "bytes": 42823270,
+        "sha256": "84cd7729076cf28ecef064253ed209d4786be593ad54242dc6e28754042b31ea",
+        "runtimeIdentity": "mpv-linux-x64-2026-11-11-5bbd4c16181f30b729cdff9b9a81725cc8efa38d+tls",
+        "regularMemberCount": 82,
+        "retainedLocalInput": "built by packaging/mpv/build-tls-archive.sh into release-artifacts/; cmake/MikaiLinuxMpv.cmake re-verifies the pinned SHA-256 on every configure",
+        "derivedFrom": {
+          "file": "mpv-linux-x64-2026-11-11-5bbd4c1.tar.zst",
+          "bytes": 42296840,
+          "sha256": "a269ced2f6f6ba3111e4b40d22cf9b0a8f8d826767b7df60237e832eb3580d33"
+        },
+        "bundledVulkanLoader": "1.4.363 (vkEnumerateInstanceVersion); upstream mpv requires >= 1.4.309 at build time, and the loader is bundled because the runtime links it and an older host loader would disable mpv's Vulkan path",
+        "modification": "Only the FFmpeg family is replaced (same tag n9.0.2, the same configure flags plus --enable-openssl) and OpenSSL 3.0 from the Ubuntu 22.04 baseline is added; the published archive was configured without a TLS backend, so https streams could not be opened. The mpv fork, libplacebo, shaderc, libass and libvulkan bytes are the upstream archive's.",
+        "tlsBuild": {
+          "ffmpegTag": "n9.0.2",
+          "ffmpegCommit": "946fcce07b6dcd0331c8cc609192aeff5e1924f8",
+          "ffnvcodecTag": "n13.0.19.0",
+          "ffnvcodecCommit": "e844e5b26f46bb77479f063029595293aa8f812d",
+          "baseline": "Ubuntu 22.04",
+          "buildEnvironment": "Isolated Ubuntu 22.04 rootfs under WSL chroot; equivalent FFmpeg build body from packaging/mpv/build-tls-archive.sh, four compiler jobs. Docker was unavailable.",
+          "rootfsSha256": "6de757b9cbe07c53664e8e75f635f6ccc68b82d6f3d0c000993fcbd27c2d477c",
+          "reproducible": false,
+          "tlsEvidence": "libavformat NEEDED includes libssl.so.3 and libcrypto.so.3; actual certificate-verified HTTPS HEVC playback succeeded."
+        }
+      },
+      "workflow": null,
+      "recipe": null,
+      "recipePatchEvidence": "No current-run upstream build recipe or exact source patch evidence is retained. The local Mikai wrapper verifies the archive SHA-256, extracts in an owned directory, removes versioned libmpv members, removes host-provided libc/loader/graphics/driver and Qt SONAME patterns, copies internal symlinks to regular files, validates ELF magic, runs patchelf --set-rpath `$ORIGIN` on each retained ELF library and records its resulting SHA-256 in its cache stamp. Stage final hashes are in package SHA256SUMS.",
+      "sourceBuildInputs": "FFmpeg/nv-codec source tags, commits, configure body and Ubuntu 22.04 rootfs digest are recorded in archive.tlsBuild. Remaining upstream dependency source revisions, exact build correspondence and complete source fulfillment remain unresolved.",
+      "license": "The FFmpeg rebuild enables GPL/version3; mvtools identifies GPL-2.0-or-later and includes its LICENSE and UPSTREAM.md. Complete per-component license/source closure and distributor-controlled fulfillment remain unresolved.",
+      "payloadPaths": [
+        "bin/mpv/libmpv.so.2",
+        "bin/mpv/lib*.so*",
+        "bin/mpv/ajn-mvtools.so",
+        "share/licenses/mikai/mpv/mvtools/LICENSE",
+        "share/licenses/mikai/mpv/mvtools/UPSTREAM.md"
+      ],
+      "sourceStatus": "unresolved: exact per-library source, license, provider/version/build inputs and complete corresponding sources/fulfillment route not established for the actual release asset",
+      "sourceArchiveStatus": "The verified binary archive is not corresponding source. It now includes mvtools notices but does not establish complete runtime notices or source closure.",
+      "fulfillment": "Obtain current-run corresponding sources, exact patches (including all transitive/submodule content), build scripts/container digest and matching build/install instructions. If these cannot be obtained, do not claim compliant source fulfillment. Preserve archive-member identity separately from any final postprocessed file hash; never substitute a host library selected only by SONAME.",
+      "runtimeSmoke": {
+        "mpv": "v0.42.0-dev-g5bbd4c161",
+        "ffmpeg": "n9.0.2",
+        "clientApi": "2.6",
+        "codec": "HEVC",
+        "geometry": "320x180",
+        "localFile": true,
+        "httpsWithCertificateVerification": true,
+        "detectorAbi": 1,
+        "detectorContextLifecycle": true,
+        "gpuInference": false,
+        "enhancedSceneClassifier": {
+          "localizedCutMissedByLegacy": true,
+          "localizedCutDetectedByEnhanced": true,
+          "staticFrameRemainsContinuous": true,
+          "geometry": "128x64",
+          "gpuInference": false
+        }
+      }
     },
     {
-      "id":"linux-project-and-anime4k-assets",
-      "version":"Mikai 0.1.0; Anime4K shader revision as retained in source tree",
-      "provider":"Mikai project / Anime4K upstream content",
-      "sourceUrl":"https://github.com/bloc97/Anime4K",
-      "sourceBuildInputs":"Project source snapshot revision is unavailable in this stage (VERSION says unknown; source archive has no Git metadata). Shader files are copied project assets, not compiled libraries.",
-      "license":"Project LICENSE plus per-file original shader headers and licenses/Anime4K-MIT.txt and licenses/Anime4K-Unlicense.txt; the latter are retained with the package.",
-      "payloadGlobs":["share/mikai/shaders/*"],
-      "payloadInventory":"Actual stage includes Anime4K GLSL shaders; final hashes are in stage SHA256SUMS.",
-      "sourceStatus":"partial: license/notice material and payload scope retained; exact source revision absent from package evidence",
-      "fulfillment":"Retain the project and upstream shader source snapshots matching the packaged files and original per-file notices."
+      "id": "linux-project-and-anime4k-assets",
+      "version": "Mikai 0.1.0; Anime4K shader revision as retained in source tree",
+      "provider": "Mikai project / Anime4K upstream content",
+      "sourceUrl": "https://github.com/bloc97/Anime4K",
+      "sourceBuildInputs": "Project source snapshot revision is unavailable in this stage (VERSION says unknown; source archive has no Git metadata). Shader files are copied project assets, not compiled libraries.",
+      "license": "Project LICENSE plus per-file original shader headers and licenses/Anime4K-MIT.txt and licenses/Anime4K-Unlicense.txt; the latter are retained with the package.",
+      "payloadGlobs": [
+        "share/mikai/shaders/*"
+      ],
+      "payloadInventory": "Actual stage includes Anime4K GLSL shaders; final hashes are in stage SHA256SUMS.",
+      "sourceStatus": "partial: license/notice material and payload scope retained; exact source revision absent from package evidence",
+      "fulfillment": "Retain the project and upstream shader source snapshots matching the packaged files and original per-file notices."
     }
   ],
   "privateBundleObservedMembers": [
-    {"soname":"libmpv.so.2", "versionEvidence":"Archive member libmpv.so.2.6.0; runtime identity mpv-linux-x64-2026-10-24-c493f1c7e10a6b2301653596e7deeb91295d3148", "originalMemberBytes":3708024, "originalMemberSha256":"f50c5195aececc060202c2128113d88a9fc0a463c2e5fc9694f8e40349e96768", "licenseStatus":"unresolved as above"},
-    {"sonames":"Current archive dependency members", "providerVersionSource":"Per-member source/version mapping and build configuration are not established for the current archive; final stage hashes are recorded in SHA256SUMS.", "licenseStatus":"unresolved per actual component and linked closure"},
-    {"sonames":"Other private archive dependencies", "providerVersionSource":"Current-run build recipe and dependency source/version mapping are not established.", "licenseStatus":"per-component actual binary mapping and source fulfillment unresolved"},
-    {"sonames":"Remaining bin/mpv shared objects including X11, audio, font/text, codec, image and system-service libraries", "providerVersionSource":"Actual final paths and hashes are in stage SHA256SUMS. SONAME and release-archive identity alone do not identify package version/provider/source; Ubuntu 22 package/source metadata, ELF build IDs, and per-member original hashes were not retained/matched for each final object. No same-SONAME host-library substitution was made.", "licenseStatus":"unresolved per actual component until exact package/source identities and notices are matched"}
+    {
+      "soname": "libmpv.so.2",
+      "versionEvidence": "Current upstream archive member libmpv.so.2.6.0; source 5bbd4c16181f30b729cdff9b9a81725cc8efa38d, unchanged by the TLS rebuild.",
+      "originalMemberBytes": 3742816,
+      "originalMemberSha256": "4d4af731f1f52fc0951853298e49ca982c25515bffe031fbc442cb7510e09484",
+      "licenseStatus": "unresolved as above"
+    },
+    {
+      "soname": "ajn-mvtools.so",
+      "originalMemberBytes": 2964904,
+      "originalMemberSha256": "384b85c50639e966407e952c7fe4dfab47acf290b2956db8a554f7147d59eeee",
+      "license": "GPL-2.0-or-later; adapter/enhanced-classifier changes described in upstream notices",
+      "noticeFiles": [
+        "licenses/mvtools/LICENSE",
+        "licenses/mvtools/UPSTREAM.md"
+      ],
+      "source": "https://github.com/dubhatervapoursynth/vapoursynth-mvtools/tree/17250aa979616ac48dfb0e18abfdcf2bd4e3afc0"
+    },
+    {
+      "sonames": "Current archive dependency members",
+      "providerVersionSource": "Per-member source/version mapping and build configuration are not established for the current archive; final stage hashes are recorded in SHA256SUMS.",
+      "licenseStatus": "unresolved per actual component and linked closure"
+    },
+    {
+      "sonames": "Other private archive dependencies",
+      "providerVersionSource": "Current-run build recipe and dependency source/version mapping are not established.",
+      "licenseStatus": "per-component actual binary mapping and source fulfillment unresolved"
+    },
+    {
+      "sonames": "Remaining bin/mpv shared objects including X11, audio, font/text, codec, image and system-service libraries",
+      "providerVersionSource": "Actual final paths and hashes are in stage SHA256SUMS. SONAME and release-archive identity alone do not identify package version/provider/source; Ubuntu 22 package/source metadata, ELF build IDs, and per-member original hashes were not retained/matched for each final object. No same-SONAME host-library substitution was made.",
+      "licenseStatus": "unresolved per actual component until exact package/source identities and notices are matched"
+    }
   ],
   "postprocessing": {
-    "rule":"Project packaging configuration verifies the pinned archive SHA-256, stages the private closure under bin/mpv and uses patchelf to set RUNPATH=$ORIGIN on owned libraries. No global LD_LIBRARY_PATH is used.",
-    "source":"cmake/MikaiLinuxMpv.cmake and packaging/linux/Stage.cmake",
-    "hashBinding":"Final file digests are in the exact staged SHA256SUMS and package archive digest above. The original asset digest is separate. RUNPATH-modified final files must be tied back to their same original archive members and exact postprocessing recipe; missing per-member original-hash/build-ID matches are unresolved, not inferred from SONAME.",
-    "patchelfVersionAndHash":"Not retained; unresolved."
+    "rule": "Project packaging configuration verifies the pinned archive SHA-256, stages the private closure under bin/mpv and uses patchelf to set RUNPATH=$ORIGIN on owned libraries. No global LD_LIBRARY_PATH is used.",
+    "source": "cmake/MikaiLinuxMpv.cmake and packaging/linux/Stage.cmake",
+    "hashBinding": "Final file digests are in the exact staged SHA256SUMS and package archive digest above. The original asset digest is separate. RUNPATH-modified final files must be tied back to their same original archive members and exact postprocessing recipe; missing per-member original-hash/build-ID matches are unresolved, not inferred from SONAME.",
+    "patchelfVersionAndHash": "Not retained; unresolved."
   },
-  "noticesActuallyPresentInPackage":"share/licenses/mikai/third-party/ contains project NOTICE, Qt module attributions and Qt license texts, mpv and FFmpeg license/reference texts, and selected additional runtime notices. This proves those files are in the stage, not that they are complete notices for every private object. Additional Ubuntu copyright notices have not been matched to the private files.",
-  "blockers":[
+  "noticesActuallyPresentInPackage": "share/licenses/mikai/third-party/ contains project NOTICE, Qt module attributions and Qt license texts, mpv and FFmpeg license/reference texts, and selected additional runtime notices. This proves those files are in the stage, not that they are complete notices for every private object. Additional Ubuntu copyright notices have not been matched to the private files.",
+  "blockers": [
     "No per-member ELF build-ID inventory or binding of every final bin/mpv object to an original archive member was retained; final hashes are available in the stage SHA256SUMS, but SONAME cannot identify exact provider/source/version.",
     "Current-run build recipe, dependency source revisions and build logs are not retained; exact bundled asset-to-build-run linkage and corresponding source artifacts remain unavailable.",
     "Exact license/copyright closure and corresponding-source fulfillment remain unresolved for the private runtime objects; included license texts alone do not close them.",

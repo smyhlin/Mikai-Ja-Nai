@@ -49,7 +49,7 @@ fi
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 repo_root="$(cd -- "$script_dir/../.." && pwd -P)"
 
-mpv_archive="${mpv_archive:-$repo_root/release-artifacts/mpv-linux-x64-2026-10-24-c493f1c-tls.tar.zst}"
+mpv_archive="${mpv_archive:-$repo_root/release-artifacts/mpv-linux-x64-2026-11-11-5bbd4c1-tls.tar.zst}"
 if [[ ! -f "$mpv_archive" ]]; then
   printf 'The bundled runtime archive is missing: %s\n' "$mpv_archive" >&2
   printf 'Build it with: bash packaging/mpv/build-tls-archive.sh\n' >&2

@@ -418,6 +418,19 @@ endif()
 
 file(MAKE_DIRECTORY "${DIST_DIR}/mpv")
 file(COPY_FILE "${mpv_dll}" "${DIST_DIR}/mpv/libmpv-2.dll")
+get_filename_component(mpv_binary_dir "${mpv_dll}" DIRECTORY)
+foreach(scene_input IN ITEMS ajn-mvtools.dll licenses/mvtools/LICENSE licenses/mvtools/UPSTREAM.md)
+  if(NOT EXISTS "${mpv_binary_dir}/${scene_input}")
+    message(FATAL_ERROR "dist: the verified mpv archive is missing ${scene_input}")
+  endif()
+  get_filename_component(scene_parent "${DIST_DIR}/${scene_input}" DIRECTORY)
+  if(scene_input STREQUAL "ajn-mvtools.dll")
+    file(COPY_FILE "${mpv_binary_dir}/${scene_input}" "${DIST_DIR}/mpv/${scene_input}")
+  else()
+    file(MAKE_DIRECTORY "${scene_parent}")
+    file(COPY_FILE "${mpv_binary_dir}/${scene_input}" "${DIST_DIR}/${scene_input}")
+  endif()
+endforeach()
 message(STATUS
   "dist: packaged verified x64 libmpv-2.dll from ${mpv_archive_name} "
   "(archive SHA-256 ${mpv_archive_sha256})")
@@ -629,7 +642,8 @@ if(MIKAI_PUBLIC_RELEASE)
 
   foreach(required ${dist_qt_runtime_modules} platforms/qwindows.dll
       imageformats/qjpeg.dll imageformats/qwebp.dll tls/qschannelbackend.dll
-      libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll mpv/libmpv-2.dll
+      libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll mpv/libmpv-2.dll mpv/ajn-mvtools.dll
+      licenses/mvtools/LICENSE licenses/mvtools/UPSTREAM.md
       qml/QtQml/qmldir qml/QtQuick/qmldir qml/QtQuick/Window/qmldir
       qml/QtQuick/Layouts/qmldir qml/QtQuick/Templates/qmldir
       qml/QtQuick/Controls/qmldir qml/QtQuick/Controls/Basic/qmldir
@@ -661,7 +675,7 @@ if(MIKAI_PUBLIC_RELEASE)
       set(owner qt)
     elseif(entry MATCHES "^(libgcc_s_seh-1|libstdc\\+\\+-6|libwinpthread-1)\\.dll$")
       set(owner mingw)
-    elseif(entry STREQUAL "mpv/libmpv-2.dll")
+    elseif(entry STREQUAL "mpv/libmpv-2.dll" OR entry STREQUAL "mpv/ajn-mvtools.dll")
       set(owner mpv)
     elseif(entry MATCHES "^shaders/[A-Za-z0-9_-]+\\.glsl$")
       set(owner anime4k)
@@ -669,7 +683,8 @@ if(MIKAI_PUBLIC_RELEASE)
       set(owner mikai)
     elseif(entry STREQUAL "translations/mikai_uk.qm")
       set(owner mikai)
-    elseif(entry MATCHES "^licenses/[A-Za-z0-9_./+-]+\\.(txt|json|md|html)$"
+    elseif(entry STREQUAL "licenses/mvtools/LICENSE"
+        OR entry MATCHES "^licenses/[A-Za-z0-9_./+-]+\\.(txt|json|md|html)$"
         OR entry MATCHES "^licenses/ffmpeg/COPYING\\.(GPLv[23]|LGPLv(2\\.1|3))$")
       set(owner legal)
     else()

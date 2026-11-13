@@ -47,10 +47,10 @@ endfunction()
 # backend, so it cannot open any https URL. This pin is the same runtime with a
 # same-tag FFmpeg rebuilt with --enable-openssl; packaging/mpv/build-tls-archive.sh
 # produces it and release-artifacts/ carries the result.
-set(MIKAI_LINUX_MPV_ARCHIVE_NAME "mpv-linux-x64-2026-10-24-c493f1c-tls.tar.zst")
+set(MIKAI_LINUX_MPV_ARCHIVE_NAME "mpv-linux-x64-2026-11-11-5bbd4c1-tls.tar.zst")
 set(MIKAI_LINUX_MPV_ARCHIVE_SHA256
-  "6796d922cfd3ffb9bcd8948f77c609a4055ac343a9898f2433d2aa4b0eb6a17d")
-set(MIKAI_LINUX_MPV_ARCHIVE_SIZE "41533948")
+  "84cd7729076cf28ecef064253ed209d4786be593ad54242dc6e28754042b31ea")
+set(MIKAI_LINUX_MPV_ARCHIVE_SIZE "42823270")
 
 set(MIKAI_LINUX_MPV_ARCHIVE "" CACHE FILEPATH
   "Optional local copy of the pinned Linux mpv archive (its published SHA-256 is always checked)")
@@ -140,6 +140,13 @@ function(mikai_linux_mpv_cache_valid result)
       OR IS_DIRECTORY "${MIKAI_LINUX_MPV_STAMP}")
     return()
   endif()
+  foreach(scene_notice IN ITEMS LICENSE UPSTREAM.md)
+    set(scene_notice_path "${MIKAI_LINUX_MPV_EXTRACTED_DIR}/licenses/mvtools/${scene_notice}")
+    if(NOT EXISTS "${scene_notice_path}" OR IS_SYMLINK "${scene_notice_path}"
+        OR IS_DIRECTORY "${scene_notice_path}")
+      return()
+    endif()
+  endforeach()
   file(STRINGS "${MIKAI_LINUX_MPV_STAMP}" stamp_lines)
   list(LENGTH stamp_lines stamp_line_count)
   if(stamp_line_count LESS 3)
@@ -173,7 +180,8 @@ function(mikai_linux_mpv_cache_valid result)
   list(SORT stamped_libraries)
   list(SORT cached_libraries)
   if(NOT stamped_libraries STREQUAL cached_libraries
-      OR NOT "libmpv.so.2" IN_LIST stamped_libraries)
+      OR NOT "libmpv.so.2" IN_LIST stamped_libraries
+      OR NOT "ajn-mvtools.so" IN_LIST stamped_libraries)
     return()
   endif()
   set(${result} TRUE PARENT_SCOPE)
@@ -254,7 +262,7 @@ endif()
 set(MIKAI_LINUX_MPV_BUNDLE ON)
 set(MIKAI_LINUX_MPV_BUNDLE_ROOT "${MIKAI_LINUX_MPV_EXTRACTED_DIR}")
 set(MIKAI_LINUX_MPV_BUNDLE_MODE "bundled")
-set(MIKAI_LINUX_MPV_RUNTIME_IDENTITY "mpv-linux-x64-2026-10-24-c493f1c7e10a6b2301653596e7deeb91295d3148+tls")
+set(MIKAI_LINUX_MPV_RUNTIME_IDENTITY "mpv-linux-x64-2026-11-11-5bbd4c16181f30b729cdff9b9a81725cc8efa38d+tls")
 set(MIKAI_LINUX_MPV_PATCHED_RUNPATH "$ORIGIN")
 
 # HTTPS needs a TLS backend inside the bundled FFmpeg; without one every
@@ -298,3 +306,7 @@ file(GLOB MIKAI_LINUX_MPV_INSTALL_LIBRARIES LIST_DIRECTORIES FALSE
   "${MIKAI_LINUX_MPV_BUNDLE_ROOT}/*.so*")
 install(FILES ${MIKAI_LINUX_MPV_INSTALL_LIBRARIES}
   DESTINATION "${MIKAI_LINUX_MPV_INSTALL_SUBDIR}")
+install(FILES
+  "${MIKAI_LINUX_MPV_BUNDLE_ROOT}/licenses/mvtools/LICENSE"
+  "${MIKAI_LINUX_MPV_BUNDLE_ROOT}/licenses/mvtools/UPSTREAM.md"
+  DESTINATION "share/licenses/mikai/mpv/mvtools")

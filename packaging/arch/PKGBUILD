@@ -15,7 +15,7 @@ optdepends=('nvidia-utils: NVML GPU probe for optional AnimeJaNai components')
 options=('strip' '!debug')
 # The bundled runtime is our TLS-enabled libmpv, not the distribution's: the
 # player is built against that fork, and a system libmpv cannot provide it.
-_mpvver='2026-10-24-c493f1c-tls'
+_mpvver='2026-11-11-5bbd4c1-tls'
 source=("mikai-$pkgver.tar.gz" "mpv-linux-x64-$_mpvver.tar.zst")
 sha256sums=('@SHA256@' '@MPV_SHA256@')
 _revision='@REVISION@'

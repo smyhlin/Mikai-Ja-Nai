@@ -337,8 +337,20 @@ def main():
     (args.out / "mpv").mkdir(exist_ok=True)
     mpv_dll = args.out / "mpv" / "libmpv-2.dll"
     shutil.copy2(dlls[0], mpv_dll)
+    detector = dlls[0].with_name("ajn-mvtools.dll")
+    if not detector.is_file():
+        sys.exit("pinned mpv archive is missing ajn-mvtools.dll")
+    staged_detector = args.out / "mpv" / detector.name
+    shutil.copy2(detector, staged_detector)
+    for name in ("LICENSE", "UPSTREAM.md"):
+        notice = extract / "licenses" / "mvtools" / name
+        if not notice.is_file():
+            sys.exit(f"pinned mpv archive is missing mvtools notice: {name}")
+        destination = args.out / "licenses" / "mvtools" / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(notice, destination)
     search.append(str(extract))
-    runtime_roots.append(mpv_dll)
+    runtime_roots.extend((mpv_dll, staged_detector))
     close_imports(args.out, search, runtime_roots)
     validate_qt_mingw_runtime(args.out)
     shutil.rmtree(extract)

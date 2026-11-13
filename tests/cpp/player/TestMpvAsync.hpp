@@ -34,6 +34,7 @@ private slots:
     void linuxRuntimeSelectionMatchesTheConfiguredModule();
     void aDifferentModuleIsRefusedWhileOneIsPinned();
     void theHeaderApiVersionIsAlwaysReported();
+    void enhancedSceneDetectionFindsLocalCutsWithoutBreakingStaticFrames();
     void aHandleWithoutASelectedRuntimeIsRefused();
     void aCoreUsesTheCLocaleForNumericFormatting();
     void mpvNumberFormatsWithSixFractionDigits();

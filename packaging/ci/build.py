@@ -12,8 +12,8 @@ import time
 
 
 ROOT = Path(__file__).resolve().parents[2]
-LINUX_MPV_ARCHIVE_NAME = 'mpv-linux-x64-2026-10-24-c493f1c-tls.tar.zst'
-LINUX_MPV_PINNED_SHA256 = '6796d922cfd3ffb9bcd8948f77c609a4055ac343a9898f2433d2aa4b0eb6a17d'
+LINUX_MPV_ARCHIVE_NAME = 'mpv-linux-x64-2026-11-11-5bbd4c1-tls.tar.zst'
+LINUX_MPV_PINNED_SHA256 = '84cd7729076cf28ecef064253ed209d4786be593ad54242dc6e28754042b31ea'
 
 
 def ensure_linux_runtime():
