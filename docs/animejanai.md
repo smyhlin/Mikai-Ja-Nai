@@ -29,10 +29,11 @@ works, nor that a package is verified or approved for public release.
 `libcudart.so.13` by **bare soname** when the filter creates its context. None of them live in a
 directory the process loader searches, and the store is not on `LD_LIBRARY_PATH`.
 
-`prepareAnimeJanaiPlan` records the closure folder in `AnimeJanaiPlan::backendLibDirs`, and
-`VideoSurfaceAnimeJanai` preloads every `.so` there with `RTLD_NOW | RTLD_GLOBAL` immediately before
-`vf add`. `trtexec-libdir` is *not* a loader hint for the filter itself — it configures the child
-engine build only.
+`prepareAnimeJanaiPlan` records both verified shared runtime and GPU-builder folders in
+`AnimeJanaiPlan::backendLibDirs`; the player and Compare preload their `.so` files with
+`RTLD_NOW | RTLD_GLOBAL` before attachment. The v0.27.0 dispatcher also resolves its shared mapping
+and loads pack libraries by absolute path. Local flat imports retain the legacy bare-soname
+contract. `trtexec-libdir` configures the child build, not the filter's own loader.
 
 ### TensorRT for RTX has no Linux path
 
@@ -49,12 +50,18 @@ stage one:
   `libnvinfer`/`libcudart` closure and the child `trtexec` build. RTX-specific behaviour —
   in-process engine building, no `trtexec`/`trtexec-libdir`, `.trtrtx-<ver>.gpu-<gpu>.rtxengine` and
   `.jitcache` caches, and only the five RTX builder flags — cannot be exercised here.
-- On Windows, selecting RTX acquires nothing by itself; an explicit install action stages the
-  standard dispatcher plus the five overlay files under `components/aji/v0.24.0/trtrtx`, keeps both
-  NVIDIA notices, and refuses a root that also contains `aji_trt.dll` so the dispatcher cannot fall
-  back to classic TensorRT. Nothing from that overlay is bundled or redistributed.
+- On Windows, explicit installation stages only the dispatcher, backend-only RTX DLL and mapping
+  under `components/aji/v0.27.0/trtrtx`. The runtime-2 RTX pack and all CUDA/NVIDIA notices remain
+  in the shared store. A shim root containing `aji_trt.dll` is refused, preventing silent fallback.
+  No runtime, helper or model store is bundled in the base distribution.
 
 ## 2. The engine build must receive a shell-safe path
+
+Managed v0.27.0 plans leave `trtexec-libdir` unset. The runtime resolves `aji-runtime.json`,
+selects the shared `trtexec` and quotes a combined runtime/builder-resource `LD_LIBRARY_PATH`.
+Paths containing spaces therefore work without a mirror. Classic TensorRT requires SM 7.5+.
+
+The following legacy rule still applies to **local flat imports** without a shared mapping:
 
 The fork builds TensorRT engines with:
 
@@ -65,8 +72,9 @@ The fork builds TensorRT engines with:
 The prefix is **unquoted**, so a space anywhere in the closure path splits it into an assignment and
 a bogus command. The store lives under `…/Mikai Wrapper/`, so the raw path always splits.
 `detail::shellSafeLibDir()` returns a symlink mirror of the closure under a space-free temp root
-whenever the real path contains a space, quote or tab; both plan builders pass that value as
-`trtexec-libdir`. Never collapse this back to `installation.root`.
+whenever the real path contains a space, quote or tab; both local-flat plan paths pass it as
+`trtexec-libdir`. Never replace the mirror with the raw installation root, or add that legacy
+override to a managed shared-store plan.
 
 ## 3. Symptoms, in the order they appear
 
@@ -91,12 +99,14 @@ Run the fork against the same store, module and options the application passes:
 
 ```bash
 S="$HOME/.local/share/Mikai/Mikai Wrapper/native"
-M="$S/components/aji/v0.24.0/trt"
+M="$S/components/aji/v0.27.0/trt"
+TRT="$(jq -r '.trt' "$M/aji-runtime.json")"
+BUILDER="$(jq -r '.trt_builder[0]' "$M/aji-runtime.json")"
 MODELS="$S/animejanai/models/spatial"
 RIFE="$S/animejanai/models/rife"
-LD_LIBRARY_PATH="$M:/path/to/extracted/mpv" \
+LD_LIBRARY_PATH="$TRT:$BUILDER:/path/to/extracted/mpv" \
   mpv --no-config --vo=gpu --ao=null --loop=inf \
-      --vf="animejanai=lib=$M/libaji.so:conf=CONF:model-dir=$MODELS:rife-model-dir=$RIFE:trtexec=$M/trtexec:trtexec-libdir=LIBDIR:slot=1002:stats=/tmp/stats.txt:output-444=no:passthrough=no" \
+      --vf="animejanai=lib=$M/libaji.so:conf=CONF:model-dir=$MODELS:rife-model-dir=$RIFE:slot=1002:stats=/tmp/stats.txt:output-444=no:passthrough=no" \
       --msg-level=all=info CLIP
 ```
 
@@ -105,12 +115,14 @@ LD_LIBRARY_PATH="$M:/path/to/extracted/mpv" \
 model, config, statistics and RIFE directories, and both options must point at the directories that
 plan uses.
 
-- `LIBDIR="$M"` reproduces `exit 127` / `No such file or directory`.
-- `LIBDIR` set to the mirror — or any space-free directory of symlinks to the same closure — lets
-  `trtexec` print `&&&& PASSED TensorRT.trtexec` and write the `.engine`; playback then reports the
-  upscaled stream.
-- Dropping `LD_LIBRARY_PATH` while keeping the filter reproduces the bare-soname failure — that is
-  the state the in-process preload exists to prevent.
+The managed mapping selects `trtexec` and its complete shared closure. A successful compiler run
+prints `&&&& PASSED TensorRT.trtexec` and publishes an engine. This example uses `jq` only to
+inspect the mapping; it is not an application dependency.
+
+For a **legacy local flat closure**, pass its `trtexec` explicitly and use the shell-safe mirror
+as `trtexec-libdir`. A raw space-containing directory reproduces exit 127; omitting its loader
+path/preload can reproduce the bare-soname failure. Those legacy failures are not predictions
+about a valid v0.27.0 shared mapping.
 
 Keep the store's own files untouched when testing: the mirror is read-only in effect, and the
 verified digests in `components/aji/<version>/` must stay as installed.
@@ -204,19 +216,25 @@ while the same run's model effects measure 1.17-1.51 levels.
 
 ## 7. Version Upgrade Checklist & Multi-Backend Store Caveats
 
-When upgrading AnimeJaNai to a newer upstream release (e.g. `v0.22.x` → `v0.24.0` or beyond), follow this strict checklist to avoid installation record mismatches, missing closure errors, or broken player states.
+The current cohort is package **3.11.0**, inference **v0.27.0 / ABI 9**, runtime index
+**runtime-2** and store manager **v0.2.1**. Their pins and evidence boundaries are recorded in
+[`animejanai-release.json`](../native/manifest/animejanai-release.json).
 
 ### 7.1 Backend Separation & Store Layout
 
 Each backend runtime is an independent closure stored in its own versioned directory under `<nativeRoot>/components/aji/<version>/<backend>`:
 
-- `trt`: Classic TensorRT (`aji.dll` / `libaji.so`, `aji_trt.dll` / `libaji_trt.so`, `trtexec`, `nvinfer` / `cudart` closure, `install.json`).
-- `trtrtx`: TensorRT for RTX on Windows (`aji.dll`, `aji_trtrtx.dll`, `tensorrt_rtx_1_7.dll`, `tensorrt_onnxparser_rtx_1_7.dll`, `TensorRT-RTX-NOTICE.txt`, `TensorRT-RTX-Acknowledgements.txt`, `install.json`).
+- `trt`: dispatcher, classic backend, `aji-runtime.json` and `install.json`; NVIDIA runtime,
+  `trtexec`, notices and one GPU builder-resource pack are retained in the upstream shared store.
+- `trtrtx`: Windows dispatcher, RTX backend, `aji-runtime.json` and `install.json`; the distinct
+  shared RTX pack retains its NVIDIA/CUDA libraries and notices, with no classic builder pack.
 - `dml`: DirectML on Windows (`aji.dll`, `aji_dml.dll`, `onnxruntime.dll`, `DirectML.dll`, `install.json`).
 
 **Key Invariants:**
 1. **Never conflate backends:** Installing `trtrtx` does **not** install or satisfy `trt`, and vice versa. Each directory must have its own verified `install.json` created by `recordAndVerify()`. An attempt to select or run a backend whose directory lacks `install.json` fails with `animejanai.installation.recordMissing` (*"The app-owned AnimeJaNai installation record is missing"* / *"Запис встановлення AnimeJaNai у сховищі застосунку відсутній"*).
-2. **Version path consistency:** When updating `kAjiVersion` in `AnimeJanaiInstallation.cpp`, the path segment returned by `installationRoot(backend)` changes. Both `installationRoot()` and the download URLs/hashes (`kAjiUrl`, `kAjiSha`, `kRtxOverlayUrl`, `kRtxOverlaySha`) must be updated together.
+2. **Version path consistency:** Update `kAjiVersion`, dispatcher/backend archive and member pins,
+   shared index bytes/digests, pack inventories and graph pins together. Old installations remain
+   distinct. A matching own-file record alone is insufficient without the shared mapping and ref.
 3. **RTX Staging Isolation:** The `trtrtx` directory on Windows must **never** contain `aji_trt.dll`, as its presence would allow the dispatcher to silently fall back to classic TensorRT without reporting the failure.
 
 ### 7.2 Acquisition & Settings Discipline
@@ -230,13 +248,12 @@ Each backend runtime is an independent closure stored in its own versioned direc
 
 ### 7.3 Player Menu & Defensive Runtime Fallbacks
 
-1. **Disable Uninstalled Backends in UI (`PlayerShell.cpp`):**
-   - The backend submenu in `PlayerShell` must verify `native::describeAnimeJanaiInstallation(backend).installed` for each row.
-   - Uninstalled backends must be disabled with tooltip `"Not installed. Install it in Settings › Components."` so users cannot switch into a non-functional state.
-2. **Safe Startup Fallback (`PlayerDialog.cpp`):**
-   - On startup, if the configured backend in `QSettings` (`player/animejanai/backend`) is not installed on disk, `PlayerDialog` must gracefully fall back to whichever backend *is* installed (`TensorRTRTX`, `TensorRT`, or `DirectML`) rather than disabling the Quality menu with missing record errors.
-3. **Switching Guard (`PlayerDialogProcessing.cpp`):**
-   - `applyAnimeJanaiBackend()` must check `describeAnimeJanaiInstallation().installed` before modifying `animeJanaiBackend_` and writing settings; if uninstalled, flash a status notice and leave the active pipeline untouched.
+1. The Quick player's backend menu must use the installation descriptor and disable unavailable
+   backends. A stored pack alone is not runtime readiness.
+2. Startup may select an installed backend when the saved one is missing; explicit changes must
+   never silently substitute another backend.
+3. Components installs the selected complete Standard closure. The private Prepared Native store
+   remains independently owned; Standard storage relocation never redirects it.
 
 ### 7.4 Verification & Diagnostics
 
@@ -251,4 +268,5 @@ After updating the AJI version or provisioning closures:
    - TensorRT for RTX: `<nativeRoot>/animejanai/models/spatial/*.rtxengine.build.log` and `*.rtxengine.warm.log`
 3. Verify test suites:
    - Run `TestAnimeJanaiRuntime` and `TestFeedRender` through `mikai_test_launcher`.
-   - Run `benchmark_probe.exe` with `--backend tensorrt` and `--backend tensorrt-rtx` to verify real throughput without UI intervention.
+   - Run real GPU/backend/model probes separately when inference or throughput is required;
+     manager, storage and metadata checks are not GPU execution proof.

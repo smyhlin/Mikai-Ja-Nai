@@ -111,7 +111,7 @@ machine observations are historical only, not an active path.
 
 | | |
 |---|---|
-| Current official source | <https://github.com/the-database/animejanai-inference> @ v0.24.0, commit `29dbb2dc65688d6df48e774a409ba552ca3cd2a1`, API/ABI 9 |
+| Current official source | <https://github.com/the-database/animejanai-inference> @ v0.27.0, commit `513febececcfce2645588d1c04cc9932661a0ee0`, API/ABI 9 |
 | Historical private Native baseline | v0.9.0, commit `c7f56baf966064a7855db2f82a2f1b0d0c6cfdb3`, ABI 8, with separately recorded local modifications and build |
 | Artefacts | Windows dispatcher and backends; Linux runtime is separately released |
 | Licence | **no upstream grant located; redistribution blocked** |
@@ -171,59 +171,36 @@ artifact hashes are recorded in
 `sources.json#sources[id=animejanai-inference].localBuildObservation`; runtime
 behavior is not established.
 
-The current [v0.24.0 release](https://github.com/the-database/animejanai-inference/releases/tag/v0.24.0)
-has an ABI-9 Windows runtime archive `aji-windows-x64.zip` (930,847 bytes,
-SHA-256 `8a90d23c356b`; full digest: [`sources.json`: `currentOfficialRelease.assets[name=aji-windows-x64.zip].sha256`](sources.json))
-and Linux runtime archive `aji-linux-x64.tar.zst` (435,064 bytes,
-SHA-256 `98baeb371278`; full digest: [`sources.json`: `currentOfficialRelease.assets[name=aji-linux-x64.tar.zst].sha256`](sources.json)).
-Its `include/aji.h` is byte-identical to the v0.17.1 header, so the ABI-9
-version field and struct layout are unchanged; `include/aji_image.h` adds a
-separate still-image ABI this application does not consume. These archives are separate from the private
-ABI-8 source and build above; an ABI-8 mpv filter must not be paired with the
-ABI-9 runtime. Release identity is not runtime compatibility or operation
-evidence, and earlier v0.17.1 installations remain distinct records on disk.
+The current [v0.27.0 release](https://github.com/the-database/animejanai-inference/releases/tag/v0.27.0)
+supplies separately hashed Windows (953,548 bytes) and Linux (449,466 bytes)
+ABI-9 runtime archives. The adopted Windows RTX archive is the **backend-only**
+`aji-trtrtx-backend-windows-x64.zip` (440,346 bytes), not the full overlay.
+Exact archive and member identities are recorded in
+[`sources.json`](sources.json), `currentOfficialRelease`. These identities do
+not establish inference, throughput or permission to redistribute.
 
-The separate Linux `aji-encode-linux-x64.tar.zst` (80,198,079 bytes,
-SHA-256 `3d826f9a2662`; full digest: [`sources.json`: `currentOfficialRelease.assets[name=aji-encode-linux-x64.tar.zst].sha256`](sources.json))
-is an optional offline CLI, not used for app playback, automatically acquired,
-or shipped. It carries `aji_encode` with the FFmpeg shared libraries and
-`ffmpeg_LICENSE.txt`, but not `libaji.so`. Its FFmpeg dependency and
-redistribution rights require separate assessment. Neither its publication nor
-the runtime release clears public distribution; ESC-1 remains open.
+The selected dispatcher/backend pair and `aji-runtime.json` are app-owned at
+`components/aji/v0.27.0/<backend>`. NVIDIA dependencies now come from the pinned
+`runtime-2` shared store: classic TensorRT declares 11.4.0.106/CUDA 13.4;
+the Windows-only RTX pack declares 1.7.1.116/CUDA 13.4. These are upstream index
+version labels, not independent binary product-version measurements.
+The RTX pack includes CUDA runtime, the two NVIDIA RTX libraries and all three
+required CUDA/NVIDIA notices. No classic backend or `trtexec` is staged beside
+the RTX dispatcher, so silent fallback remains refused.
 
-The Windows `aji-trtrtx-windows-x64.zip` (95,346,303 bytes, SHA-256
-`a2616d0b21f1`; full digest: [`sources.json`: `currentOfficialRelease.assets[name=aji-trtrtx-windows-x64.zip].sha256`](sources.json))
-is the opt-in TensorRT-for-RTX overlay for the Windows Standard AnimeJaNai
-backend. Selecting that backend downloads nothing by itself; explicit user
-action in Components or the missing-downloads flow stages the dispatcher
-`aji.dll` from the standard Windows archive plus all five overlay members into
-the per-machine store under `components/aji/v0.24.0/trtrtx`. The overlay
-contains `aji_trtrtx.dll` together with NVIDIA's proprietary
-`tensorrt_rtx_1_7.dll` (229,312,112 bytes) and
-`tensorrt_onnxparser_rtx_1_7.dll`, plus NVIDIA's own mandatory
-`TensorRT-RTX-NOTICE.txt` (868 bytes) and `TensorRT-RTX-Acknowledgements.txt`
-(107,164 bytes). No classic `aji_trt.dll`, TensorRT/CUDA DLL, per-SM builder
-resource or `trtexec` is staged, the released backend imports no `cudart`, and
-an RTX root containing `aji_trt.dll` is rejected so the upstream dispatcher
-cannot silently fall back to classic TensorRT there. Both NVIDIA notices travel
-with the local copy. The NVIDIA runtime is governed by the NVIDIA TensorRT for
-RTX Software License Agreement, which requires preserving those notices and
-forbids separate use or redistribution except as it permits; this project
-claims no redistribution clearance for the overlay and does not bundle it in
-the base installer or any distribution. `TensorRT-RTX-NOTICE.txt` is a vendor
-notice, not an upstream licence for the inference source. There is no Linux RTX
-asset or offering: a Linux RTX request fails by name instead of falling back.
+The separately acquired [aji-runtime v0.2.1](https://github.com/the-database/aji-runtime/releases/tag/v0.2.1)
+ships a GNU GPLv3 `LICENSE`, retained beside its executable. It manages shared
+packs and live per-application references; it does not license the inference
+source, NVIDIA libraries or model graphs. Relocation leaves the default path
+linked to the physical store; only that managed root link is accepted.
+Helper, runtime and model stores remain excluded from base distributions.
 
-Upstream source builds target TensorRT 11.4.0.106 with CUDA 13.4, and the
-optional RTX backend targets TRT-RTX 1.7.1.116. That is a statement about the
-upstream recipe only. The pinned component packs here remain TensorRT
-11.3.0.99, and the shipped dispatcher/backends import `nvinfer_11` symbols that
-every 11.x runtime exports; no build-to-deployment version parity is claimed.
-
-Each of the four assets was independently downloaded and hashed, and each
-archive was listed without executing anything; see `sources.json` for the
-source archive and cohort details. Asset identity is not permission to
-redistribute.
+The optional Linux offline encoder is not acquired or used by this application.
+Historical private ABI-8 source/build observations remain separate from the
+current official ABI-9 runtime. The pinned v0.27.0 source tree contains no
+LICENSE/LICENCE/COPYING-named member; its NVIDIA vendor notice is not an
+inference-source grant. ESC-1 and the independently recorded model and
+GPL-family obligations remain open.
 
 The official asset and its dispatcher/TensorRT/DirectML dependency closure may
 be acquired only into the user's per-machine component store after explicit
@@ -267,8 +244,8 @@ License Agreement, with NVIDIA's own `TensorRT-RTX-NOTICE.txt` and
 `TensorRT-RTX-Acknowledgements.txt`. Those notices must remain with any local
 copy. Nothing here establishes rights to use those binaries separately or to
 redistribute them; the overlay is never bundled in the base installer or a
-public distribution. The classic TensorRT packs below remain TensorRT 11.3.0.99
-and are unrelated to the RTX product version.
+public distribution. The historical classic SDK observations below refer to
+TensorRT 11.3.0.99, not the current shared runtime-2 pack or the RTX product.
 
 For the classic TensorRT 11.3 SDK, the Supplement, section 2: *"The following
 portions of the SDK are distributable under the Agreement: the runtime files

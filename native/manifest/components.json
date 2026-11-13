@@ -16,47 +16,49 @@
   },
   "currentOfficialAjiRelease": {
     "sourceRecord": "sources.json#sources[id=animejanai-inference].currentOfficialRelease",
-    "tag": "v0.24.0",
-    "sourceCommit": "29dbb2dc65688d6df48e774a409ba552ca3cd2a1",
+    "tag": "v0.27.0",
+    "sourceCommit": "513febececcfce2645588d1c04cc9932661a0ee0",
     "abi": 9,
     "platforms": ["windows-x64", "linux-x64"],
-    "scope": "Official runtime release assets are distinct from the historical private ABI-8 Native DLLs described by engine.aji-dispatcher, engine.aji-trt and engine.aji-dml below. ABI-9 runtime requires a compatible ABI-9 mpv filter; identity is not runtime proof.",
-    "acquisition": "Only after explicit user action into the per-machine component store; no startup download or public bundling. Installations of earlier official releases stay on disk as their own records and are not migrated or treated as this release.",
+    "scope": "Official ABI-9 Standard runtime, distinct from all historical private ABI-8 Native source/build records below.",
+    "acquisition": "Explicit user action only. App-owned shims and mapping at native/components/aji/v0.27.0/<backend>; TensorRT dependencies are retained in the upstream per-user shared store. No startup acquisition or public payload inclusion.",
     "redistribution": "blocked",
     "blockerRef": "ESC-1",
-    "encoder": "The separate Linux aji-encode release asset is an optional offline CLI, not an app playback dependency and not automatically acquired or shipped. FFmpeg dependency and redistribution rights must be assessed separately.",
+    "encoder": "The separate Linux offline encoder is not acquired or used for playback.",
+    "classicRuntime": {
+      "declaredPackVersion": "11.4.0.106-cuda13.4",
+      "builderVersion": "11.4.0.106",
+      "minimumComputeCapability": "7.5",
+      "source": "runtime-2 packs-windows-x64.json and packs-linux-x64.json, pinned in animejanai-release.json",
+      "ownership": "Shared NVIDIA runtime and GPU builder-resource packs keep all pinned notices and trtexec. Private Prepared Native packs remain independently owned; their declared files list still excludes trtexec."
+    },
     "optionalBackendAssets": {
-      "asset": "aji-trtrtx-windows-x64.zip",
-      "sourceRecord": "sources.json#sources[id=animejanai-inference].currentOfficialRelease.assets[name=aji-trtrtx-windows-x64.zip]",
-      "backend": "TensorRT-RTX is an explicit, selectable Windows Standard AnimeJaNai backend. Display label `TensorRT for RTX`; persisted payload and stable name `tensorrt-rtx`; plan INI `backend=TensorRT-RTX`.",
-      "lifecycle": "Opt-in. Nothing is acquired when the backend is selected or Settings is opened; a user's explicit install action is required, into the per-machine component store root `native/components/aji/v0.24.0/trtrtx`. The archive is not part of the base Windows installer or any distribution and is not downloaded at startup.",
-      "stagedClosure": "Exactly 6 flat files: aji.dll (dispatcher, taken from assets[name=aji-windows-x64.zip], 143,872 bytes, SHA-256 76f3223c4e8828b2e1ec8d00d2df2b6fea63f6c67882dabd8b1315d18d32114d) plus the overlay's aji_trtrtx.dll, tensorrt_rtx_1_7.dll, tensorrt_onnxparser_rtx_1_7.dll, TensorRT-RTX-NOTICE.txt and TensorRT-RTX-Acknowledgements.txt. Both NVIDIA notices are mandatory members; per-file digests are pinned in sources.json.",
-      "excludedFromClosure": "No classic aji_trt.dll, no nvinfer/nvinfer_plugin/nvonnxparser DLL, no CUDA pack, no per-SM builder resource and no trtexec/trtexec.exe. The released aji_trtrtx.dll imports no cudart, so no cudart requirement is recorded for this backend.",
-      "componentStore": "The Components view gives RTX its own product state (installed, verified, progress) separate from classic TensorRT, with the two archive rows aji-v0.24.0 and aji-trtrtx-v0.24.0 and a missing-download total of those two archives only. Classic GPU-kernel/CUDA tensor packs are unavailable and are never queued for RTX; no component-store pack of its own exists, because RTX is installed directly.",
-      "verification": "Acquisition and re-adoption accept only the pinned dispatcher/overlay pair: exactly those 5 flat overlay members (no directory, symlink, duplicate or unsafe path), matching per-file byte counts and SHA-256 values, a valid x64 PE, and both NVIDIA notices present. An install record may list only the RTX closure files; anything else is rejected instead of accepted as a partial runtime.",
-      "installRecord": "install.json keeps schema `mikai.native.animejanai/3`, version `v0.24.0`, ABI 9, backend `trtrtx`, with acquisitions limited to aji-windows-x64.zip and aji-trtrtx-windows-x64.zip. Earlier v0.17.1 and v0.22.2 trees are left on disk as distinct orphaned records; there is no cross-version pruning or migration.",
-      "fallbackRefusal": "The RTX root is rejected at acquisition/verification when aji_trt.dll is physically present, so the upstream dispatcher cannot silently fall back to classic TensorRT inside it. The upstream line `TensorRT-RTX failed ...; using TensorRT instead` is classified as a named RTX failure, never as RTX success.",
+      "asset": "aji-trtrtx-backend-windows-x64.zip",
+      "sourceRecord": "sources.json#sources[id=animejanai-inference].currentOfficialRelease.assets[name=aji-trtrtx-backend-windows-x64.zip]",
+      "backend": "TensorRT for RTX; explicit Windows-only selection with persisted token tensorrt-rtx and INI backend TensorRT-RTX.",
+      "stagedClosure": "aji.dll, aji_trtrtx.dll and aji-runtime.json beside install.json. No aji_trt.dll, classic builder resource or trtexec is allowed in this shim directory.",
+      "sharedPack": "trtrtx-runtime/1.7.1.116-cuda13.4, as declared by the pinned runtime-2 index",
+      "sharedFiles": ["cudart64_13.dll", "tensorrt_rtx_1_7.dll", "tensorrt_onnxparser_rtx_1_7.dll", "CUDA_LICENSE.txt", "TensorRT-RTX-NOTICE.txt", "TensorRT-RTX-Acknowledgements.txt"],
+      "componentStore": "The review includes missing dispatcher, backend-only archive, runtime manager, pinned index and shared RTX pack. Already matching files are not downloaded again. Classic builder/CUDA packs are never substituted for the RTX pack.",
+      "verification": "Exact pinned own-file inventory, complete pinned shared-file inventory, a live app reference and matching mapping are required. Worker verification hashes both stores; stat-only presence is not a SHA-256 proof.",
+      "fallbackRefusal": "The RTX shim root must not contain aji_trt.dll. An upstream fallback to classic TensorRT is a named failure, never reported as RTX success.",
       "nvidiaLicence": {
         "name": "NVIDIA TensorRT for RTX Software License Agreement",
-        "version": "TensorRT-RTX 1.7.1.116 (bundled DLL version 1.7)",
-        "runtimeFiles": [
-          "tensorrt_rtx_1_7.dll (229,312,112 bytes, SHA-256 7b8a06d4b66dfe7da7f1ff48a994ad9dcf107cd28b4822d6f25453528c0db6dd)",
-          "tensorrt_onnxparser_rtx_1_7.dll (2,329,200 bytes, SHA-256 b38d00d107dae534f1fc855df5bc1a04fc0ae25135b5b10d17f9b30cc4c9c411)"
-        ],
-        "requiredNotices": [
-          "TensorRT-RTX-NOTICE.txt (868 bytes, SHA-256 da7aa4b4bba64232bb9e868c5899e14bd74e983c6f5df017febfe24f72e2b5e7)",
-          "TensorRT-RTX-Acknowledgements.txt (107,164 bytes, SHA-256 611660ec0ae19c7b8df4a6442009c8bc85ba9e56d7d5ea042564841e72032d25; LicenseRef-NvidiaProprietary with third-party licences reproduced by NVIDIA)"
-        ],
-        "obligation": "Both notices are staged with the local copy and must remain with it. The NVIDIA runtime files must not be used separately or redistributed except as that agreement permits; this project makes no separate clearance claim for them.",
-        "boundary": "These NVIDIA terms are not a grant for the inference source and are not clearance to redistribute aji_trtrtx.dll or any part of this overlay."
+        "requiredNotices": ["TensorRT-RTX-NOTICE.txt", "TensorRT-RTX-Acknowledgements.txt", "CUDA_LICENSE.txt"],
+        "obligation": "Notices remain in the shared pack. Local acquisition does not clear redistribution or grant rights in the inference source."
       },
       "redistribution": "blocked",
       "blockerRef": "ESC-1",
-      "blockerScope": "aji_trtrtx.dll is built from the unlicensed upstream inference source (ESC-1); the overlay is acquired locally only. Local acquisition, installation and use do not remove the redistribution blocker and do not establish public distribution rights.",
-      "platforms": "Windows x64 only. No Linux RTX asset is published or offered; a restored or imported Linux RTX request fails by name (\"TensorRT for RTX is available only on Windows.\") and is never clamped to TensorRT or DirectML. The Linux encoder asset remains unrelated and unadopted.",
-      "evidenceBoundary": "Archive identity, member inventory and per-file digests are verified from the published release; the closed-source NVIDIA runtime and the upstream-built aji_trtrtx.dll were not executed, and no inference or performance result is claimed."
+      "platforms": "Windows x64 only; Linux requests fail by name without backend substitution.",
+      "evidenceBoundary": "Pins and declared versions are not independently measured NVIDIA product-version, inference or throughput evidence."
     },
-    "buildRecordBoundary": "Upstream builds against TensorRT 11.4.0.106 and TRT-RTX 1.7.1.116. The pinned classic component packs in this repository remain TensorRT 11.3.0.99, and the assets import nvinfer_11 symbols that any 11.x runtime exports. The opt-in RTX overlay carries NVIDIA's TRT-RTX 1.7 runtime from the release asset itself; it is a separate product, not a classic 11.4 pack. Upstream classic build versions are not a statement of the application's deployed runtime."
+    "runtimeManager": {
+      "version": "v0.2.1",
+      "sourceRecord": "sources.json#sources[id=animejanai-inference].currentOfficialRelease.sharedRuntimeManager",
+      "licence": "Upstream GNU GPLv3 LICENSE, preserved with the acquired helper",
+      "publicPayload": false
+    },
+    "buildRecordBoundary": "Runtime-2 declares classic TensorRT 11.4.0.106/CUDA 13.4 and RTX 1.7.1.116/CUDA 13.4. Historical private 11.3 SDK observations below are not the source identity or runtime proof of this cohort."
   },
   "blockerTaskBindings": {
     "principle": "A blocked component is not a blocked task. A blocker binds the tasks whose own acceptance needs the inference source, the built shim binaries, or a redistributed third-party artefact. Dependency ordering in native/README.md is a planning fact and is not a rights question. This section is retained so the historical binding and its grounds stay auditable.",

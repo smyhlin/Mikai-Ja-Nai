@@ -1,361 +1,78 @@
 {
   "evidenceOnly": true,
-  "release": "https://github.com/the-database/mpv-AnimeJaNai/releases/tag/3.7.0",
+  "generated": "2026-11-13",
   "project": "the-database/mpv-AnimeJaNai",
-  "tag": "3.7.0",
+  "tag": "3.11.0",
+  "release": "https://github.com/the-database/mpv-AnimeJaNai/releases/tag/3.11.0",
+  "sourceCommit": "2618f4d717fd58c22679d45162223dcffae4faa3",
   "immutable": false,
-  "assetInventory": {
-    "source": "GitHub Release API asset size/digest metadata: https://api.github.com/repos/the-database/mpv-AnimeJaNai/releases/tags/3.7.0",
-    "clarification": "Windows x64 assets below, paired with linuxAssetInventory for Linux x64 (-linux-x64). src/player/native/components/NativeComponentCatalog.cpp compiles both catalogues and selects the active platform catalogue at compile/run time.",
-    "items": [
-      {
-        "name": "component-trt-runtime.7z",
-        "pack": "trt-runtime",
-        "size": 186822775,
-        "sha256": "282cb9b178db241f61f7aedf1ef214af56c2a342428253d04a8d8916d6729373",
-        "url": "https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.7.0/component-trt-runtime.7z"
-      },
-      {
-        "name": "component-trt-sm75.7z",
-        "pack": "trt-sm75",
-        "size": 90359224,
-        "sha256": "4bc46f2fd2e9aad1b90666e634334197a28348f24f9a1bdb0d07fadc59b3bc4f",
-        "url": "https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.7.0/component-trt-sm75.7z"
-      },
-      {
-        "name": "component-trt-sm80.7z",
-        "pack": "trt-sm80",
-        "size": 160207044,
-        "sha256": "5bfe7a9288e866baa8111c851634ec077572130527ebe8844a74109e6a0e5393",
-        "url": "https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.7.0/component-trt-sm80.7z"
-      },
-      {
-        "name": "component-trt-sm86.7z",
-        "pack": "trt-sm86",
-        "size": 149799926,
-        "sha256": "bdbdc7b92cc3143f76045263a08e506af4594e717763d118ac65404b7ba0b23a",
-        "url": "https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.7.0/component-trt-sm86.7z"
-      },
-      {
-        "name": "component-trt-sm89.7z",
-        "pack": "trt-sm89",
-        "size": 158554965,
-        "sha256": "34bd51be1cb1581db3e494d1b30732c926cd9ac1a340efabdf0f9148911fdc87",
-        "url": "https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.7.0/component-trt-sm89.7z"
-      },
-      {
-        "name": "component-trt-sm90.7z",
-        "pack": "trt-sm90",
-        "size": 420452077,
-        "sha256": "b884e983b8b0d61ecebf9990fbed6a3fa13023b5cf9b4c2920933777e5f5ceb5",
-        "url": "https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.7.0/component-trt-sm90.7z"
-      },
-      {
-        "name": "component-trt-sm100.7z",
-        "pack": "trt-sm100",
-        "size": 251528952,
-        "sha256": "98a4ab1a906123ba61db70cc470c13595b60cf94acde6625c53ad5556a58f447",
-        "url": "https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.7.0/component-trt-sm100.7z"
-      },
-      {
-        "name": "component-trt-sm120.7z",
-        "pack": "trt-sm120",
-        "size": 229417183,
-        "sha256": "954821ef65824b0c766998db7d2ae49c68041dac7f78328152ec41f674378c15",
-        "url": "https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.7.0/component-trt-sm120.7z"
-      },
-      {
-        "name": "component-trt-ptx.7z",
-        "pack": "trt-ptx",
-        "size": 208391718,
-        "sha256": "7bd93d7f610ec31124b4ed677395e86337a0fbe9279d6315d7005d64f6dd398e",
-        "url": "https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.7.0/component-trt-ptx.7z"
-      },
-      {
-        "name": "component-rife.7z",
-        "pack": "rife",
-        "size": 462444035,
-        "sha256": "d41de2b56972cb3c446d9830bd5c5e7257e6e099ef0e7a2d5770ec01a9bf7251",
-        "url": "https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.7.0/component-rife.7z"
-      }
-    ]
+  "authority": "Explicit compiled pins, not a moving latest lookup. Published metadata is distinguished from locally hashed downloads.",
+  "inference": {
+    "tag": "v0.27.0",
+    "abi": 9,
+    "sourceCommit": "513febececcfce2645588d1c04cc9932661a0ee0",
+    "sourceRecord": "sources.json#sources[id=animejanai-inference].currentOfficialRelease"
   },
-  "rifeComponentArchive": {
-    "asset": "component-rife.7z",
-    "source": "Official AnimeJaNai 3.7.0 Windows release asset",
-    "archivePath": "https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.7.0/component-rife.7z",
-    "publishedSize": 462444035,
-    "publishedSha256": "d41de2b56972cb3c446d9830bd5c5e7257e6e099ef0e7a2d5770ec01a9bf7251",
-    "localVerifiedDownload": "F:/ZKS/mikai-native-assets/rife/_downloads/component-rife-3.7.0/component-rife.7z",
-    "extractedInventory": {
-      "directory": "extracted/animejanai/rife/",
-      "modelCount": 47,
-      "totalBytes": 506592464,
-      "perFileSizeAndSha256Pins": "rifeModelPins() in src/player/native/models/NativeRife.cpp",
-      "pinMatch": "The per-file size and SHA-256 pins match the archive extraction."
+  "runtimeIndexes": {
+    "release": "https://github.com/the-database/animejanai-inference/releases/tag/runtime-2",
+    "windows": {
+      "url": "https://github.com/the-database/animejanai-inference/releases/download/runtime-2/packs-windows-x64.json",
+      "bytes": 15242,
+      "sha256": "5b6f0450ba4eed34d6e25dde072ce1298f083d91d142fd858495483e7711aea1"
     },
-    "userInitiatedStore": {
-      "checks": "Verifies archive size and SHA-256, then each model graph size and SHA-256 before publish.",
-      "destination": "<nativeRoot>/components/rife/3.7.0",
-      "scope": "Per-machine RIFE inventory/store only; this inventory does not enable RIFE inference."
+    "linux": {
+      "url": "https://github.com/the-database/animejanai-inference/releases/download/runtime-2/packs-linux-x64.json",
+      "bytes": 13028,
+      "sha256": "d441210f7747b255f17483f7c8b921817ad3f997abab5a1ba5d348b51511ab61"
     },
-    "rights": "Archive/model redistribution clearance is not established; preserve the unresolved ESC-3 legal position."
+    "measurement": "Both indexes downloaded and SHA-256 measured. Every selected runtime/builder member's bytes and SHA-256 are compiled from these exact indexes into NativeComponentCatalog.cpp. Index metadata alone does not prove a downloaded NVIDIA file.",
+    "classicDeclaredVersion": "11.4.0.106-cuda13.4",
+    "builderDeclaredVersion": "11.4.0.106",
+    "rtxDeclaredVersion": "1.7.1.116-cuda13.4",
+    "minimumClassicComputeCapability": "7.5",
+    "selection": "Exact supported SM pack, otherwise the published PTX fallback; unsupported pre-7.5 GPUs are refused, never assigned PTX."
   },
-  "packFileMapping": {
-    "source": "the 3.7.0 release packs.json; archive paths are animejanai/inference/<basename>",
-    "note": "trtexec.exe is present in the upstream runtime archive but deliberately excluded from this catalogue: nothing in this build invokes it, and native/manifest/components.json resolves ESC-5 by architecture over the bundle inventory.",
-    "runtimeInstalledBytesNote": "Not measured on this machine. Historical 3.6.3 builder-resource installed_bytes were corroborated against the project SDK; the 3.7.0 packs.json repeats those sizes, but its archives were not extracted.",
-    "packs": [
-      {
-        "name": "trt-runtime",
-        "resourceFile": null,
-        "installedBytes": null,
-        "files": [
-          "cudart64_13.dll",
-          "CUDA_LICENSE.txt",
-          "DirectML_LICENSE.txt",
-          "nvinfer_11.dll",
-          "nvinfer_plugin_11.dll",
-          "nvonnxparser_11.dll"
-        ]
-      },
-      {
-        "name": "trt-sm75",
-        "resourceFile": "nvinfer_builder_resource_sm75_11.dll",
-        "installedBytes": 118526064,
-        "files": [
-          "nvinfer_builder_resource_sm75_11.dll"
-        ]
-      },
-      {
-        "name": "trt-sm80",
-        "resourceFile": "nvinfer_builder_resource_sm80_11.dll",
-        "installedBytes": 190690928,
-        "files": [
-          "nvinfer_builder_resource_sm80_11.dll"
-        ]
-      },
-      {
-        "name": "trt-sm86",
-        "resourceFile": "nvinfer_builder_resource_sm86_11.dll",
-        "installedBytes": 180006512,
-        "files": [
-          "nvinfer_builder_resource_sm86_11.dll"
-        ]
-      },
-      {
-        "name": "trt-sm89",
-        "resourceFile": "nvinfer_builder_resource_sm89_11.dll",
-        "installedBytes": 189048432,
-        "files": [
-          "nvinfer_builder_resource_sm89_11.dll"
-        ]
-      },
-      {
-        "name": "trt-sm90",
-        "resourceFile": "nvinfer_builder_resource_sm90_11.dll",
-        "installedBytes": 461991536,
-        "files": [
-          "nvinfer_builder_resource_sm90_11.dll"
-        ]
-      },
-      {
-        "name": "trt-sm100",
-        "resourceFile": "nvinfer_builder_resource_sm100_11.dll",
-        "installedBytes": 290767472,
-        "files": [
-          "nvinfer_builder_resource_sm100_11.dll"
-        ]
-      },
-      {
-        "name": "trt-sm120",
-        "resourceFile": "nvinfer_builder_resource_sm120_11.dll",
-        "installedBytes": 269391472,
-        "files": [
-          "nvinfer_builder_resource_sm120_11.dll"
-        ]
-      },
-      {
-        "name": "trt-ptx",
-        "resourceFile": "nvinfer_builder_resource_ptx_11.dll",
-        "installedBytes": 242572912,
-        "files": [
-          "nvinfer_builder_resource_ptx_11.dll"
-        ]
-      }
-    ]
-  },
-  "corroboration": {
-    "method": "Historical 3.6.3 measurements on this machine, no download needed. The 3.7.0 packs.json reports the same installed_bytes values; the 3.7.0 archives were not downloaded or extracted, so no extracted-file identity is claimed.",
-    "sdkBinDirectory": "F:/ZKS/mikai-native-sdks/tensorrt-11.3.0.99/TensorRT-11.3.0.99/bin/",
-    "builderResourceSizes": "Historical 3.6.3 packs.json installed_bytes were measured against every matching nvinfer_builder_resource_*_11.dll in the project SDK bin directory: sm75 118526064; sm80 190690928; sm86 180006512; sm89 189048432; sm90 461991536; sm100 290767472; sm120 269391472; ptx 242572912. The 3.7.0 packs.json reports the same installed_bytes mapping; 3.7.0 archives were not extracted, so this does not establish their extracted-file bytes.",
-    "sm120ByteIdentity": {
-      "path": "animejanai/inference/libnvinfer_builder_resource_sm120.so.11.3.0",
-      "sha256": "7b616872410c519caa7ebfcf2197a748cb5d0b21d9163704e7ca2ae8828ed677",
-      "statement": "Historical observation before the 3.7.0 catalogue update: the installed bundle's trt/nvinfer_builder_resource_sm120_11.dll was byte-identical to the project SDK's copy. This does not establish identity with the 3.7.0 archive, which was not extracted."
+  "rifeComponentArchives": {
+    "windows": {
+      "url": "https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.11.0/component-rife.7z",
+      "bytes": 462444571,
+      "sha256": "d8d4ba94b56059de085622e46b3730934dd6996583cd5eaee38000518baff0d5"
     },
-    "declaredRuntime": "The 3.7.0 manifest declares inference_runtime trt-11.3.0.99, the same TensorRT release this project's SDK carries."
+    "linux": {
+      "url": "https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.11.0/component-rife-linux-x64.7z",
+      "bytes": 462444582,
+      "sha256": "6fd21cdde1bcc5f36107e147c9d024c4eebf300f57952375fca89ccb90a93146"
+    },
+    "measurement": "Both archives were downloaded, hashed and extracted. All 47 graph bytes match across Windows/Linux; NativeRife.cpp pins each graph's measured size and SHA-256. These replace, not alias, the older graph cohort.",
+    "store": "App-owned components/rife/3.11.0 with an exact installation inventory",
+    "rights": "Whole-graph redistribution clearance remains unresolved (ESC-3); no inference or quality claim follows from ONNX container or digest validation."
   },
-  "negativeControl": "F:/ZKS/mikai-native-sdks/animejanai-official/*.7z is the VideoJaNai 2.1.0 cohort (TensorRT 11.0.0.114 / CUDA 13.2.75), measured-incompatible with this project's SDK: serialized engines fail to deserialize across the pair (serialization version 243 vs 244) and cross-paired builder resources fail validateCaskKLibSize. Usable only as a negative control, never as a source for this build's components. Full evidence: native/manifest/videojanai-release.json and native/README.md.",
-  "digestPolicy": "The catalogue pins this tag and every digest in code, so a re-uploaded asset is refused by digest rather than installed. Bumping the release means editing src/player/native/components/NativeComponentCatalog.cpp and this file together; nothing reads either of them from the network at run time.",
-  "linuxAssetInventory": {
-    "source": "Official GitHub Release 3.7.0 asset digests: https://github.com/the-database/mpv-AnimeJaNai/releases/tag/3.7.0",
-    "metadataAssets": [
-      {
-        "name": "manifest-linux-x64.json",
-        "sha256": "c388291d0b88c0237022beceea74023d79cda0080bcfd0bc48c43f26b32087d3",
-        "url": "https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.7.0/manifest-linux-x64.json"
-      },
-      {
-        "name": "packs-linux-x64.json",
-        "sha256": "235cfba6a5aecae7d26a6ee8f318959f29fb00e2e36ca026b3526316cf2bd405",
-        "url": "https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.7.0/packs-linux-x64.json"
-      }
-    ],
-    "items": [
-      {
-        "name": "component-trt-runtime-linux-x64.7z",
-        "pack": "trt-runtime",
-        "size": 263192576,
-        "sha256": "2d3a5a20008d752d3cd287fedd5f774baa6853068921bbd9b2add96742a7406b",
-        "url": "https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.7.0/component-trt-runtime-linux-x64.7z"
-      },
-      {
-        "name": "component-trt-sm75-linux-x64.7z",
-        "pack": "trt-sm75",
-        "size": 91121152,
-        "sha256": "ccaf69de0d99940d56553b8f31de4e1aeda6b9ce3f55d5509b56d4a2e07f4cdd",
-        "url": "https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.7.0/component-trt-sm75-linux-x64.7z"
-      },
-      {
-        "name": "component-trt-sm80-linux-x64.7z",
-        "pack": "trt-sm80",
-        "size": 161480704,
-        "sha256": "9ecdc3ed796f0509dbdc2b8420440bf7961e1a5b82b6aa51d64ddbd12e554258",
-        "url": "https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.7.0/component-trt-sm80-linux-x64.7z"
-      },
-      {
-        "name": "component-trt-sm86-linux-x64.7z",
-        "pack": "trt-sm86",
-        "size": 150994944,
-        "sha256": "a4d8b40e4974dd504d8b3a37ece656f6d29dfdda86b76065b70fa74f0aa33bf2",
-        "url": "https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.7.0/component-trt-sm86-linux-x64.7z"
-      },
-      {
-        "name": "component-trt-sm89-linux-x64.7z",
-        "pack": "trt-sm89",
-        "size": 159383552,
-        "sha256": "cd683e8afd41cf315fe6dc488a1c97dbcb5b5b7e5795893ece4079129d677871",
-        "url": "https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.7.0/component-trt-sm89-linux-x64.7z"
-      },
-      {
-        "name": "component-trt-sm90-linux-x64.7z",
-        "pack": "trt-sm90",
-        "size": 425721856,
-        "sha256": "3054e26228be0b2413af0d6d99aa7cc621178c4f902aed8a3bfc6160c57f7b9d",
-        "url": "https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.7.0/component-trt-sm90-linux-x64.7z"
-      },
-      {
-        "name": "component-trt-sm100-linux-x64.7z",
-        "pack": "trt-sm100",
-        "size": 252706816,
-        "sha256": "71beeb07e3c1e15d7b8c7a27455a931f1c92a453d0d2fe6d6eb5052168270e9f",
-        "url": "https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.7.0/component-trt-sm100-linux-x64.7z"
-      },
-      {
-        "name": "component-trt-sm120-linux-x64.7z",
-        "pack": "trt-sm120",
-        "size": 230686720,
-        "sha256": "f3f52f355cbe9d7768a16ec2e974681ce56847aaed2f988150fd23f9c8074d2e",
-        "url": "https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.7.0/component-trt-sm120-linux-x64.7z"
-      },
-      {
-        "name": "component-trt-ptx-linux-x64.7z",
-        "pack": "trt-ptx",
-        "size": 208666624,
-        "sha256": "c1061e7b11cb865c4c1f7d1eea4bce7357f45e073b74bbf10916b3a72faba0f3",
-        "url": "https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.7.0/component-trt-ptx-linux-x64.7z"
-      },
-      {
-        "name": "component-rife-linux-x64.7z",
-        "pack": "rife",
-        "size": 462444035,
-        "sha256": "265797d56fb1376434658e6adf70ea5ee85b8ac4c51231fdd9e744d35462e136",
-        "url": "https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.7.0/component-rife-linux-x64.7z"
-      }
-    ]
+  "spatialModels": {
+    "measurement": "All five current spatial graphs were downloaded from the 3.11.0 source commit and match the existing immutable size/SHA-256 pins.",
+    "policy": "Keep those unchanged content identities; a release upgrade does not invalidate an identical graph."
   },
-  "linuxPackFileMapping": {
-    "source": "the 3.7.0 release packs-linux-x64.json; archive paths are animejanai/inference/<basename>",
-    "packs": [
-      {
-        "name": "trt-runtime",
-        "resourceFile": null,
-        "files": [
-          "CUDA_LICENSE.txt",
-          "libcudart.so.13",
-          "libnvinfer.so.11",
-          "libnvinfer_plugin.so.11",
-          "libnvonnxparser.so.11",
-          "trtexec"
-        ]
-      },
-      {
-        "name": "trt-sm75",
-        "resourceFile": "libnvinfer_builder_resource_sm75.so.11.3.0",
-        "files": [
-          "libnvinfer_builder_resource_sm75.so.11.3.0"
-        ]
-      },
-      {
-        "name": "trt-sm80",
-        "resourceFile": "libnvinfer_builder_resource_sm80.so.11.3.0",
-        "files": [
-          "libnvinfer_builder_resource_sm80.so.11.3.0"
-        ]
-      },
-      {
-        "name": "trt-sm86",
-        "resourceFile": "libnvinfer_builder_resource_sm86.so.11.3.0",
-        "files": [
-          "libnvinfer_builder_resource_sm86.so.11.3.0"
-        ]
-      },
-      {
-        "name": "trt-sm89",
-        "resourceFile": "libnvinfer_builder_resource_sm89.so.11.3.0",
-        "files": [
-          "libnvinfer_builder_resource_sm89.so.11.3.0"
-        ]
-      },
-      {
-        "name": "trt-sm90",
-        "resourceFile": "libnvinfer_builder_resource_sm90.so.11.3.0",
-        "files": [
-          "libnvinfer_builder_resource_sm90.so.11.3.0"
-        ]
-      },
-      {
-        "name": "trt-sm100",
-        "resourceFile": "libnvinfer_builder_resource_sm100.so.11.3.0",
-        "files": [
-          "libnvinfer_builder_resource_sm100.so.11.3.0"
-        ]
-      },
-      {
-        "name": "trt-sm120",
-        "resourceFile": "libnvinfer_builder_resource_sm120.so.11.3.0",
-        "files": [
-          "libnvinfer_builder_resource_sm120.so.11.3.0"
-        ]
-      },
-      {
-        "name": "trt-ptx",
-        "resourceFile": "libnvinfer_builder_resource_ptx.so.11.3.0",
-        "files": [
-          "libnvinfer_builder_resource_ptx.so.11.3.0"
-        ]
-      }
-    ]
-  }
+  "storage": {
+    "manager": "https://github.com/the-database/aji-runtime/releases/tag/v0.2.1",
+    "managerSource": "7d7a0ed386c3567d6979b401d4a42c04a50c2a08",
+    "windowsDefault": "%LOCALAPPDATA%/the-database/aji",
+    "linuxDefault": "$XDG_DATA_HOME/the-database/aji or $HOME/.local/share/the-database/aji",
+    "override": "AJI_RUNTIME_STORE; an absolute local folder",
+    "appOwned": "native/components/aji/v0.27.0/<backend> contains only the selected shims, install.json and TensorRT mapping. DirectML keeps its independent local closure.",
+    "shared": "packs/<name>/<version> contains the complete pinned NVIDIA pack plus .pack.json; refs retains each backend for the persistent application path, including the AppImage rather than its temporary mount.",
+    "repackRule": "Matching complete pinned file inventory counts as installed even if an archive was repacked. Presence checks verify metadata/size; preparation and manual Verify additionally hash the files.",
+    "relocation": "Upstream copy/relink/restore, leaving the default logical path stable. Only this managed root link is accepted; links inside a pack are refused. Windows in-use DLLs can prevent relocation; restart and close other AI apps first. Moving does not move models or engines.",
+    "shutdown": "Normal shutdown waits for an active relink. Force termination, drive removal and OS failure are not crash-recovery guarantees.",
+    "privateNativeBoundary": "The separate Prepared Native component store remains independently owned and is not silently redirected. Its runtime files contract still excludes trtexec; Standard shared packs retain the full upstream inventory."
+  },
+  "sceneDetection": {
+    "setting": "Per-chain chain_N_rife_scene_detect_enhanced, experimental and off by default",
+    "runtimeRequirement": "Updated mpv with ABI-1 ajn-mvtools companion; deploy helper notices on both platforms",
+    "verification": "Both actual helpers distinguish a localized synthetic cut missed by the legacy threshold and reject an unchanged frame. This is detector behavior, not end-to-end RIFE interpolation or GPU throughput."
+  },
+  "mpvEvidence": {
+    "windows": "../../packaging/provenance/windows-runtime.json",
+    "linux": "../../packaging/provenance/linux-runtime.json",
+    "vrrBoundary": "The upstream mpv.exe G-SYNC fix does not establish Qt/libmpv fullscreen VRR."
+  },
+  "rights": "Evidence only. Inference, proprietary runtime, model and GPL-family obligations are unchanged; nothing here grants publication approval."
 }

@@ -220,101 +220,88 @@
         ]
       },
       "currentOfficialRelease": {
-        "tag": "v0.24.0",
-        "publishedAt": "2026-11-08T00:37:37Z",
-        "releaseUrl": "https://github.com/the-database/animejanai-inference/releases/tag/v0.24.0",
-        "sourceCommit": "29dbb2dc65688d6df48e774a409ba552ca3cd2a1",
+        "tag": "v0.27.0",
+        "publishedAt": "2026-11-11T04:15:07Z",
+        "releaseUrl": "https://github.com/the-database/animejanai-inference/releases/tag/v0.27.0",
+        "sourceCommit": "513febececcfce2645588d1c04cc9932661a0ee0",
         "apiVersion": 9,
-        "sourceArchive": {
-          "url": "https://github.com/the-database/animejanai-inference/archive/29dbb2dc65688d6df48e774a409ba552ca3cd2a1.zip",
-          "bytes": 350000,
-          "sha256": "unverified",
-          "licenceInspection": "The inspected source ZIP contains no member whose name includes license, licence or copying. Its only notice-named member is ci/windows/TensorRT-RTX-NOTICE.txt, an NVIDIA vendor notice for the optional TensorRT-for-RTX overlay. That notice is not an upstream grant for the inference source, and a filename inspection does not prove the absence of all possible grants."
+        "sourceTreeInspection": {
+          "url": "https://api.github.com/repos/the-database/animejanai-inference/git/trees/513febececcfce2645588d1c04cc9932661a0ee0?recursive=1",
+          "truncated": false,
+          "finding": "No tree member named LICENSE, LICENCE or COPYING; the only notice-named member is ci/windows/TensorRT-RTX-NOTICE.txt. This filename inventory is not an upstream grant, source-archive hash or reproducible-build attestation."
         },
         "assets": [
           {
             "name": "aji-linux-x64.tar.zst",
-            "url": "https://github.com/the-database/animejanai-inference/releases/download/v0.24.0/aji-linux-x64.tar.zst",
+            "url": "https://github.com/the-database/animejanai-inference/releases/download/v0.27.0/aji-linux-x64.tar.zst",
             "platform": "linux-x64",
-            "role": "official playback runtime (dispatcher + TensorRT backend + research executables)",
-            "bytes": 435064,
-            "sha256": "98baeb3712783eab88c60300156c16a6d599dfe0576f6ca95f8f7efcea8e287f"
+            "role": "dispatcher and classic TensorRT backend; harnesses are not staged",
+            "bytes": 449466,
+            "sha256": "044a9cc652fa7660218597c1faa01b7c0abdd97f10a644b0250a0a42321ac0f5"
           },
           {
             "name": "aji-windows-x64.zip",
-            "url": "https://github.com/the-database/animejanai-inference/releases/download/v0.24.0/aji-windows-x64.zip",
+            "url": "https://github.com/the-database/animejanai-inference/releases/download/v0.27.0/aji-windows-x64.zip",
             "platform": "windows-x64",
-            "role": "official playback runtime (dispatcher + TensorRT/DirectML backends + research executables); its aji.dll is also the dispatcher staged for the opt-in TensorRT-for-RTX closure",
-            "bytes": 930847,
-            "sha256": "8a90d23c356be59cd21cc90761d47001717afd35c891c024e19b099e95a685c8"
+            "role": "dispatcher and classic TensorRT/DirectML backends; harnesses and encoder are not staged",
+            "bytes": 953548,
+            "sha256": "1ae2a0d16be2a660d8197fe4f64e8be7cf7637d7842b19994636e42309ab17b2"
           },
           {
-            "name": "aji-encode-linux-x64.tar.zst",
-            "url": "https://github.com/the-database/animejanai-inference/releases/download/v0.24.0/aji-encode-linux-x64.tar.zst",
-            "platform": "linux-x64",
-            "role": "separate optional offline encoder CLI; not used for application playback, automatically acquired, or shipped",
-            "bytes": 79680723,
-            "sha256": "4acf1a4726c7b0a3a4b01f000cc290076a5eb8c919d675685a4a589cf87948ae",
-            "rights": "Its FFmpeg dependency and redistribution rights require separate assessment; no clearance is implied.",
-            "contents": "aji_encode plus the FFmpeg shared libraries (libavcodec.so.63, libavdevice.so.63, libavfilter.so.12, libavformat.so.63, libavutil.so.61, libswresample.so.7, libswscale.so.10) and ffmpeg_LICENSE.txt. The archive does not carry libaji.so; it must come from the standard Linux asset."
+            "name": "aji-trtrtx-backend-windows-x64.zip",
+            "url": "https://github.com/the-database/animejanai-inference/releases/download/v0.27.0/aji-trtrtx-backend-windows-x64.zip",
+            "platform": "windows-x64",
+            "role": "selected RTX backend only; NVIDIA dependencies come from the shared runtime-2 pack",
+            "bytes": 440346,
+            "sha256": "13417fd2a061bc4539ea2509c1ced5023b947d561431a9b527c718c89a00ca35",
+            "members": [
+              {"path": "aji_trtrtx.dll", "bytes": 1652736, "sha256": "405c3e0e2bf2fce24e0e3f16a1de04bc52cf4fdb012e3bfb94d3a68cdf33f9c4"}
+            ]
           },
           {
             "name": "aji-trtrtx-windows-x64.zip",
-            "url": "https://github.com/the-database/animejanai-inference/releases/download/v0.24.0/aji-trtrtx-windows-x64.zip",
+            "url": "https://github.com/the-database/animejanai-inference/releases/download/v0.27.0/aji-trtrtx-windows-x64.zip",
             "platform": "windows-x64",
-            "role": "opt-in NVIDIA TensorRT-for-RTX backend overlay for the Windows Standard AnimeJaNai backend",
-            "consumedByApp": true,
-            "bytes": 95347435,
-            "sha256": "7b7b35c49d3d0bf8746b61a0137786adb6fe6d6fd1f4fae8f53e0b485d4141c3",
-            "contents": "Exactly 5 flat members, no directory and no symlink: aji_trtrtx.dll plus NVIDIA's proprietary tensorrt_rtx_1_7.dll and tensorrt_onnxparser_rtx_1_7.dll, with TensorRT-RTX-NOTICE.txt and TensorRT-RTX-Acknowledgements.txt.",
-            "members": [
-              {
-                "path": "aji_trtrtx.dll",
-                "bytes": 1634304,
-                "sha256": "53a1ac0d931f1973d6e6fe196a87e158648d66c954431dfe6ecb7ec47e85f458",
-                "imports": "tensorrt_rtx_1_7.dll, tensorrt_onnxparser_rtx_1_7.dll, MSVC runtime, KERNEL32 and Universal CRT API sets; it does not import cudart"
-              },
-              {
-                "path": "tensorrt_rtx_1_7.dll",
-                "bytes": 229312112,
-                "sha256": "7b8a06d4b66dfe7da7f1ff48a994ad9dcf107cd28b4822d6f25453528c0db6dd",
-                "licence": "NVIDIA proprietary under the NVIDIA TensorRT for RTX Software License Agreement"
-              },
-              {
-                "path": "tensorrt_onnxparser_rtx_1_7.dll",
-                "bytes": 2329200,
-                "sha256": "b38d00d107dae534f1fc855df5bc1a04fc0ae25135b5b10d17f9b30cc4c9c411",
-                "licence": "NVIDIA proprietary under the NVIDIA TensorRT for RTX Software License Agreement"
-              },
-              {
-                "path": "TensorRT-RTX-NOTICE.txt",
-                "bytes": 868,
-                "sha256": "da7aa4b4bba64232bb9e868c5899e14bd74e983c6f5df017febfe24f72e2b5e7",
-                "kind": "NVIDIA vendor notice; required, staged with the runtime"
-              },
-              {
-                "path": "TensorRT-RTX-Acknowledgements.txt",
-                "bytes": 107164,
-                "sha256": "611660ec0ae19c7b8df4a6442009c8bc85ba9e56d7d5ea042564841e72032d25",
-                "kind": "NVIDIA acknowledgements (LicenseRef-NvidiaProprietary with third-party licences reproduced by NVIDIA); required, staged with the runtime"
-              }
-            ],
-            "dispatcherSource": "The closure's aji.dll is not in this archive: it is taken byte-identically from assets[name=aji-windows-x64.zip] (143,872 bytes, SHA-256 76f3223c4e8828b2e1ec8d00d2df2b6fea63f6c67882dabd8b1315d18d32114d).",
-            "stagedClosure": "6 flat files in the app-owned per-machine store: aji.dll from the dispatcher archive plus all 5 members above. No classic aji_trt.dll, nvinfer/nvonnxparser/plugin DLL, CUDA pack, builder resource or trtexec is staged, and the released backend imports no cudart. Both NVIDIA notices are mandatory members.",
-            "acquisition": "Only after explicit user action (Components or the missing-downloads flow) into the per-machine component store; the combined missing-download total is 96,278,282 bytes for the dispatcher archive plus this overlay. It is not part of the base Windows installer or distribution, is not auto-downloaded at startup, and no file from it is bundled or publicly redistributed. The RTX root is rejected if it contains aji_trt.dll, so the upstream dispatcher cannot silently fall back to classic TensorRT there.",
-            "platformSupport": "Windows x64 only. There is no Linux RTX asset and the application does not offer one; a restored or imported Linux RTX request fails by name and is never clamped to TensorRT or DirectML.",
-            "boundary": "No redistribution clearance exists. aji_trtrtx.dll is covered by the unlicensed upstream inference source (ESC-1, redistribution blocked), while the two NVIDIA DLLs and both notices are governed by the NVIDIA TensorRT for RTX Software License Agreement and must be preserved with any locally acquired copy. Acquisition and local use do not grant public distribution rights."
+            "role": "full upstream RTX overlay; inspected but not acquired by this integration",
+            "consumedByApp": false,
+            "bytes": 95355953,
+            "sha256": "acdf52d9c63f34b1353f08b0511985ddb755bd61793e9a1ae65cbc3c5ba18625"
+          },
+          {
+            "name": "aji-encode-linux-x64.tar.zst",
+            "platform": "linux-x64",
+            "role": "unadopted offline encoder; metadata only, not downloaded, staged or shipped",
+            "consumedByApp": false,
+            "bytes": 79677668,
+            "sha256": "aaae0b9b8965e832c2526df1f5178e18b9604f5bd11f76ea994c5376d867fe3e",
+            "evidence": "GitHub release metadata, not a locally verified download"
           }
         ],
-        "assetDigestEvidence": "Each of the four assets was independently downloaded and SHA-256 measured in an owned temporary directory, and each archive was listed without executing anything. Archive bytes and digests match the published release metadata.",
-        "compatibility": "ABI 9 must not be paired with an ABI-8 mpv filter. The include/aji.h of this release is byte-identical to the v0.17.1 header (13,245 bytes, SHA-256 b17bc8ff3ab139624711aae8bb74e0c28194ec0ed1b020c9200c885437be0659), so the ABI-9 version field and struct layout are unchanged from v0.17.1. include/aji_image.h (8,910 bytes, SHA-256 cd8487a9b582b4c49b10231afef49996e0e5b09f87a02dd013cc6fdbda48901c) is a separate still-image ABI that this application does not consume. Release identity alone does not establish runtime compatibility or operation.",
-        "buildRecord": {
-          "statement": "docs/BUILD-WINDOWS.md and .github/workflows/build-linux.yml build against TensorRT 11.4.0.106 with CUDA 13.4, and the optional TensorRT-for-RTX backend against TRT-RTX 1.7.1.116.",
-          "implication": "This is the upstream build recipe. It is not evidence about what this application deploys: the pinned classic component packs remain TensorRT 11.3.0.99, aji_trt only imports nvinfer_11 symbols that every 11.x runtime exports, and the opt-in RTX overlay supplies NVIDIA's own TRT-RTX 1.7 runtime inside its release asset rather than a classic 11.4 pack. No claim that the upstream source build and the application runtime are the same version."
+        "assetDigestEvidence": "The two dispatcher archives, backend-only RTX archive and full RTX overlay were downloaded, independently SHA-256 checked and extracted in task-owned scratch space. Per-binary pins are compiled in AnimeJanaiInstallation.cpp. This is identity evidence, not GPU-inference or rights clearance.",
+        "sharedRuntime": {
+          "release": "runtime-2",
+          "indexEvidence": "animejanai-release.json",
+          "classicDeclaredVersion": "11.4.0.106-cuda13.4",
+          "rtxDeclaredVersion": "1.7.1.116-cuda13.4",
+          "minimumClassicComputeCapability": "7.5",
+          "layout": "App-owned dispatcher/backend/install.json/aji-runtime.json under native/components/aji/v0.27.0/<backend>; pinned NVIDIA packs and notices under the per-user the-database/aji store, retained by a live application reference.",
+          "verification": "The app-owned record verifies its own files. Shared .pack.json must match the complete compiled file inventory; manual/preparation verification re-hashes every shared file. Archive repacking alone does not invalidate unchanged pinned files.",
+          "boundary": "Declared pack versions come from the pinned upstream index; they are not an independent DLL product-version or GPU compatibility observation. The private Prepared Native store remains separate."
         },
-        "heavyRife": "The release still maps RIFE code 4262 to regular rife_v4.26; no heavy model graph and no heavy-capability export exists. Heavy RIFE remains unsupported.",
-        "redistribution": "blocked pending an upstream grant; release publication is not permission to redistribute",
-        "cohortBoundary": "This official release is separate from the historical v0.9.0 ref, mutable locally patched source inventory, and private ABI-8 MSVC build observations on this record. It is not their source identity. Existing v0.17.1 installs stay on disk as distinct records and are not treated as this release."
+        "sharedRuntimeManager": {
+          "project": "https://github.com/the-database/aji-runtime",
+          "tag": "v0.2.1",
+          "sourceCommit": "7d7a0ed386c3567d6979b401d4a42c04a50c2a08",
+          "licence": "Upstream supplies the GNU GPL version 3 LICENSE and Cargo.toml license-file declaration. The complete LICENSE is retained alongside the locally acquired executable. No new public payload or corresponding-source clearance is claimed.",
+          "windowsArchive": {"bytes": 1282779, "sha256": "f51a6c00134ee74e818a759ec4bee14594fd8ccbf7a9e31de5eeb6919c2c4d0b"},
+          "linuxArchive": {"bytes": 1477673, "sha256": "d596c211dfecdb2574a165834ee25f4b8d7424b9003740f98e19850a619479d7"},
+          "verification": "Both actual v0.2.1 executables passed eleven owned-fixture checks per platform: adoption, unchanged-inventory reuse without download, missing/stale app refs, unsupported GPU refusal, relocation, restoration and reference validity.",
+          "downloads": "Upstream connect/read timeouts and retries; the C++ wrapper also bounds ensure operations and requires both normal exit 0 and AJI_DONE. Move cannot be killed safely during relink and is allowed to finish during normal app shutdown."
+        },
+        "compatibility": "ABI 9 requires an ABI-9 mpv filter. The optional still-image ABI and encoder are not used. Release identity and metadata validation alone do not prove inference.",
+        "heavyRife": "RIFE code 4262 still resolves to regular rife_v4.26 and no heavy-capability export is supplied. Heavy RIFE remains explicitly unsupported.",
+        "redistribution": "blocked pending an upstream inference grant; NVIDIA notices and GPL obligations remain separate",
+        "cohortBoundary": "Historical v0.9.0, mutable local sources and private ABI-8 build observations below are unchanged. Older official installations remain distinct on disk and are not relabelled or pruned."
       },
       "windowsBuildRecord": {
         "file": "docs/BUILD-WINDOWS.md",

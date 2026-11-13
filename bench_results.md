@@ -23,6 +23,42 @@ Measured results from **Settings → Benchmark**, grouped by machine and model. 
 
 > **Workload limitation:** the historical clips are synthetic black-frame H.264 fixtures, not anime footage. These measurements describe that fixture workload; they are **not a guarantee of real-scene playback performance**. Black frames omit motion, scene changes, and real-scene complexity. A runtime refusal is not evidence that a GPU lacks performance or VRAM.
 
+## 2026-11-13 — AnimeJaNai 3.11.0 shared-runtime verification
+
+Windows x64 and Ubuntu 24.04 under WSL on the same RTX 5090 host, driver 616.92;
+pinned v0.27.0 dispatcher/backends and the runtime-2 shared packs acquired through
+the production installer and `aji-runtime`
+v0.2.1. Full file hashes and the live application ref were checked before inference.
+An unchanged installed closure queued no download.
+
+The official video-ABI harness processed two asymmetric 1920×1080 NV12 frames into
+3840×2160 frames using the pinned 2× AnimeJaNai HD V3.1 Balanced SPAN graph
+(SHA-256 `b308e93c3dda3c4f9f968295b2b7b8d1c0583a711bca53a08d51134d9d1cbd5c`).
+Each backend started with an empty
+model/engine and CUDA cache, then ran again in a fresh process.
+
+| Backend | Serialized engine bytes | Cold asynchronous preparation wait | Warm engine/build log |
+|---|---:|---:|---|
+| Windows classic TensorRT 11.4.0 | 2,168,404 | 30.884 s | Hashes and modification times unchanged |
+| Windows TensorRT-RTX (declared 1.7.1.116 pack) | 2,708,340 | 7.138 s | Hashes and modification times unchanged |
+| Linux/WSL classic TensorRT 11.4.0 | 7,290,380 | 16.233 s | Hashes and modification times unchanged |
+
+Cold/warm output hashes matched within each platform/backend; cross-backend and
+cross-platform numerical identity was not asserted. The RTX warm preparation wait
+was 0.560 s; classic TRT configured directly from its cached engine in 28.7 ms on
+Windows and 101.5 ms on Linux. These are distinct
+preparation paths, not pure compiler timings or a throughput comparison. The harness
+reported no timed device samples, so two frames do not establish sustained FPS.
+
+Evidence: `.probe-out/upstream-3.11.0/hardware-windows-{trt,rtx}/` and
+`hardware-linux-trt-fixed/` contain result JSON and cold/warm logs, including
+complete engine/output digests. Linux acquisition first exposed the host 7-Zip
+23.01 build's missing Zstd support; the corrected path bootstraps the pinned
+extractor instead of silently selecting that unsupported system binary. The borrowed
+source graph was read and copied into owned scratch; it was not modified.
+This proves actual engine serialization, GPU inference and cache reuse through the
+video ABI, not mpv frontend state transitions, RIFE inference, image quality or VRR.
+
 ## 2026-11-13 — TensorRT-RTX cold-build and cache verification
 
 Functional engine verification, not a Settings throughput sample or a change to the historical

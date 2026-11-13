@@ -16,8 +16,8 @@ public-release approval.
 | Player | A Qt Quick `PlayerWindow` and typed `PlayerController` use one `VideoSession`/libmpv core. PiP retains that session; episode, audio/subtitle, settings and right-click menus are in the Quick scene. | The Windows production-player probe exercised a synthetic local video, controls and close/reopen; Linux desktop parity and real provider playback were not established. |
 | Playback state | Watch history stores episode offsets; the Quick player queues a token-guarded resume offer. The AnimeJaNai reconfiguration path captures and restores the playhead and holds a picture during the transition. | The reported repeated resume prompt, black transition and playhead drift still need an end-to-end title-page/real-upscaler regression on this build, including paused and playing cases. Implementation is not proof that the report is resolved. |
 | Compare and Clip | Compare captures a held frame and renders candidate sides; Clip opens a separate seekable-media editor. | The Windows synthetic-video probe opened Clip and verified both Compare pictures and playback resume on close. It did not verify clip export, every Compare candidate or native model inference in Compare. |
-| Optional processing | Anime4K, Standard AnimeJaNai v0.24.0 and prepared Native workflows are separate. TensorRT for RTX is Windows-only; runtimes and models are acquired separately. | A recorded Windows RTX 5090 run built and loaded the 4× Real-ESRGAN AnimeVideo v3 fp32 engine; see below. This does not establish quality, throughput, every backend/model or Linux behavior. |
-| Settings and storage | Settings cover appearance, processing, components and benchmarks. Watch history and quality cache are local; native/model storage resolves through `MIKAI_NATIVE_ROOT`, a writable executable-adjacent store, then app-local data. | Existing settings, models and caches are not disposable test fixtures. See [architecture](architecture.md) and [building](building.md). |
+| Optional processing | Anime4K, Standard AnimeJaNai v0.27.0 / package 3.11.0 and prepared Native workflows are separate. TensorRT for RTX is Windows-only; runtimes and models are acquired separately. | The earlier RTX 5090 engine observations below belong to the previous runtime cohort, not an inference proof for the new pins. |
+| Settings and storage | Settings cover appearance, processing, components and benchmarks. Native/model storage follows `MIKAI_NATIVE_ROOT` → writable executable-adjacent store → app-local data. Standard TensorRT additionally uses the upstream shared per-user store and Components relocation controls. | Relocation moves shared runtime packs, not models/engines. Windows loaded DLLs can block a move; close other AI apps and restart first. Existing user stores are never test fixtures. |
 | Updates | In-app update notification, automatic updates and nightly builds remain listed in [TODO](../TODO.md). | These are planned items, not shipped updater guarantees. |
 
 ### November mpv input update
@@ -37,6 +37,43 @@ installer evidence. The upstream G-SYNC note describes `mpv.exe`; it does not pr
 same behavior in the Qt/libmpv window. Exact input hashes and remaining source/license
 obligations are in the [Windows](../packaging/provenance/windows-runtime.json) and
 [Linux](../packaging/provenance/linux-runtime.json) provenance ledgers.
+
+### AnimeJaNai 3.11.0 source integration
+
+The current source uses v0.27.0 ABI-9 shims, the 3.11.0 RIFE graph cohort,
+runtime-2 file inventories and aji-runtime v0.2.1. The five spatial graphs were
+downloaded from the new release source and still match their existing pins.
+
+Windows/MinGW and Linux/GCC development builds passed. Both `all_qmllint` targets
+completed without QML warnings after repairing the Quick verification targets and
+declaring target-derived module imports. Existing Linux `CrashLog.cpp` compiler
+overflow warnings remain; this is not a warning-free build claim.
+
+Ten focused checks passed on each platform: AnimeJaNai runtime/configuration,
+native components, RIFE pins, component state, downloads, layering, mpv async,
+native manifests, translation completeness and provenance. The focused Settings
+retranslation case also passed on each platform with the enhanced-scene edit
+preserved. The Ukrainian catalogue was refreshed and compiled with no unfinished
+messages.
+
+Actual Widgets surfaces passed 44 checks each on Windows and Linux/Xvfb:
+moving and restoring a shared runtime while preserving its 16 MiB payload size,
+refusing normal main-window close during relocation, and saving/reloading the
+independent per-chain experimental scene flag. Screenshots and JSON are under
+`.probe-out/upstream-3.11.0/ui-windows-fixed/` and `ui-linux-themed/`.
+Separate executions of each official v0.2.1 CLI passed eleven adoption, repack,
+reference, unsupported-GPU and relocation checks per platform.
+
+Production acquisition and full hash verification preceded real 1080p GPU runs:
+classic TensorRT on Windows and Linux/WSL, plus TensorRT-RTX on Windows. Each
+serialized an engine from an empty owned cache, produced 2× frames and reused the
+unchanged engine/build log in a fresh-process warm run with identical output.
+See the [hardware ledger](../bench_results.md#2026-11-13--animejanai-3110-shared-runtime-verification).
+These are video-ABI checks, not sustained throughput, end-to-end RIFE, bare-metal
+Linux desktop, Qt frontend inference-state or fullscreen VRR proof.
+
+The installer and portable receipts below predate this source integration.
+No rebuilt distribution or clean-machine installation is claimed for these updates.
 
 ### Current Windows review build and scoped checks
 
@@ -80,9 +117,9 @@ does not establish the frontend state machine, playback quality or sustained thr
 
 - Packages are unsigned. Linux builds also depend on compatible host graphics, audio, glibc and loader support; no package is universal.
 - Third-party corresponding-source, license and redistribution obligations remain unresolved. Both platform profiles in `packaging/third-party.json` retain `publicReleaseReady: false`; see [redistribution evidence](redistribution.md). Publication does not establish rights clearance or a passed release gate.
-- The native Quick player adds a Qt Declarative runtime/import closure (Qt Qml/Quick/QuickControls2, imported QML modules/styles and plugin dependencies). The Windows review build is not an installer or clean-machine test; no current Linux build/package, desktop-parity or full release gate is recorded. Earlier native core-only evidence is not a Quick frontend or package result.
-- The current CMake QML-lint target is blocked before linting by pre-existing C++ errors in `FullscreenStabilityProbe.cpp`, `NativeSettingsProbe.cpp` and `VideoScalingLiveProbe.cpp`. A direct QML lint run passed as described above; the full current test suite was not run.
-- `packaging/third-party.json` still describes the official AnimeJaNai cohort as v0.22.2 while the installation code pins v0.24.0. Reconcile the release provenance and rights evidence before treating the manifest as current; neither version is cleared for redistribution.
+- The native Quick player adds a Qt Declarative runtime/import closure (Qt Qml/Quick/QuickControls2, imported QML modules/styles and plugin dependencies). Development builds and focused checks above are not a current Linux package, clean-machine installation, desktop-parity or full release gate.
+- Broad suite attempts were not green and did not complete: Windows reported Quick rendering/foreground/tint assertions, missing benchmark fixtures, provider-URL expectations and packaging-fixture failures; Linux hit the 180-second launcher-contract deadline before interruption. The release-related RIFE/installation fixture mismatches found in those attempts were corrected and the focused checks above passed. No full-suite pass is claimed.
+- Standard AnimeJaNai provenance now records v0.27.0, package 3.11.0 and runtime-2 separately from historical private ABI-8 builds. Updated pins and local acquisition do not clear inference/model redistribution or GPL corresponding-source obligations.
 - Wayland compositors control window stacking, including the AnimeJaNai engine-build overlay.
 - A Windows 0.2.1 run reported `animejanai.build.pollRefused` shortly after a TensorRT background build started. The saved log does not establish why mpv refused the poll or whether the engine build itself failed; this remains unverified on hardware.
 

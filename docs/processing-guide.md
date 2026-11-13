@@ -78,7 +78,17 @@ Sharp selects the corresponding HD model variant; it does not replace the SD bra
 
 In a chain, **Enable ONNX upscale steps** toggles ONNX upscale steps only; it does not disable Anime4K steps. ONNX steps expose **Temporal window frames** (0 means detect the window from ONNX; 1 means a single frame; the tooltip recommends an odd number up to 15) and **Temporal scene threshold** (0 disables scene-cut protection). Anime4K steps do not show those ONNX temporal controls. The separate **Temporal fix ONNX model** field takes a registered ONNX model identifier; leave it empty to disable that fix. Its **Temporal fix scene threshold** is adjustable, and **Temporal fix before upscaling** controls its placement. Do not confuse these controls with the separate per-chain RIFE interpolation settings.
 
-The RIFE list includes **RIFE 4.26 Heavy**, but the official v0.22.2 runtime maps model code `4262` to `rife_v4.26`, not to the heavy graph, and does not report heavy support. A chain that selects the heavy label therefore fails preparation with “does not report support for the selected heavy RIFE model.” instead of quietly substituting another graph.
+**Enhanced scene detection (experimental)** is an independent per-chain RIFE option. It is off by default and catches some cuts missed by the standard threshold, at additional CPU cost. It is saved with the chain; it does not select another model or promise better interpolation on every scene.
+
+The RIFE list includes **RIFE 4.26 Heavy**, but the official v0.27.0 runtime still maps model code `4262` to `rife_v4.26`, not to the heavy graph, and does not report heavy support. A chain selecting Heavy fails preparation explicitly instead of substituting another graph.
+
+### Shared TensorRT storage
+
+Standard TensorRT backends use the upstream shared per-user store, retained by a live reference to this application. Classic TensorRT requires NVIDIA compute capability **7.5 or newer**. DirectML and the private Prepared Native workflow keep separate local closures.
+
+In **Settings → Components → Shared TensorRT storage**, use **Move to another drive…** or **Use default location**. Close other compatible AnimeJaNai applications first. On Windows, restart this app before moving a runtime used in the current session; loaded DLLs can prevent the move. The default path remains a managed junction/symlink, so backend mappings remain valid.
+
+Moving changes only shared runtime storage, not ONNX models or compiled engine caches. Once copying starts, it cannot be cancelled safely; normal app shutdown waits for completion. Do not disconnect either drive or force-terminate the process. No crash-recovery guarantee is claimed.
 
 ### Import an ONNX model
 
