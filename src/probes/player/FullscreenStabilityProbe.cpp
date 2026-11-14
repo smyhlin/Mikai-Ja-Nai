@@ -27,6 +27,7 @@
 #include <QOpenGLFunctions>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QSGRendererInterface>
 #include <QPointer>
 #include <QRunnable>
 #include <QScreen>
@@ -45,6 +46,7 @@
 #include <cstdio>
 #include <functional>
 #include <optional>
+#include <stdexcept>
 #include <utility>
 
 #include "ForegroundPeer.hpp"
@@ -489,16 +491,37 @@ int runQuickHoverCanary(mplayer::quick::PlayerController* controller, int second
                         const std::function<void(QJsonObject)>& record, QString* error) {
     auto* window = controller ? controller->window() : nullptr;
     auto* session = controller ? controller->session() : nullptr;
-    if (!window || !session || seconds < 30 || !waitForVideo(session, 20000) ||
-        !window->hasVisibleOutputFrame()) {
+    const bool videoReady = window && session && seconds >= 30 && waitForVideo(session, 20000);
+    if (videoReady) {
+        QElapsedTimer wait;
+        wait.start();
+        while (!window->hasVisibleOutputFrame() && wait.elapsed() < 20000) spinFor(25);
+    }
+    if (!videoReady || !window->hasVisibleOutputFrame()) {
         *error = QStringLiteral("Quick hover canary requires a presented video for at least 30 s");
-        record({{"event","hoverCanary"},{"result","INVALID"},{"reason",*error},
-                {"surfaceState",surfaceState(session)}});
+        QJsonObject startup{
+            {"event", "hoverCanary"},
+            {"result", "INVALID"},
+            {"reason", *error},
+            {"surfaceState", surfaceState(session)}};
+        if (window != nullptr) {
+            startup.insert("windowVisible", window->isVisible());
+            startup.insert("windowExposed", window->isExposed());
+            startup.insert("fullscreenIntent", window->fullscreenIntent());
+            startup.insert("sceneLoadError", window->property("probeSceneLoadError").toString());
+            startup.insert("playbackError", window->property("probePlaybackError").toString());
+        }
+        if (session != nullptr) {
+            startup.insert("sourceUrl", session->sourceUrl());
+            startup.insert("opening", session->isOpening());
+        }
+        record(startup);
         return 2;
     }
     const QString frameLog=QDir(outputPath).filePath(QStringLiteral("hover-canary-frame-timing.jsonl"));
     const QString closeLog=QDir(outputPath).filePath(QStringLiteral("hover-canary-close.jsonl"));
     QFile::remove(frameLog); QFile::remove(closeLog);
+    session->setDiagnosticsPolling(true);
     mplayer::VideoSession::setFrameTimingLogPath(frameLog);
     const quint64 epoch=session->sourceEpoch();
     const quint64 frames=session->playbackDiagnostics().renderedOutputFrames;
@@ -523,6 +546,71 @@ int runQuickHoverCanary(mplayer::quick::PlayerController* controller, int second
             QCoreApplication::sendEvent(window,&move); ++gestures;
         }
         spinFor(16); ++ticks;
+    }
+
+    // Keep ordinary playback and its GUI/gesture checks independent of the
+    // explicit pacing probe. Positive headroom makes NEXT_FRAME_INFO eligible.
+    const QString pacedLog=QDir(outputPath).filePath(
+        QStringLiteral("hover-canary-offset-pacing.jsonl"));
+    QFile::remove(pacedLog);
+    double originalTimingOffset=0.0;
+    bool offsetChanged=false;
+    QString pacingError;
+    auto* core=session->core();
+    try {
+        if(core==nullptr) throw std::runtime_error("mpv core unavailable");
+        originalTimingOffset=core->getNumber("video-timing-offset");
+        core->setNumber("video-timing-offset",0.05);
+        offsetChanged=true;
+        mplayer::VideoSession::setFrameTimingLogPath(pacedLog);
+        const quint64 pacedStartFrames=session->playbackDiagnostics().renderedOutputFrames;
+        QElapsedTimer pacedClock; pacedClock.start();
+        while(pacedClock.elapsed()<5000) {
+            controller->noteUserActivity();
+            if(window->width()>4 && window->height()>4) {
+                const QPoint p(window->width()/2,window->height()-qBound(2,window->height()/14,28));
+                QMouseEvent move(QEvent::MouseMove,QPointF(p),
+                    QPointF(window->mapToGlobal(p)),Qt::NoButton,Qt::NoButton,Qt::NoModifier);
+                QCoreApplication::sendEvent(window,&move);
+            }
+            spinFor(16);
+        }
+        if(session->playbackDiagnostics().renderedOutputFrames<=pacedStartFrames)
+            pacingError=QStringLiteral("offset pacing phase rendered no output frames");
+        core->setNumber("video-timing-offset",originalTimingOffset);
+        offsetChanged=false;
+    } catch(const std::exception& ex) {
+        pacingError=QStringLiteral("video-timing-offset probe failed: %1").arg(
+            QString::fromLocal8Bit(ex.what()));
+    }
+    if(offsetChanged) {
+        try {
+            core->setNumber("video-timing-offset",originalTimingOffset);
+            offsetChanged=false;
+        } catch(const std::exception& ex) {
+            pacingError+=QStringLiteral("; restoring video-timing-offset failed: %1").arg(
+                QString::fromLocal8Bit(ex.what()));
+        }
+    }
+    mplayer::VideoSession::setFrameTimingLogPath(frameLog);
+
+    CanaryLogSummary pacingSummary;
+    QFile pacedFile(pacedLog);
+    if(pacedFile.open(QIODevice::ReadOnly|QIODevice::Text)) {
+        while(!pacedFile.atEnd()) {
+            const QString line=QString::fromUtf8(pacedFile.readLine());
+            if(!line.startsWith(QLatin1String("paint "))) continue;
+            ++pacingSummary.paintLines;
+            const QString reason=canaryTokenWord(line,QStringLiteral("skip_reason="));
+            if(!canarySkipReasonExplained(reason)) ++pacingSummary.unknownReasons;
+            qint64 delay=-1;
+            if(canaryTokenInt(line,QStringLiteral("paint_delay_ms="),&delay)) {
+                if(delay>=0) { ++pacingSummary.pacedSamples; pacingSummary.delays.append(delay); }
+                else if(reason==QLatin1String("paced")) ++pacingSummary.pacedWithoutDelay;
+            }
+            if(canaryTokenInt(line,QStringLiteral("pause_held="),&delay)&&delay)
+                ++pacingSummary.pauseHeldLines;
+        }
     }
     CanaryLogSummary summary;
     QFile f(frameLog);
@@ -554,37 +642,51 @@ int runQuickHoverCanary(mplayer::quick::PlayerController* controller, int second
             }
         }
     }
-    const double p95=percentileMs(summary.delays,0.95);
-    const int unexplained=summary.unknownReasons+summary.pacedWithoutDelay+summary.pauseHeldLines;
-    const quint64 rendered=session->playbackDiagnostics().renderedOutputFrames-frames;
-    const bool advanced=summary.newFrameLines>=seconds&&rendered>0&&session->position()>startPosition;
-    const bool passed=summary.paintLines>0&&gestures>0&&advanced&&session->sourceEpoch()==epoch&&
-        maxGap<=250&&slow==0&&summary.chromeOnlyDisarms==0&&summary.pacedSamples>0&&
-        p95<=250.0&&unexplained==0;
+    const double p95=percentileMs(pacingSummary.delays,0.95);
+    const int unexplained=summary.unknownReasons+summary.pacedWithoutDelay+summary.pauseHeldLines+
+        pacingSummary.unknownReasons+pacingSummary.pacedWithoutDelay+pacingSummary.pauseHeldLines;
+    const quint64 framesEnd=session->playbackDiagnostics().renderedOutputFrames;
+    const quint64 rendered=framesEnd>=frames?framesEnd-frames:0;
+    const double endPosition=session->position();
+    const quint64 endEpoch=session->sourceEpoch();
+    const QJsonObject endState=surfaceState(session);
+    const bool advanced=summary.newFrameLines>=seconds&&rendered>0&&endPosition>startPosition;
+    const bool passed=summary.paintLines>0&&gestures>0&&advanced&&endEpoch==epoch&&
+        maxGap<=250&&slow==0&&summary.chromeOnlyDisarms==0&&
+        pacingSummary.pacedSamples>0&&p95<=250.0&&unexplained==0&&pacingError.isEmpty();
     mplayer::VideoSession::setFrameTimingLogPath(closeLog);
     spinFor(150);
     controller->requestClose(); spinFor(200);
     mplayer::VideoSession::setFrameTimingLogPath(QString());
-    if(!passed) *error=QStringLiteral("Quick hover canary did not satisfy playback/frame-timing criteria");
+    if(!passed) *error=pacingError.isEmpty()
+        ?QStringLiteral("Quick hover canary did not satisfy playback/frame-timing criteria")
+        :QStringLiteral("Quick hover canary failed: %1").arg(pacingError);
     record({{"event","hoverCanary"},{"result",passed?"PASS":"FAIL"},
         {"windowMs",clock.elapsed()},{"requestedSeconds",seconds},{"gestures",gestures},
         {"ticks",ticks},{"loopSeeks",loopSeeks},{"positionAtStart",startPosition},
-        {"positionAtEnd",session->position()},{"renderedOutputFrames",static_cast<qint64>(rendered)},
+        {"positionAtEnd",endPosition},{"renderedOutputFrames",static_cast<qint64>(rendered)},
         {"paintLines",summary.paintLines},{"newFramePaints",summary.newFrameLines},
         {"chromeOnlyDisarms",summary.chromeOnlyDisarms},{"frameOwningDisarms",summary.frameOwningDisarms},
-        {"pacedSamples",summary.pacedSamples},{"paintDelayP95BudgetMs",250},
-        {"paintDelayP95Ms",summary.pacedSamples?QJsonValue(p95):QJsonValue("unavailable")},
+        {"baselinePacedSamples",summary.pacedSamples},
+        {"offsetPacingSamples",pacingSummary.pacedSamples},
+        {"offsetPacingPaintLines",pacingSummary.paintLines},
+        {"offsetPacingDelayP95BudgetMs",250},
+        {"offsetPacingDelayP95Ms",pacingSummary.pacedSamples?QJsonValue(p95):QJsonValue("unavailable")},
+        {"videoTimingOffsetOriginal",originalTimingOffset},
+        {"videoTimingOffsetProbe",0.05},
+        {"baselineFrameTimingLog",frameLog},{"offsetPacingFrameTimingLog",pacedLog},
         {"unexplainedSkips",unexplained},{"maxGuiGapMs",maxGap},{"guiGapViolations",slow},
         {"sourceEpochStart",static_cast<qint64>(epoch)},
-        {"sourceEpochEnd",static_cast<qint64>(session->sourceEpoch())},
+        {"sourceEpochEnd",static_cast<qint64>(endEpoch)},
         {"frameTimingLog",frameLog},{"criteria",QJsonObject{{"measured",summary.paintLines>0},
-            {"playbackAdvanced",advanced},{"sourceStable",session->sourceEpoch()==epoch},
+            {"playbackAdvanced",advanced},{"sourceStable",endEpoch==epoch},
             {"guiGapBounded",maxGap<=250},{"chromeInteracted",gestures>0},
             {"noChromeOnlyDisarms",summary.chromeOnlyDisarms==0},
-            {"skipsExplained",unexplained==0},{"paintDelayWithinBudget",
-             summary.pacedSamples>0&&p95<=250.0}}},
-        {"surfaceAtEnd",surfaceState(session)},{"scope","real Quick QML input and live session sampling"},
-        {"error",*error}});
+            {"skipsExplained",unexplained==0},{"offsetPacingSamplesPresent",
+             pacingSummary.pacedSamples>0},{"offsetPacingDelayWithinBudget",
+             pacingSummary.pacedSamples>0&&p95<=250.0}}},
+        {"surfaceAtEnd",endState},{"scope","real Quick QML input and live session sampling"},
+        {"error",pacingError.isEmpty()?*error:pacingError}});
     return passed?0:1;
 }
 
@@ -1767,7 +1869,11 @@ int runQuickTransitionMode(mplayer::quick::PlayerController* controller, int sec
 } // namespace
 
 int main(int argc, char** argv) {
-    QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL);
+    // AA_UseDesktopOpenGL is equivalent to QT_OPENGL=desktop, so only apply
+    // the default request when the caller has not explicitly selected software.
+    if (qgetenv("QT_OPENGL").compare("software", Qt::CaseInsensitive) != 0)
+        QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL);
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
     QApplication app(argc,argv);
     app.setQuitOnLastWindowClosed(false);
     if(QCoreApplication::arguments().contains(QStringLiteral("--foreground-helper")))
@@ -1867,10 +1973,21 @@ int main(int argc, char** argv) {
     controller->applyAnime4KPreset(preset);
     auto* window=controller->window();
     if(window==nullptr) { delete controller; return 2; }
-    if(hoverCanary) {
-        window->setFlag(Qt::WindowDoesNotAcceptFocus,true);
-        controller->toggleFullscreen();
-        window->resize(960,540);
+    if (hoverCanary) {
+        QObject::connect(window, &mplayer::quick::PlayerWindow::sceneLoadFailed, window,
+                         [window](const QString& message) {
+                             window->setProperty("probeSceneLoadError", message);
+                         });
+        QObject::connect(controller->session(), &mplayer::VideoSession::errorOccurred, window,
+                         [window](const QString& message) {
+                             window->setProperty("probePlaybackError", message);
+                         });
+        window->setFlag(Qt::WindowDoesNotAcceptFocus, true);
+        // fullscreen_ defaults to true; toggling here actually switches the
+        // canary to windowed mode. Use the same presentation path as the other
+        // probe modes so the scene is shown before playback starts.
+        controller->showWindow();
+        window->resize(960, 540);
     } else {
         controller->showWindow();
         window->showFullscreen();

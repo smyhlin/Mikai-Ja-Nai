@@ -109,6 +109,10 @@ struct MpvVideoItemSharedState {
     /// wrapper outlives node replacements and mpv's callback must never reference a
     /// node that may already be deleted.
     std::atomic<bool> renderRequested{false};
+    /// Set only by the GUI pacing timer; consumed by the render pass released by
+    /// that timer, never by an unrelated scene-graph update.
+    std::atomic<bool> pacedReleasePending{false};
+    std::atomic<bool> pacingSlotArmed{false};
     /// The GL context that created the render wrapper has been destroyed. Set from
     /// the context's own aboutToBeDestroyed signal so the fact survives the node
     /// being deleted first.
@@ -300,6 +304,7 @@ Q_SIGNALS:
     void presented(quint64 serial, quint64 sourceEpoch, quint64 sessionStamp,
                    bool freshOutputFrame, bool heldPicture, bool reusedPicture);
     void factsChanged();
+    void pacingDelayRequested(int delayMs);
 
 private:
     bool releaseRenderContext();
@@ -721,6 +726,9 @@ void MpvVideoNode::renderFrame() {
         } else if (wasReady) {
             emit contextLost(commands.presentationPosition);
         }
+        state_->pacingSlotArmed.store(false);
+        state_->pacedReleasePending.store(false);
+        emit pacingDelayRequested(0);
         // The wrapper described an FBO that no longer exists.
         dropTextureWrapper();
         painted_ = false;
@@ -762,6 +770,28 @@ void MpvVideoNode::renderFrame() {
     if (passSnapshot.target.devicePixelSize.isValid() &&
         !passSnapshot.target.devicePixelSize.isEmpty()) {
         bridge_->ensureOutput(passSnapshot.target);
+    }
+
+    // Consume mpv's update callback before asking the bridge for its presentation
+    // slot. A delayed frame remains pending in the bridge and is rendered only
+    // after the GUI timer releases the corresponding window update.
+    if (!commands.refresh && !commands.landedEpoch)
+        bridge_->advanceRenderState(passSnapshot, passSnapshot.target.presentable);
+    const bool pacedRelease = state_->pacedReleasePending.exchange(false);
+    if (pacedRelease) bridge_->notePacedPaintStarted();
+    // The released frame already owns this render pass. Re-querying mpv here
+    // sees its target time at or just past the timer firing and clears the
+    // measurement window before the paint can report it.
+    const int delayMs =
+        pacedRelease && passSnapshot.target.presentable
+            ? 0
+            : bridge_->schedulePacedPaint(passSnapshot.target.presentable, 0, 0, 0);
+    if (delayMs >= 0) state_->pacingSlotArmed.store(delayMs > 0);
+    emit pacingDelayRequested(delayMs);
+    if (delayMs > 0 || (delayMs < 0 && state_->pacingSlotArmed.load())) {
+        restoreQtRenderTarget(entryBinding);
+        window_->endExternalCommands();
+        return;
     }
     // The pass always paints into the stable output. The output is offscreen, so
     // painting costs nothing a hidden or non-composited window can see, and it is
@@ -848,6 +878,14 @@ MpvVideoItem::MpvVideoItem(QQuickItem* parent)
     // While the window cannot composite, the item itself answers mpv's render
     // callbacks whenever the scene graph's GL work is on this thread.
     hiddenDrainTimer_.setInterval(16);
+    pacingTimer_.setSingleShot(true);
+    connect(&pacingTimer_, &QTimer::timeout, this, [this] {
+        if (!state_ || !window()) return;
+        state_->pacingSlotArmed.store(false);
+        state_->pacedReleasePending.store(true);
+        state_->renderRequested.store(true);
+        window()->update();
+    });
     hiddenDrainTimer_.setSingleShot(false);
     connect(&hiddenDrainTimer_, &QTimer::timeout, this, &MpvVideoItem::drainHiddenFrames);
     bridge_ = std::make_shared<VideoRenderBridge>();
@@ -862,6 +900,7 @@ MpvVideoItem::MpvVideoItem(QQuickItem* parent)
 
 MpvVideoItem::~MpvVideoItem() {
     hiddenDrainTimer_.stop();
+    pacingTimer_.stop();
     detachSession();
     // The scene-graph node owns the bridge for as long as it exists and frees the
     // render context from the scene graph's own teardown, with the creating
@@ -1393,6 +1432,16 @@ QSGNode* MpvVideoItem::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) {
                 Qt::QueuedConnection);
         connect(node, &MpvVideoNode::factsChanged, this, [this] { onNodeFactsChanged(); },
                 Qt::QueuedConnection);
+        connect(node, &MpvVideoNode::pacingDelayRequested, this, [this](int delayMs) {
+            if (!state_) return;
+            if (delayMs > 0) {
+                state_->pacingSlotArmed.store(true);
+                pacingTimer_.start(delayMs);
+            } else if (delayMs == 0) {
+                pacingTimer_.stop();
+                state_->pacingSlotArmed.store(false);
+            }
+        }, Qt::QueuedConnection);
     }
 
     RenderSnapshot snapshot;
@@ -1576,6 +1625,11 @@ void MpvVideoItem::itemChange(ItemChange change, const ItemChangeData& value) {
     QQuickItem::itemChange(change, value);
     switch (change) {
     case ItemSceneChange: {
+        pacingTimer_.stop();
+        if (state_) {
+            state_->pacingSlotArmed.store(false);
+            state_->pacedReleasePending.store(false);
+        }
         // Exposure and scene-graph lifetime belong to the window: presentability
         // and a pending context request change with them, and a recreated scene
         // graph must rebuild the node.
@@ -1612,6 +1666,11 @@ void MpvVideoItem::itemChange(ItemChange change, const ItemChangeData& value) {
 }
 
 void MpvVideoItem::releaseResources() {
+    pacingTimer_.stop();
+    if (state_) {
+        state_->pacingSlotArmed.store(false);
+        state_->pacedReleasePending.store(false);
+    }
     // The scene graph is being invalidated. The node - and with it the render
     // context - is destroyed by that teardown with the old context current; a
     // new node re-attaches the bridge to the recreated context. Nothing can be

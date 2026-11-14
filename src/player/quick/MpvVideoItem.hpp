@@ -200,6 +200,7 @@ private:
     bool renderErrorReported_ = false;
 
     QTimer hiddenDrainTimer_;
+    QTimer pacingTimer_;
     std::unique_ptr<QOffscreenSurface> hiddenDrainSurface_;
 };
 

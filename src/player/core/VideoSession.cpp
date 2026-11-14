@@ -452,6 +452,7 @@ void VideoSession::handleFramePresented(const PresentationReport& report) {
     // frame the viewer is not looking at.
     if (report.sourceEpoch != 0 && report.sourceEpoch != sourceEpoch()) return;
     ++presentedFrames_;
+    if (report.freshOutputFrame) ++diagnostics_.renderedOutputFrames;
     // A recreated renderer that has demonstrably delivered output needs no
     // reload. The pass serial is NOT proof on its own: with no video output mpv
     // still renders successfully (a VideoFrame pass with no update), which is a

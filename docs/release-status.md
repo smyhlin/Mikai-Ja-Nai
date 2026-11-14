@@ -141,7 +141,13 @@ These are not matched-DPR measurements and do not demonstrate a 30% reduction. T
 passed 24/24 load/context checks with zero black framebuffer samples; that is not desktop
 composition proof. The Windows audit's full CTest run passed 69 of 70 entries; the 30-second
 hover canary recorded 1,815 gestures and 726 new-frame paints but no paced-delay samples.
-Its pacing gate remains incomplete; these observations are not a desktop-composition claim.
+That historical pacing gate was incomplete; those observations are not a desktop-composition claim.
+
+Later software-OpenGL CI canaries passed with a 50 ms mpv timing offset in a separate phase:
+Windows recorded 32 paced samples at 31 ms p95, and Linux/Xvfb recorded 120 at 37 ms p95
+(250 ms budget). The normal-offset phases advanced playback but had no paced samples. These
+validate the timer handoff under that probe configuration, not normal-offset pacing or desktop
+composition. The Linux run used the locally cached older mpv runtime.
 
 The shared-sheet experiment (`659af02`, `99d7768`) was removed because hiding a neighboring
 control changed unchanged pixels at fractional DPR and the sheets bypassed the cache's 8 MiB

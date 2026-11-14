@@ -1125,7 +1125,6 @@ void VideoRenderBridge::clearPacingProfile() {
     profilePacingAwaitingPaint_ = false;
     profilePacingFired_ = false;
     profilePacingReason_ = "none";
-    if (mikai::gui::uiprofile::countersEnabled()) profileLastPaintDelayMs_ = -1;
 }
 
 // ── retained pictures ────────────────────────────────────────────────────
