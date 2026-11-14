@@ -426,6 +426,23 @@ bool ArtifactStore::isOwned(QString* reason) const {
     }
     const QString resolved = canonicalPath(root_);
     const QString compared = resolved.isEmpty() ? root_ : resolved;
+    // The process temporary directory is a test/probe allowance, not a blanket
+    // grant over app-managed stores that happen to live beneath it (common in
+    // Linux build trees). In particular, model files are never artifact-store
+    // data and must remain outside this store's writable/deletable boundary.
+    const QString modelsRoot = nativeSubdirectory(QStringLiteral("models"));
+    const QString canonicalModelsRoot = canonicalPath(modelsRoot);
+    const QString comparedModelsRoot =
+        canonicalModelsRoot.isEmpty() ? modelsRoot : canonicalModelsRoot;
+    if (pathWithinRoot(comparedModelsRoot, compared)) {
+      if (reason) {
+        setReason(reason, QStringLiteral("artifacts root %1 is inside the app-owned models "
+                                         "directory %2, so it cannot be used as an artifact "
+                                         "cache")
+                              .arg(compared, comparedModelsRoot));
+      }
+      return false;
+    }
     const bool underArtifacts = pathWithinRoot(artifactsRoot, compared);
     const bool underProbe = pathWithinRoot(probeRoot, compared);
     if (!underArtifacts && !underProbe) {
