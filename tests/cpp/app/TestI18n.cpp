@@ -16,6 +16,7 @@
 #include <native/components/AnimeJanaiRuntime.hpp>
 #include <native/models/NativeSpatialAssets.hpp>
 #include <native/prepare/NativePreparationContext.hpp>
+#include "../QuickPlayerTestSupport.hpp"
 #include "player/quick/PlayerController.hpp"
 #include "player/quick/PlayerWindow.hpp"
 #include "player/core/VideoSession.hpp"
@@ -1843,8 +1844,17 @@ void TestI18n::failureViewRephrasesOnlyItsOwnWordsAndKeepsBackendDetail() {
 }
 
 void TestI18n::playerQuickRetranslatesWithoutResettingPlayback() {
+  if (QGuiApplication::platformName() == QLatin1String("offscreen") ||
+      QGuiApplication::platformName() == QLatin1String("minimal")) {
+    QSKIP("Quick player video playback needs a real GL platform");
+  }
+
   QVERIFY2(primeBuiltCatalogForSwitching(),
            qPrintable(QStringLiteral("built Ukrainian catalog not found at: ") + builtCatalogPath()));
+
+  QString runtimeError;
+  QVERIFY2(mikai_test::quick::loadExplicitMpvRuntime(&runtimeError),
+           qPrintable(QStringLiteral("mpv runtime failed to load: ") + runtimeError));
 
   const QString fixture = QDir::toNativeSeparators(
       QStringLiteral(MIKAI_SOURCE_DIR "/resources/benchmarks/1920x1080.mp4"));
@@ -1852,7 +1862,14 @@ void TestI18n::playerQuickRetranslatesWithoutResettingPlayback() {
 
   mplayer::quick::PlayerController controller(QStringLiteral("Translation playback fixture"),
                                                fixture);
-  controller.showWindow();
+  auto* window = controller.window();
+  QVERIFY(window != nullptr);
+  window->resize(1000, 620);
+  window->showWindowed();
+  QVERIFY(QTest::qWaitForWindowExposed(window, 15000));
+  if (window->session() != nullptr) {
+    window->session()->waitForContext(20000);
+  }
   controller.startPlayer();
   mplayer::VideoSession* session = controller.session();
   QVERIFY(session != nullptr);
@@ -1869,7 +1886,8 @@ void TestI18n::playerQuickRetranslatesWithoutResettingPlayback() {
   QSignalSpy sourceEpochChanged(session, &mplayer::VideoSession::sourceEpochChanged);
   QObject* translatedControl = nullptr;
   const auto findTranslatedControl = [&translatedControl](QObject* object, const auto& self) -> void {
-    if (object->property("toolTip").toString() == QStringLiteral("Pause (Space)")) {
+    const QString toolTip = object->property("toolTip").toString();
+    if (toolTip == QStringLiteral("Pause (Space)") || toolTip == QStringLiteral("Play (Space)")) {
       translatedControl = object;
       return;
     }
