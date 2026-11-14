@@ -645,7 +645,7 @@ if(MIKAI_BUILD_PROBES)
       "$<TARGET_FILE_DIR:Qt6::Core>"
       "${MIKAI_TEST_QT_PLUGIN_DIR}"
       "${MIKAI_TEST_SCRATCH_ROOT}"
-      "${CMAKE_SOURCE_DIR}/tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4"
+      "${CMAKE_SOURCE_DIR}/tests/fixtures/media/cut_saturated_black_320x180_24fps_8bit_hevc.mp4"
       "30"
       "${CMAKE_BINARY_DIR}/_hover-canary"
       "off"

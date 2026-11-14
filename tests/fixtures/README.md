@@ -732,10 +732,13 @@ for a stop the native side named - so read `closeRefused` and `settleAbandoned` 
 GOAL-F/T-F4's regression net is a CTest entry, `HoverPlaybackCanary`. It runs the real
 `fullscreen_stability_probe --hover-canary` mode with the production Quick
 `PlayerController` and `PlayerWindow`: the `VideoSession` plays
-`media/motion_320x180_24fps_8bit_hevc.mp4` for a 30 s window while pointer gestures sweep the
-player scene. The probe selects the same Basic Quick Controls style as the application and
-initializes windowed presentation through the controller before starting playback. The verdict
-uses the session's frame-timing log plus pacing and chrome counters.
+`media/cut_saturated_black_320x180_24fps_8bit_hevc.mp4` for a 30 s window while pointer gestures
+sweep the player scene. This fixture has real AAC audio, played through mpv's timed null output
+so the clock requires no audio hardware. The null output is not its untimed benchmarking mode.
+Custom canary inputs must also contain audio to exercise this clock-driven pacing path.
+The probe selects the same Basic Quick Controls style as the application and initializes
+windowed presentation through the controller before starting playback. The verdict uses the
+session's frame-timing log plus pacing and chrome counters.
 
 ```bat
 cmake --build build/release --target fullscreen_stability_probe --parallel 4
@@ -761,9 +764,18 @@ What it gates, and nothing more:
   as `paintDelayP50Ms`/`paintDelayP95Ms`/`paintDelayMaxMs`/`paintDelayP95BudgetMs`; 250 ms is a
   conservative ceiling for a delay measured from timer arm to paint, not a new budget.
 
+After the normal-speed 30 s run, a separate 5 s phase selects audio timing, quarter-speed
+playback and 75 ms render-ahead to exercise real client pacing. mpv caps render-ahead by the
+frame interval; the 24 fps fixture otherwise leaves less than 42 ms, which software rendering
+can consume before scheduling. The phase loops within the same source near EOF and restores
+all three core options, even on failure. The verdict records the original settings and whether
+restoration succeeded. Display-sync modes ignore render-ahead, so the phase explicitly selects
+audio sync. The 75 ms offset remains below the scheduler's 100 ms future-target guard. The
+required paced samples and 250 ms p95 limit are unchanged.
+
 It does **not** observe desktop composition or move the system cursor: gestures are delivered
 to the `QQuickWindow` scene, and the player runs windowed with `WindowDoesNotAcceptFocus`.
-The tracked fixture is 12 s, so the 30 s window continues by seeking back inside the same source
+The tracked fixture is 6 s, so the 30 s window continues by seeking back inside the same source
 (no reload); `loopSeeks` records how many. A run whose platform is `offscreen`/`minimal`, or that has no
 GL context, refuses with exit 77 and the CTest entry declares `SKIP_RETURN_CODE 77`, so a missing
 display prerequisite shows as a skip, never as green. The Windows entry sets

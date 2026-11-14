@@ -549,24 +549,41 @@ int runQuickHoverCanary(mplayer::quick::PlayerController* controller, int second
         spinFor(16); ++ticks;
     }
 
-    // Keep ordinary playback and its GUI/gesture checks independent of the
-    // explicit pacing probe. Positive headroom makes NEXT_FRAME_INFO eligible.
+    // mpv caps render-ahead by the frame interval. Slow only this phase so a
+    // software renderer can expose a future deadline instead of always arriving late.
     const QString pacedLog=QDir(outputPath).filePath(
         QStringLiteral("hover-canary-offset-pacing.jsonl"));
     QFile::remove(pacedLog);
+    constexpr double pacingSpeed=0.25;
+    constexpr double pacingTimingOffset=0.075;
+    const std::string timingOffsetOption="video-timing-offset";
     double originalTimingOffset=0.0;
-    bool offsetChanged=false;
+    std::string originalVideoSync;
+    std::string pacingAudioOutput;
+    double originalSpeed=1.0;
+    bool pacingOptionsCaptured=false;
+    bool pacingOptionsRestored=false;
     QString pacingError;
     auto* core=session->core();
     try {
         if(core==nullptr) throw std::runtime_error("mpv core unavailable");
-        originalTimingOffset=core->getNumber("video-timing-offset");
-        core->setNumber("video-timing-offset",0.05);
-        offsetChanged=true;
+        originalTimingOffset=core->getNumber(timingOffsetOption);
+        originalVideoSync=core->getString("video-sync");
+        originalSpeed=core->getNumber("speed");
+        pacingOptionsCaptured=true;
+        core->setString("video-sync","audio");
+        pacingAudioOutput=core->getString("current-ao");
+        if(pacingAudioOutput!="null" || core->getFlag("options/ao-null-untimed"))
+            throw std::runtime_error("the pacing phase requires timed null audio output");
+        core->setNumber("speed",pacingSpeed);
+        core->setNumber(timingOffsetOption,pacingTimingOffset);
         mplayer::VideoSession::setFrameTimingLogPath(pacedLog);
         const quint64 pacedStartFrames=session->playbackDiagnostics().renderedOutputFrames;
         QElapsedTimer pacedClock; pacedClock.start();
         while(pacedClock.elapsed()<5000) {
+            if(session->duration()>3 && session->position()>session->duration()-2) {
+                session->seek(0.5); ++loopSeeks;
+            }
             controller->noteUserActivity();
             if(window->width()>4 && window->height()>4) {
                 const QPoint p(window->width()/2,window->height()-qBound(2,window->height()/14,28));
@@ -578,18 +595,33 @@ int runQuickHoverCanary(mplayer::quick::PlayerController* controller, int second
         }
         if(session->playbackDiagnostics().renderedOutputFrames<=pacedStartFrames)
             pacingError=QStringLiteral("offset pacing phase rendered no output frames");
-        core->setNumber("video-timing-offset",originalTimingOffset);
-        offsetChanged=false;
     } catch(const std::exception& ex) {
-        pacingError=QStringLiteral("video-timing-offset probe failed: %1").arg(
+        pacingError=QStringLiteral("offset pacing probe failed: %1").arg(
             QString::fromLocal8Bit(ex.what()));
     }
-    if(offsetChanged) {
+    if(pacingOptionsCaptured) {
         try {
-            core->setNumber("video-timing-offset",originalTimingOffset);
-            offsetChanged=false;
+            core->setNumber(timingOffsetOption,originalTimingOffset);
         } catch(const std::exception& ex) {
             pacingError+=QStringLiteral("; restoring video-timing-offset failed: %1").arg(
+                QString::fromLocal8Bit(ex.what()));
+        }
+        try {
+            core->setNumber("speed",originalSpeed);
+        } catch(const std::exception& ex) {
+            pacingError+=QStringLiteral("; restoring speed failed: %1").arg(
+                QString::fromLocal8Bit(ex.what()));
+        }
+        try {
+            core->setString("video-sync",originalVideoSync);
+            pacingOptionsRestored=
+                core->getNumber(timingOffsetOption)==originalTimingOffset &&
+                core->getNumber("speed")==originalSpeed &&
+                core->getString("video-sync")==originalVideoSync;
+            if(!pacingOptionsRestored)
+                pacingError+=QStringLiteral("; pacing options did not restore their original values");
+        } catch(const std::exception& ex) {
+            pacingError+=QStringLiteral("; restoring pacing options failed: %1").arg(
                 QString::fromLocal8Bit(ex.what()));
         }
     }
@@ -674,7 +706,11 @@ int runQuickHoverCanary(mplayer::quick::PlayerController* controller, int second
         {"offsetPacingDelayP95BudgetMs",250},
         {"offsetPacingDelayP95Ms",pacingSummary.pacedSamples?QJsonValue(p95):QJsonValue("unavailable")},
         {"videoTimingOffsetOriginal",originalTimingOffset},
-        {"videoTimingOffsetProbe",0.05},
+        {"videoTimingOffsetProbe",pacingTimingOffset},
+        {"pacingSpeedOriginal",originalSpeed},{"pacingSpeedProbe",pacingSpeed},
+        {"pacingVideoSyncOriginal",QString::fromStdString(originalVideoSync)},
+        {"pacingVideoSyncProbe","audio"},{"pacingOptionsRestored",pacingOptionsRestored},
+        {"pacingAudioOutput",QString::fromStdString(pacingAudioOutput)},
         {"baselineFrameTimingLog",frameLog},{"offsetPacingFrameTimingLog",pacedLog},
         {"unexplainedSkips",unexplained},{"maxGuiGapMs",maxGap},{"guiGapViolations",slow},
         {"sourceEpochStart",static_cast<qint64>(epoch)},
@@ -1998,6 +2034,21 @@ int main(int argc, char** argv) {
         window->showFullscreen();
     }
     controller->startPlayer();
+    if(hoverCanary) {
+        try {
+            auto* core=controller->session()->core();
+            if(core==nullptr) throw std::runtime_error("mpv core unavailable");
+            core->setFlag("options/ao-null-untimed",false);
+            core->setString("audio-device","null/");
+        } catch(const std::exception& ex) {
+            record({{"event","hoverCanary"},{"result","INVALID"},
+                    {"reason",QStringLiteral("could not configure the timed audio clock: %1")
+                        .arg(QString::fromLocal8Bit(ex.what()))}});
+            controller->requestClose();
+            delete controller;
+            return 2;
+        }
+    }
     if(!hoverCanary) {
         window->showFullscreen();
         window->raiseWindow();
