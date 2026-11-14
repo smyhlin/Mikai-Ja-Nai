@@ -4,9 +4,10 @@
 #include "MpvApi.hpp"
 #include "MpvHandle.hpp"
 #include "PlayerController.hpp"
+#include "player/quick/ClipSelection.hpp"
 
 #include <QApplication>
-#include <QDialog>
+#include <QWindow>
 
 #include <QDir>
 #include <QFile>
@@ -468,20 +469,75 @@ bool TestClipExport::requireRuntime() {
     return false;
 }
 
+void TestClipExport::clipSelectionNeverEscapesTheSourceOrExceedsOneMinute() {
+    using namespace mplayer::quick;
+    auto selection = initialClipSelection(1800.0, 900.0);
+    QVERIFY(selection.valid());
+    QCOMPARE(selection.windowStart, 780.0);
+    QCOMPARE(selection.windowEnd, 1020.0);
+    selection = boundedClipSelection(selection, -1000.0, 9000.0);
+    QVERIFY(selection.valid());
+    QCOMPARE(selection.start, 780.0);
+    QCOMPARE(selection.length(), 60.0);
+    selection = initialClipSelection(4.0, 3.9);
+    QVERIFY(selection.valid());
+    selection = boundedClipSelection(selection, -1.0, 100.0);
+    QCOMPARE(selection.start, 0.0);
+    QCOMPARE(selection.end, 4.0);
+    QVERIFY(!initialClipSelection(0.05, 0.0).valid());
+}
+
+void TestClipExport::movingTheClipPreservesItsDurationAtBothWindowEdges() {
+    using namespace mplayer::quick;
+    const auto initial = initialClipSelection(1800.0, 900.0);
+    const auto last = shiftedClipSelection(initial, 10000.0);
+    QCOMPARE(last.end, initial.windowEnd);
+    QCOMPARE(last.length(), initial.length());
+    const auto first = shiftedClipSelection(last, -20000.0);
+    QCOMPARE(first.start, initial.windowStart);
+    QCOMPARE(first.length(), initial.length());
+    QVERIFY(first.valid());
+    QCOMPARE(first.windowEnd, initial.windowEnd);
+}
+
+void TestClipExport::crossingAnEditedBoundaryKeepsTheRequestedBoundary() {
+    using namespace mplayer::quick;
+    const auto initial = initialClipSelection(120.0, 40.0);
+    const auto start = boundedClipSelection(initial, 70.0, initial.end, ClipBoundary::Start);
+    QCOMPARE(start.start, 70.0);
+    QVERIFY(start.end > start.start);
+    QVERIFY(start.valid());
+    const auto end = boundedClipSelection(start, start.start, 10.0, ClipBoundary::End);
+    QCOMPARE(end.end, 10.0);
+    QVERIFY(end.start < end.end);
+    QVERIFY(end.valid());
+}
+
+void TestClipExport::nonFiniteEditsLeaveTheClipSelectionUnchanged() {
+    using namespace mplayer::quick;
+    const auto initial = initialClipSelection(120.0, 40.0);
+    const auto nan = std::numeric_limits<double>::quiet_NaN();
+    const auto edited = boundedClipSelection(initial, nan, 90.0);
+    QCOMPARE(edited.start, initial.start);
+    QCOMPARE(edited.end, initial.end);
+    const auto moved = shiftedClipSelection(initial, std::numeric_limits<double>::infinity());
+    QCOMPARE(moved.start, initial.start);
+    QCOMPARE(moved.end, initial.end);
+    QVERIFY(!initialClipSelection(nan, 0.0).valid());
+}
+
 void TestClipExport::rejectsCutMomentWhenThereIsNoVideoTimeline() {
     mplayer::quick::PlayerController controller(QStringLiteral("Clip test"),
                                                 QStringLiteral("unused.mp4"));
     QVERIFY(!controller.hasVideo());
     QVERIFY(!std::isfinite(controller.duration()) || controller.duration() <= 0.0);
-    controller.openClipDialog();
+    controller.openClipWindow();
 
     QCOMPARE(controller.statusText(),
              QStringLiteral("A seekable video timeline is not available"));
-    const auto dialogs = QApplication::topLevelWidgets();
-    for (QWidget* widget : dialogs) {
-        if (widget->objectName() == QStringLiteral("clipDialog")) {
-            QFAIL("Cut moment created a dialog without a video timeline");
-        }
+    for (QWindow* window : QGuiApplication::topLevelWindows()) {
+        if (window->objectName() == QStringLiteral("clipWindow"))
+            QFAIL("Cut moment opened without a video timeline");
     }
 }
 

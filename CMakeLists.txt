@@ -256,7 +256,6 @@ set(PLAYER_SOURCES
   src/player/shell/OpenSubtitlesClient.cpp
   src/player/shell/OpenSubtitlesClient.hpp
   src/player/shell/ClipExport.cpp
-  src/player/shell/ClipDialog.cpp
   src/player/shell/MediaInformationDialog.cpp
   src/player/shell/MediaInformationPresentation.cpp
   src/player/shell/MediaInformationTree.cpp
@@ -300,7 +299,6 @@ set(PLAYER_HEADERS
   src/player/shell/FramePreviewService.hpp
   src/player/shell/HoverPreview.hpp
   src/player/shell/ClipExport.hpp
-  src/player/shell/ClipDialog.hpp
   src/player/shell/MediaInformationDialog.hpp
   src/player/shell/MediaInformationPresentation.hpp
   src/player/shell/MediaInformationTree.hpp
@@ -401,6 +399,8 @@ set(MIKAI_PLAYER_QML_FILES
   "${CMAKE_CURRENT_SOURCE_DIR}/src/player/quick/qml/HoverPreview.qml"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/player/quick/qml/PlayerDialogs.qml"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/player/quick/qml/PreparationView.qml"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/player/quick/qml/ClipView.qml"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/player/quick/qml/ClipTimeline.qml"
 )
 foreach(_mikai_player_qml IN LISTS MIKAI_PLAYER_QML_FILES)
   get_filename_component(_mikai_player_qml_alias "${_mikai_player_qml}" NAME)
@@ -434,6 +434,12 @@ block()
       src/player/quick/PlayerWindow.cpp
       src/player/quick/PreparationWindow.hpp
       src/player/quick/PreparationWindow.cpp
+      src/player/quick/ClipSelection.hpp
+      src/player/quick/ClipSelection.cpp
+      src/player/quick/ClipController.hpp
+      src/player/quick/ClipController.cpp
+      src/player/quick/ClipWindow.hpp
+      src/player/quick/ClipWindow.cpp
     QML_FILES ${MIKAI_PLAYER_QML_FILES}
     IMPORTS QtQuick
   )

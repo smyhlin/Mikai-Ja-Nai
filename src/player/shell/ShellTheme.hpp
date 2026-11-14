@@ -87,6 +87,19 @@ signals:
 };
 
 AccentNotifier& accentNotifier();
+
+class CornerRadiusNotifier : public QObject {
+    Q_OBJECT
+
+public:
+    using QObject::QObject;
+
+signals:
+    void changed(double previous);
+};
+
+CornerRadiusNotifier& cornerRadiusNotifier();
+
 /// The player's corner radius, in logical pixels, in the same push model as
 /// accent(): the application owns the customization step and pushes the
 /// resolved token in before a player window is built. Panels and steppers read

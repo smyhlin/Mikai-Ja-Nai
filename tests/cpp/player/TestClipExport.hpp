@@ -12,6 +12,10 @@ private:
 private slots:
     void initTestCase();
     void rejectsNonFiniteAndInvalidRanges();
+    void clipSelectionNeverEscapesTheSourceOrExceedsOneMinute();
+    void movingTheClipPreservesItsDurationAtBothWindowEdges();
+    void crossingAnEditedBoundaryKeepsTheRequestedBoundary();
+    void nonFiniteEditsLeaveTheClipSelectionUnchanged();
     void rejectsCutMomentWhenThereIsNoVideoTimeline();
     void videoOnlySourceProducesBoundedPlayableMp4();
     void aacSourcePreservesAudio();

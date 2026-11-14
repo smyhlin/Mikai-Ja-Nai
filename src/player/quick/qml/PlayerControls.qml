@@ -275,7 +275,7 @@ Item {
                         enabled: root.controller.hasVideo
                         onClicked: {
                             root.controller.noteUserActivity()
-                            root.controller.openClipDialog()
+                            root.controller.openClipWindow()
                         }
                     }
 

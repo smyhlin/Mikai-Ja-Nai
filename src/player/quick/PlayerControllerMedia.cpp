@@ -5,7 +5,7 @@
 
 #include "../compare/CompareWindow.hpp"
 #include "../core/VideoSession.hpp"
-#include "../shell/ClipDialog.hpp"
+#include "ClipWindow.hpp"
 #include "../shell/FramePreviewService.hpp"
 #include "../shell/MediaInformationDialog.hpp"
 #include "../shell/OpenSubtitlesClient.hpp"
@@ -890,10 +890,6 @@ void PlayerController::finishCompareLoading() {
 
 // ── Clip ─────────────────────────────────────────────────────────────────
 
-void PlayerController::openClipDialog() {
-    openClipWindow();
-}
-
 void PlayerController::openClipWindow() {
     if (closed_ || session_ == nullptr || !session_->hasVideo() ||
         !std::isfinite(session_->duration()) || session_->duration() <= 0.0) {
@@ -901,21 +897,20 @@ void PlayerController::openClipWindow() {
         return;
     }
     if (clipWindow_ != nullptr) {
-        clipWindow_->show();
-        clipWindow_->raise();
-        clipWindow_->activateWindow();
+        clipWindow_->present();
         return;
     }
-    auto* dialog = new shell::ClipDialog(session_, caption_);
-    dialog->setAttribute(Qt::WA_DeleteOnClose, true);
-    connect(dialog, &QDialog::finished, this, [this, dialog] {
-        if (clipWindow_ == dialog) clipWindow_.clear();
+    auto* clip = new ClipWindow(this, window_.get());
+    clipWindow_ = clip;
+    connect(clip, &ClipWindow::dismissed, this, [this, clip] {
+        if (clipWindow_ == clip) clipWindow_.clear();
+        clip->deleteLater();
     });
-    attachAuxiliaryTransient(dialog);
-    clipWindow_ = dialog;
-    dialog->show();
-    dialog->raise();
-    dialog->activateWindow();
+    if (!clip->present()) {
+        clipWindow_.clear();
+        clip->deleteLater();
+        flashStatus(tr("The clip editor could not be opened."), true);
+    }
 }
 
 // ── tracks ───────────────────────────────────────────────────────────────

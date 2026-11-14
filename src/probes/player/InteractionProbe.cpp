@@ -481,7 +481,7 @@ int runDefault(const QString& url) {
         for (int row = 0; pictureModel && row < pictureModel->rowCount(); ++row) {
             const auto action = pictureModel->row(row).action;
             hasCapture = hasCapture || action == PlayerMenuModel::Action::CaptureFrame;
-            hasClip = hasClip || action == PlayerMenuModel::Action::OpenClipDialog;
+            hasClip = hasClip || action == PlayerMenuModel::Action::OpenClipWindow;
         }
         check(hasCapture && hasClip,
               QStringLiteral("picture menu exposes its production capture and clip actions"));

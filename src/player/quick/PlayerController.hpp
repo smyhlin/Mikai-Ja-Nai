@@ -54,6 +54,7 @@ namespace quick {
 
 class PlayerWindow;
 class PreparationWindow;
+class ClipWindow;
 
 class PlayerController : public QObject {
     Q_OBJECT
@@ -347,7 +348,7 @@ public:
     Q_INVOKABLE void copyMediaLink();
     Q_INVOKABLE void openContainingFolder();
     Q_INVOKABLE void openMediaInformation();
-    Q_INVOKABLE void openClipDialog();
+    Q_INVOKABLE void openClipWindow();
     Q_INVOKABLE void applyAnime4KPreset(const QString& presetId);
     Q_INVOKABLE void openEnhancementSettings();
     Q_INVOKABLE void activateSkipOffer(int row);
@@ -661,7 +662,6 @@ private:
     void openMediaInformationWindow();
     void closeMediaInformation();
     void openCompareWindow();
-    void openClipWindow();
 
     void openSubtitlesSearchDialog();
     void applySubtitleSearchReply(const QVariantMap& reply, const QString& apiKey);
@@ -763,7 +763,7 @@ private:
     bool directMedia_ = false;
 
     QPointer<QWidget> compareWindow_;
-    QPointer<QWidget> clipWindow_;
+    QPointer<ClipWindow> clipWindow_;
     QPointer<QWidget> mediaInformationWindow_;
 
     PlayerMenuModel* pictureMenu_ = nullptr;

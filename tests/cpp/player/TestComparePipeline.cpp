@@ -6,7 +6,7 @@
 #include "player/compare/CompareWindow.hpp"
 #include "player/quick/PlayerController.hpp"
 #include "player/quick/PlayerWindow.hpp"
-#include "player/shell/ClipDialog.hpp"
+#include "player/quick/ClipWindow.hpp"
 #include "player/shell/MediaInformationDialog.hpp"
 #include "../QuickPlayerTestSupport.hpp"
 
@@ -232,7 +232,7 @@ void TestComparePipeline::controllerDestructionClosesAuxiliariesBeforeReleasingS
     QVERIFY(session != nullptr);
     QPointer<mplayer::VideoSession> guardedSession(session);
     QPointer<mplayer::shell::CompareWindow> compare;
-    QPointer<QWidget> clip;
+    QPointer<mplayer::quick::ClipWindow> clip;
     QPointer<QWidget> information;
     bool compareReleasedBeforeSession = false;
     bool clipClosedBeforeSession = false;
@@ -247,22 +247,23 @@ void TestComparePipeline::controllerDestructionClosesAuxiliariesBeforeReleasingS
                              15000);
 
     controller->openMediaInformation();
-    controller->openClipDialog();
+    controller->openClipWindow();
     controller->openCompare();
     QTRY_VERIFY_WITH_TIMEOUT([&] {
         for (QWidget* window : QApplication::topLevelWidgets()) {
             if (auto* candidate = qobject_cast<mplayer::shell::CompareWindow*>(window)) {
                 compare = candidate;
-            } else if (window->objectName() == QStringLiteral("clipDialog")) {
-                clip = window;
             } else if (window->objectName() == QStringLiteral("playerMediaInformation")) {
                 information = window;
             }
         }
+        for (QWindow* window : QGuiApplication::topLevelWindows()) {
+            if (auto* candidate = qobject_cast<mplayer::quick::ClipWindow*>(window)) clip = candidate;
+        }
         return compare != nullptr && clip != nullptr && information != nullptr;
     }(), 15000);
-    QObject::connect(qobject_cast<QDialog*>(clip.data()), &QDialog::finished, qApp,
-                     [&](int) { clipClosedBeforeSession = guardedSession != nullptr; });
+    QObject::connect(clip, &mplayer::quick::ClipWindow::dismissed, qApp,
+                     [&] { clipClosedBeforeSession = guardedSession != nullptr; });
     QObject::connect(qobject_cast<QDialog*>(information.data()), &QDialog::finished, qApp,
                      [&](int) { informationClosedBeforeSession = guardedSession != nullptr; });
 

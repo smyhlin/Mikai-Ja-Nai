@@ -84,10 +84,19 @@ QColor inkOn(const QColor& background) {
     return onBlack >= onWhite ? QColor(Qt::black) : QColor(Qt::white);
 }
 
+CornerRadiusNotifier& cornerRadiusNotifier() {
+    static CornerRadiusNotifier notifier;
+    return notifier;
+}
+
 double cornerRadius() { return cornerRadiusStorage(); }
 
 void setCornerRadius(double radius) {
-    if (radius >= 0.0) cornerRadiusStorage() = radius;
+    if (radius < 0.0) return;
+    const double previous = cornerRadiusStorage();
+    if (std::abs(previous - radius) < 0.001) return;
+    cornerRadiusStorage() = radius;
+    Q_EMIT cornerRadiusNotifier().changed(previous);
 }
 
 namespace {

@@ -821,57 +821,43 @@ fetch), so re-running a probe against a fixture whose 404 was already consumed
 replays bytes where the contract promises a failure.
 ### Cut moment UI and source-backed export probe
 
-`clip_probe` is an explicit `EXCLUDE_FROM_ALL` desktop probe. It opens the
-project-owned AAC source `media/cut_saturated_black_320x180_24fps_8bit_hevc.mp4`
-in the real player, clicks its Cut moment action, captures compact and wide
-dialog screenshots, drives the typed range and timeline handle, selects a
-quality, plays the independent source preview, and automates the dialog's real
-Save action to retain an MP4. It repeats a real export from a loopback-only HTTP
-server and checks that the configured `Accept-Language: uk-UA` request header
-arrived. It also cancels an export over the retained local MP4, checks that its
-bytes remain unchanged, and replaces the source while the dialog is open
-to check stale export is disabled.
+`clip_probe` is an explicit `EXCLUDE_FROM_ALL` desktop probe of the production
+QML editor. It opens a project-owned local video through `PlayerController`,
+then checks decoded still/filmstrip frames, independent video playback and
+audio mute, duration presets, the short-selection span grip, scrubbing without
+retargeting the export interval, live corner radii and compact/wide layouts.
+An optional real Ukrainian catalogue checks that retranslation preserves edits.
 
-The probe uses the Standard runtime selection without changing the installed
-runtime. Its Qt settings are redirected to a temporary directory. Use a fresh,
-owned output directory: the two real MP4 exports are retained, along with six
-PNG captures (compact and wide for local, HTTP-cancel and HTTP runs), the
-pre-existing local MP4 preserved by the canceled replacement, and the evidence JSON.
-Exit status is 0 only when the probe checks pass; a watchdog expiration returns
-3. The evidence reports exact check/failure counts. Its scope is UI/lifecycle and
-actual export completion, not throughput or visual quality. Independently
-inspect the selected decoded range with the parent's `ffprobe` workflow; byte
-equality with the encoded output is not expected.
+It drives the actual asynchronous QML file picker, rejects an existing-file
+replacement and checks the original bytes, then exports a new MP4 through the
+real `ClipExport` worker. Source replacement must retire the clip window while
+leaving the main player open. JSON, screenshots and the encoded MP4 remain in
+the named output directory. No HTTP, throughput, native processing or visual
+quality claim follows from this probe; the `TestClipExport` suite separately
+covers audio selection, playable output, cancellation and atomic publication.
+
+Run only through `mikai_test_launcher`, which stages an empty owned native
+store and the explicit playback runtime. The probe redirects its settings and
+forces Qt's non-native QML picker so the file-dialog path is exercised on both
+platforms. It never mutates an installed native/model store.
 
 ```powershell
-cmake --build build/release --target clip_probe
-$out = (Join-Path $PWD '.probe-out/clip-run')
-New-Item -ItemType Directory -Force $out | Out-Null
-$fixture = (Resolve-Path 'tests/fixtures/media/cut_saturated_black_320x180_24fps_8bit_hevc.mp4').Path
-$env:MIKAI_MPV_MODULE = (Resolve-Path 'build/release/mpv/libmpv-2.dll').Path
-& (Resolve-Path 'build/release/clip_probe.exe').Path `
-  --fixture $fixture `
-  --output-dir $out `
-  --evidence (Join-Path $out 'clip-probe-evidence.json') `
-  --watchdog-ms 240000
-if ($LASTEXITCODE -ne 0) { throw "clip_probe failed: $LASTEXITCODE" }
+$qt = 'C:/temp/qt6/6.12.0/mingw_64'
+$env:PATH = "$qt/bin;C:/temp/w64dev/w64devkit/bin;$env:PATH"
+cmake --build build/release --target clip_probe --parallel 4
+$out = Join-Path $PWD '.probe-out/clip-qml-windows'
+.\build\release\mikai_test_launcher.exe `
+  (Resolve-Path build/release/clip_probe.exe).Path `
+  (Resolve-Path build/release/shaders).Path `
+  (Resolve-Path build/release/mpv/libmpv-2.dll).Path `
+  "$qt/bin" "$qt/plugins" "$PWD/build/release/_test-runs" `
+  (Resolve-Path tests/fixtures/media/cut_saturated_black_320x180_24fps_8bit_hevc.mp4).Path `
+  $out (Resolve-Path build/release/mikai_uk.qm).Path
 ```
 
-For Linux, build `clip_probe` from the Linux preset, then run from a native
-desktop session (`xcb` or `wayland`) with the Standard module path:
-
-```bash
-cmake --build build/linux-release --target clip_probe
-out="$(pwd)/.probe-out/clip-run"
-mkdir -p "$out"
-export MIKAI_MPV_MODULE=/absolute/path/to/standard/libmpv.so.2
-QT_QPA_PLATFORM=xcb build/linux-release/clip_probe \\
-  --fixture "$(realpath tests/fixtures/media/cut_saturated_black_320x180_24fps_8bit_hevc.mp4)" \\
-  --output-dir "$out" --evidence "$out/clip-probe-evidence.json" --watchdog-ms 240000
-```
-
-Do not set `MIKAI_PROBE_BUNDLE`; the probe refuses a non-Standard bundle
-selection. `ProbeIsolation` runs a copied executable with an empty, owned
-executable-local native store and redirected app-local state; the named
-Standard mpv module is only read. No external network is used; HTTP export
-traffic is confined to the probe's ephemeral loopback port.
+For Linux, build the same target and use the configured launcher arguments
+from CTest (Qt library directory, plugin directory and private mpv closure).
+Run on a real desktop or under Xvfb with `QT_QPA_PLATFORM=xcb`; the offscreen
+plugin cannot prove the native OpenGL video surface. Forward the local media
+path, absolute output directory and optional compiled catalogue after the
+launcher options. Exit status is zero only when every recorded check passes.

@@ -1,4 +1,5 @@
 #include "PlayerController.hpp"
+#include "ClipWindow.hpp"
 
 #include "PlayerMenuModel.hpp"
 #include "PlayerWindow.hpp"
@@ -286,10 +287,10 @@ void PlayerController::connectSession() {
         }
         hoverPreviewPrewarmEpoch_ = 0;
         if (compareLoadingActive_) finishCompareLoading();
-        if (clipWindow_ != nullptr) {
-            clipWindow_->close();
-            clipWindow_->deleteLater();
+        if (ClipWindow* clip = clipWindow_.data()) {
             clipWindow_.clear();
+            clip->close();
+            clip->deleteLater();
         }
         if (mediaInformationWindow_ != nullptr) mediaInformationWindow_->close();
         if (session_ != nullptr) {
@@ -390,6 +391,8 @@ void PlayerController::connectWindow() {
 void PlayerController::connectTheme() {
     connect(&shell::accentNotifier(), &shell::AccentNotifier::changed, this,
             [this](const QColor&) { publishTheme(); });
+    connect(&shell::cornerRadiusNotifier(), &shell::CornerRadiusNotifier::changed, this,
+            [this](double) { publishTheme(); });
 }
 
 void PlayerController::publishTheme() {
@@ -1278,10 +1281,12 @@ void PlayerController::closeAuxiliaryWindows() {
         compare->close();
         delete compare;
     }
-    if (clipWindow_ != nullptr) {
-        clipWindow_->close();
-        clipWindow_->deleteLater();
-        clipWindow_.clear();
+    ClipWindow* clip = clipWindow_.data();
+    clipWindow_.clear();
+    if (clip != nullptr) {
+        disconnect(clip, nullptr, this, nullptr);
+        clip->close();
+        delete clip;
     }
     if (mediaInformationWindow_ != nullptr) {
         mediaInformationWindow_->close();

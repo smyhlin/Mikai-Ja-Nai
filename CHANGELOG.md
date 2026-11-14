@@ -13,6 +13,7 @@ This release introduces the player-only Qt Quick/QML frontend while retaining th
 - Adopt AnimeJaNai 3.11.0 models and v0.27.0 ABI-9 shims on Windows and Linux, with pinned runtime-2 dependencies and explicit refusal of unsupported pre-SM-7.5 classic TensorRT GPUs.
 - Use aji-runtime v0.2.1 for shared TensorRT packs, live application references, bounded downloads and unchanged-file reuse after archive repacking. Add Components storage relocation without moving models or engine caches; normal shutdown waits for an active relink.
 - Add experimental enhanced RIFE scene detection per chain, off by default, preserving edits through slot changes and language switches.
+- Replace the Widgets clip editor with a native Qt Quick window: GPU-presented independent preview, QML filmstrip and short-selection move grip, live theme tokens, asynchronous save/overwrite dialogs and the existing source-bound atomic MP4 exporter.
 - Add a Cut moment editor for selecting, previewing and exporting a short MP4:
   - Rebuilt as a token-driven filmstrip sheet bounded to ±2 minutes around the current playback anchor.
   - Preview playhead moves independently of selection boundaries and can be scrubbed before, on top of, and after the clip; preview playback loops within the selection.

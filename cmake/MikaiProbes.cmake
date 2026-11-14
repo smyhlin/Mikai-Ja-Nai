@@ -1,19 +1,7 @@
 # Standalone GUI, headless, media, and native QA probe executables.
 # Included when MIKAI_BUILD_PROBES=ON.
 #
-# Deliberate split: 47 probe targets are defined here (42 on a default Linux
-# build, 43 on a default Windows build — native_dml_interop_probe is
-# Windows-only and four more need MIKAI_WITH_MODEL_INSPECTION), and only 2 of
-# them run under CTest — HoverPlaybackCanary (fullscreen_stability_probe) and
-# VideoScalingPersistence (native_settings_probe), both registered in
-# cmake/MikaiTests.cmake. The rest are hand-run: they need a GPU, a desktop,
-# or a real runtime, so promoting them would make CTest depend on hardware
-# the CI agents do not have. Promote one more only if it is deterministic
-# without a GPU/desktop. (The pack's "50 probes / 3 in CTest" counts the 50
-# .cpp files under src/probes/ — which include the probe runner's own
-# sources and two shared sources — and the three add_test entries in
-# MikaiTests.cmake:456-498, of which BundleCliContracts is a bundle-CLI
-# contract, not a probe.)
+# Desktop/GPU probes stay manual; only hermetic contracts belong in CTest.
 
 if(NOT MIKAI_BUILD_PROBES)
   return()
@@ -120,6 +108,10 @@ mikai_add_probe(dialog_probe src/probes/player/DialogProbe.cpp
   LINKS mikai_player_quick Qt6::Widgets Qt6::Quick Qt6::Qml Qt6::Test
   DEPLOY_SHADERS)
 mikai_add_player_app_module(dialog_probe)
+mikai_add_probe(clip_probe src/probes/player/ClipProbe.cpp
+  LINKS mikai_player_quick Qt6::Widgets Qt6::Quick Qt6::Qml Qt6::QuickControls2 Qt6::Test
+  DEPLOY_SHADERS)
+mikai_add_player_app_module(clip_probe)
 mikai_add_probe(fullscreen_stability_probe src/probes/player/FullscreenStabilityProbe.cpp
   LINKS mikai_player_quick Qt6::Widgets Qt6::Test
   EXTRA_SOURCES src/probes/shared/ForegroundPeer.cpp

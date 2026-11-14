@@ -51,7 +51,7 @@ public:
         CopyMediaLink,
         OpenContainingFolder,
         OpenMediaInformation,
-        OpenClipDialog,
+        OpenClipWindow,
         OpenSubtitleSearch,
         DownloadSubtitle,   ///< value: subtitle-result row index, decimal.
         OpenShortcuts,

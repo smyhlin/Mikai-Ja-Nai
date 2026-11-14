@@ -202,7 +202,7 @@ QVector<PlayerMenuModel::Row> PlayerController::capturePictureRows() const {
     clip.id = QStringLiteral("picture.clip");
     clip.label = tr("Cut moment…");
     clip.icon = QStringLiteral("clapperboard");
-    clip.action = Action::OpenClipDialog;
+    clip.action = Action::OpenClipWindow;
     rows.append(clip);
 
     Row scale;
@@ -1257,8 +1257,8 @@ void PlayerController::publishMenuAction(PlayerMenuModel::Action action, const Q
         case Action::OpenMediaInformation:
             openMediaInformation();
             return;
-        case Action::OpenClipDialog:
-            openClipDialog();
+        case Action::OpenClipWindow:
+            openClipWindow();
             return;
         case Action::OpenSubtitleSearch:
             openSubtitleSearch();

@@ -39,6 +39,7 @@
 #include "CompareWindow.hpp"
 #include "MpvVideoItem.hpp"
 #include "PlayerWindow.hpp"
+#include "ClipWindow.hpp"
 #include "PreparationWindow.hpp"
 #include "ProbePicture.hpp"
 #include "ProbeRuntime.hpp"
@@ -694,15 +695,15 @@ RunResult runPlayer(const QString& url, const QString& videoName, const QString&
                           clipButton->mapToScene(QPointF(clipButton->width() / 2,
                                                         clipButton->height() / 2)).toPoint());
         const bool clipVisible = waitFor([] {
-            for (QWidget* widget : QApplication::topLevelWidgets()) {
-                if (widget->isVisible() && widget->inherits("mplayer::shell::ClipDialog"))
+            for (QWindow* window : QGuiApplication::topLevelWindows()) {
+                if (window->isVisible() && qobject_cast<ClipWindow*>(window) != nullptr)
                     return true;
             }
             return false;
         }, 5000);
-        verdict.require(clipVisible, QStringLiteral("clip dialog is visible"));
-        for (QWidget* widget : QApplication::topLevelWidgets()) {
-            if (widget->inherits("mplayer::shell::ClipDialog")) widget->close();
+        verdict.require(clipVisible, QStringLiteral("native QML clip editor is visible"));
+        for (QWindow* window : QGuiApplication::topLevelWindows()) {
+            if (qobject_cast<ClipWindow*>(window) != nullptr) window->close();
         }
         result.window->requestActivate();
     }
