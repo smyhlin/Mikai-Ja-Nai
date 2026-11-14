@@ -133,27 +133,31 @@ if(NOT EXISTS "${_qt_conf}" OR IS_DIRECTORY "${_qt_conf}")
   message(FATAL_ERROR "Qt deployment did not write a relocatable qt.conf: ${_qt_conf}")
 endif()
 file(STRINGS "${_qt_conf}" _qt_conf_paths
-  REGEX "^[ \t]*(Prefix|Libraries|Plugins|QmlImports)[ \t]*=")
+  REGEX "^[ \t]*(Prefix|Libraries|Plugins|QmlImports|Qml2Imports)[ \t]*=")
 set(_qt_prefix ".")
-set(_qt_prefix_seen FALSE)
-set(_qt_libraries "")
-set(_qt_plugins "")
-set(_qt_qml_imports "")
+set(_qt_libraries "lib")
+set(_qt_plugins "plugins")
+set(_qt_qml_imports "qml")
+set(_qt_qml_imports_seen FALSE)
+set(_qt_qml2_imports "")
 foreach(_qt_conf_path IN LISTS _qt_conf_paths)
   if(_qt_conf_path MATCHES "^[ \t]*Prefix[ \t]*=[ \t]*(.+)$")
     string(STRIP "${CMAKE_MATCH_1}" _qt_prefix)
-    set(_qt_prefix_seen TRUE)
   elseif(_qt_conf_path MATCHES "^[ \t]*Libraries[ \t]*=[ \t]*(.+)$")
     string(STRIP "${CMAKE_MATCH_1}" _qt_libraries)
   elseif(_qt_conf_path MATCHES "^[ \t]*Plugins[ \t]*=[ \t]*(.+)$")
     string(STRIP "${CMAKE_MATCH_1}" _qt_plugins)
   elseif(_qt_conf_path MATCHES "^[ \t]*QmlImports[ \t]*=[ \t]*(.+)$")
     string(STRIP "${CMAKE_MATCH_1}" _qt_qml_imports)
+    set(_qt_qml_imports_seen TRUE)
+  elseif(_qt_conf_path MATCHES "^[ \t]*Qml2Imports[ \t]*=[ \t]*(.+)$")
+    string(STRIP "${CMAKE_MATCH_1}" _qt_qml2_imports)
   endif()
 endforeach()
-if(NOT _qt_prefix_seen OR _qt_libraries STREQUAL ""
-    OR _qt_plugins STREQUAL "" OR _qt_qml_imports STREQUAL ""
-    OR IS_ABSOLUTE "${_qt_prefix}"
+if(NOT _qt_qml_imports_seen AND NOT _qt_qml2_imports STREQUAL "")
+  set(_qt_qml_imports "${_qt_qml2_imports}")
+endif()
+if(IS_ABSOLUTE "${_qt_prefix}"
     OR IS_ABSOLUTE "${_qt_libraries}"
     OR IS_ABSOLUTE "${_qt_plugins}"
     OR IS_ABSOLUTE "${_qt_qml_imports}")
@@ -214,7 +218,7 @@ foreach(_qml_module IN ITEMS
 endforeach()
 foreach(_qt_library IN ITEMS Qt6Core Qt6Gui Qt6Qml Qt6Quick Qt6QuickControls2)
   file(GLOB _qt_library_files LIST_DIRECTORIES FALSE
-    "${_qt_lib_dir}/${_qt_library}.so*")
+    "${_qt_lib_dir}/lib${_qt_library}.so*")
   if(NOT _qt_library_files)
     message(FATAL_ERROR
       "The image is missing ${_qt_library} under ${_qt_lib_dir}; the Quick player needs it at run time.")

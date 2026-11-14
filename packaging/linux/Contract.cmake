@@ -110,27 +110,34 @@ if(MIKAI_LINUX_DEPLOY_QT)
       "Linux package contract: Qt deployment did not write a relocatable qt.conf: ${package_qt_conf}")
   endif()
   file(STRINGS "${package_qt_conf}" package_qt_conf_paths
-    REGEX "^[ \t]*(Prefix|Libraries|Plugins|QmlImports)[ \t]*=")
+    REGEX "^[ \t]*(Prefix|Libraries|Plugins|QmlImports|Qml2Imports)[ \t]*=")
+  # Qt's generated qt.conf omits keys whose effective values are the documented
+  # defaults. Resolve those defaults just as Qt does; use Qml2Imports only as
+  # the Qt 5 compatibility fallback when QmlImports is absent.
   set(package_qt_prefix ".")
-  set(package_qt_prefix_seen FALSE)
-  set(package_qt_libraries "")
-  set(package_qt_plugins "")
-  set(package_qt_qml_imports "")
+  set(package_qt_libraries "lib")
+  set(package_qt_plugins "plugins")
+  set(package_qt_qml_imports "qml")
+  set(package_qt_qml_imports_seen FALSE)
+  set(package_qt_qml2_imports "")
   foreach(package_qt_conf_path IN LISTS package_qt_conf_paths)
     if(package_qt_conf_path MATCHES "^[ \t]*Prefix[ \t]*=[ \t]*(.+)$")
       string(STRIP "${CMAKE_MATCH_1}" package_qt_prefix)
-      set(package_qt_prefix_seen TRUE)
     elseif(package_qt_conf_path MATCHES "^[ \t]*Libraries[ \t]*=[ \t]*(.+)$")
       string(STRIP "${CMAKE_MATCH_1}" package_qt_libraries)
     elseif(package_qt_conf_path MATCHES "^[ \t]*Plugins[ \t]*=[ \t]*(.+)$")
       string(STRIP "${CMAKE_MATCH_1}" package_qt_plugins)
     elseif(package_qt_conf_path MATCHES "^[ \t]*QmlImports[ \t]*=[ \t]*(.+)$")
       string(STRIP "${CMAKE_MATCH_1}" package_qt_qml_imports)
+      set(package_qt_qml_imports_seen TRUE)
+    elseif(package_qt_conf_path MATCHES "^[ \t]*Qml2Imports[ \t]*=[ \t]*(.+)$")
+      string(STRIP "${CMAKE_MATCH_1}" package_qt_qml2_imports)
     endif()
   endforeach()
-  if(NOT package_qt_prefix_seen OR package_qt_libraries STREQUAL ""
-      OR package_qt_plugins STREQUAL "" OR package_qt_qml_imports STREQUAL ""
-      OR IS_ABSOLUTE "${package_qt_prefix}"
+  if(NOT package_qt_qml_imports_seen AND NOT package_qt_qml2_imports STREQUAL "")
+    set(package_qt_qml_imports "${package_qt_qml2_imports}")
+  endif()
+  if(IS_ABSOLUTE "${package_qt_prefix}"
       OR IS_ABSOLUTE "${package_qt_libraries}"
       OR IS_ABSOLUTE "${package_qt_plugins}"
       OR IS_ABSOLUTE "${package_qt_qml_imports}")
@@ -202,7 +209,7 @@ if(MIKAI_LINUX_DEPLOY_QT)
   foreach(package_qt_library IN ITEMS
       Qt6Core Qt6Gui Qt6Qml Qt6Quick Qt6QuickControls2)
     file(GLOB package_qt_library_files LIST_DIRECTORIES FALSE
-      "${package_qt_lib_dir}/${package_qt_library}.so*")
+      "${package_qt_lib_dir}/lib${package_qt_library}.so*")
     if(NOT package_qt_library_files)
       message(FATAL_ERROR
         "Linux package contract: ${package_qt_library} was not deployed into ${package_qt_lib_dir}; the Quick player needs it at run time.")

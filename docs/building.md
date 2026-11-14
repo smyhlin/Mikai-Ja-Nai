@@ -37,6 +37,7 @@ sudo apt-get install patchelf
 
 - The build needs a Qt 6.12+ development kit matching the active compiler/toolchain.
 - Linux package staging can optionally deploy Qt with `-DMIKAI_LINUX_DEPLOY_QT=ON`; configure fails without `patchelf`, which the Qt deployment script uses to give the copied plugins a relative RUNPATH. This option is independent of `MIKAI_LINUX_BUNDLE_MPV` and does not itself establish redistribution clearance or eliminate the host glibc, graphics and audio baseline.
+- The Linux package contract resolves omitted `qt.conf` entries using Qt's documented defaults (`lib`, `plugins`, `qml`); Qt's deploy tool omits these default-valued keys. Nondefault layouts remain prefix-relative and must resolve inside the staged package.
 - When Qt deployment is off, runtime Qt libraries/plugins must be provided by the host.
 - Actual compatibility also depends on plugins, drivers and the selected mpv runtime.
 
