@@ -96,6 +96,9 @@ void TestHoverPreview::theQuickTimelineHoverDragLeaveAndReloadUseDecodedFrames()
     window->showWindowed();
     QVERIFY2(settleUntil([&] { return controller.duration() > 0.0; }, 20000),
              "the real player session did not load the preview fixture");
+    // Duration precedes the first presented frame and settled timeline geometry.
+    QVERIFY2(settleUntil([&] { return !controller.openingLoading(); }, 20000),
+             "the opening overlay did not clear after loading the preview fixture");
 
     QObject* root = window->rootObject();
     QVERIFY(root != nullptr);
@@ -185,6 +188,8 @@ void TestHoverPreview::theQuickTimelineHoverDragLeaveAndReloadUseDecodedFrames()
 
     QVERIFY2(settleUntil([&] { return controller.duration() > 0.0; }, 20000),
              "the reloaded source did not become ready for preview");
+    QVERIFY2(settleUntil([&] { return !controller.openingLoading(); }, 20000),
+             "the opening overlay did not clear after reloading the preview fixture");
     QTest::mouseMove(window, windowPoint(timeline, 0.2));
     QVERIFY2(settleUntil([&] {
                  return controller.hoverPreviewVisible() &&
