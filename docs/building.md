@@ -62,10 +62,12 @@ sudo apt-get install patchelf
 - Qt networking uses Schannel and the OS certificate store. libmpv's statically linked FFmpeg is a separate TLS implementation; the new DLL passed local and certificate-verified HTTPS HEVC playback. No separate OpenSSL/LibreSSL DLL is added to the Windows payload.
 - A deployed Mikai Ja Nai app also needs Qt, image-format/TLS, MinGW and mpv runtime files; use the packaging path rather than copying the executable alone.
 
+CI sets `MIKAI_TEST_NATIVE_QPA=ON`: widget-only suites stay on Qt's offscreen platform, while Quick player suites use native windows and software OpenGL. Windows uses `windows` with Qt's software renderer; Linux uses `xcb` under Xvfb with GLX and Openbox for window-state tests. The option defaults to OFF for other builds. The isolated launcher stages each test away from installed native stores.
+
 - For CI, `packaging/ci/provision.py` acquires Qt 6.12.0 for `win64_mingw` or `linux_gcc_64`.
-- On Linux it uses `aqtinstall` 3.3.0.
+- On Linux it uses `aqtinstall` 3.3.0. Qt Declarative and Qt Tools are part of the base kit, not optional module names; Image Formats is requested as an addon.
 - On Windows it does not: aqt resolves `Updates.xml` one directory above where Qt now publishes it, so every `install-qt windows` call fails before downloading anything.
-- The Windows path therefore fetches five pinned archives (qtbase, qtsvg, qttranslations, the imageformats addon and the MinGW 13.1.0 toolchain), verifies each SHA-256 and size, and extracts them into the layout the installer produces; the verified list is written to `evidence/toolchain.json`.
+- The Windows path therefore fetches pinned Qt base, Declarative, SVG, Tools, translations, Image Formats and software OpenGL archives and the MinGW 13.1.0 toolchain, verifies each SHA-256 and size, and extracts them into the layout the installer produces; the verified list is written to `evidence/toolchain.json`. Software OpenGL is a CI runtime prerequisite, not a bundled application dependency.
 
 Re-derive a digest only from the same URL.
 

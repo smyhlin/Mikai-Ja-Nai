@@ -546,6 +546,23 @@ if(MIKAI_BUILD_PROBES)
   if(WIN32)
     list(APPEND MIKAI_TEST_SUITES TestWin32Support)
   endif()
+  option(MIKAI_TEST_NATIVE_QPA
+    "Run player/window test suites with a native Qt platform and software OpenGL" OFF)
+  set(MIKAI_TEST_NATIVE_QPA_SUITES
+    TestPlaybackControls
+    TestSkipSegments
+    TestTimelineMarks
+    TestHoverPreview
+    TestCompareLoading
+    TestComparePipeline
+    TestPublicApiUi
+    TestWindowRaise
+  )
+  if(WIN32)
+    set(_mikai_native_qpa_environment "QT_QPA_PLATFORM=windows;QT_OPENGL=software")
+  else()
+    set(_mikai_native_qpa_environment "QT_QPA_PLATFORM=xcb;LIBGL_ALWAYS_SOFTWARE=1")
+  endif()
   foreach(_mikai_suite IN LISTS MIKAI_TEST_SUITES)
     add_test(NAME mikai_tests_${_mikai_suite}
       COMMAND mikai_test_launcher ${_mikai_tests_launcher_args} ${_mikai_suite})
@@ -554,6 +571,11 @@ if(MIKAI_BUILD_PROBES)
       ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
       LABELS "mikai_tests_suite"
     )
+    if(MIKAI_TEST_NATIVE_QPA AND _mikai_suite IN_LIST MIKAI_TEST_NATIVE_QPA_SUITES)
+      set_tests_properties(mikai_tests_${_mikai_suite} PROPERTIES
+        ENVIRONMENT "${_mikai_native_qpa_environment}"
+      )
+    endif()
   endforeach()
   # The icon suite traces paint commands from a real window, and a window only
   # carries a fractional ratio under a fractional screen: the platform plugins
@@ -647,8 +669,16 @@ if(MIKAI_BUILD_PROBES)
       ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
     if(WIN32)
+      if(MIKAI_TEST_NATIVE_QPA)
+        set_tests_properties(HoverPlaybackCanary PROPERTIES
+          ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_OPENGL=software")
+      else()
+        set_tests_properties(HoverPlaybackCanary PROPERTIES
+          ENVIRONMENT "QT_QPA_PLATFORM=windows")
+      endif()
+    elseif(MIKAI_TEST_NATIVE_QPA)
       set_tests_properties(HoverPlaybackCanary PROPERTIES
-        ENVIRONMENT "QT_QPA_PLATFORM=windows")
+        ENVIRONMENT "QT_QPA_PLATFORM=xcb;LIBGL_ALWAYS_SOFTWARE=1")
     endif()
   endif()
 

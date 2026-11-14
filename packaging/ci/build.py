@@ -67,9 +67,11 @@ def main():
     profile = 'windows-x64' if windows else 'linux-x86_64'
     suffix = '.exe' if windows else ''
     env = os.environ.copy()
-    for key in ('MIKAI_API_KEY', 'MIKAI_PROBE_BUNDLE', 'MIKAI_MPV_MODULE', 'QT_PLUGIN_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH'):
+    for key in ('MIKAI_API_KEY', 'MIKAI_PROBE_BUNDLE', 'MIKAI_MPV_MODULE', 'QT_PLUGIN_PATH',
+                'QT_QPA_PLATFORM_PLUGIN_PATH', 'QT_OPENGL', 'QT_QUICK_BACKEND', 'QSG_RHI_BACKEND'):
         env.pop(key, None)
-    env.update(MIKAI_LIVE='0', QT_QPA_PLATFORM='offscreen', QT_PLUGIN_PATH=str(qt / 'plugins'),
+    env.update(MIKAI_LIVE='0', QT_QPA_PLATFORM='offscreen',
+               QT_PLUGIN_PATH=str(qt / 'plugins'),
                QT_QPA_PLATFORM_PLUGIN_PATH=str(qt / 'plugins' / 'platforms'))
     env['PATH'] = str(qt / 'bin') + os.pathsep + env['PATH']
     scratch = build / '_ci-state'
@@ -110,6 +112,8 @@ def main():
         run('compiler-version', [os.getenv('MIKAI_CXX', 'g++'), '--version'])
         run('qt-version', [qt / 'bin' / ('qmake.exe' if windows else 'qmake'), '-query'])
         run('python-dependencies', [sys.executable, '-m', 'pip', 'freeze'])
+        run('provision-contracts', [sys.executable, '-m', 'unittest', 'discover',
+                                    '-s', ROOT / 'packaging/ci', '-p', 'test_provision.py'])
         run('release-contracts', [sys.executable, '-m', 'unittest', 'discover',
                                   '-s', ROOT / 'packaging/ci', '-p', 'test_release.py'])
         if windows:
@@ -153,6 +157,7 @@ def main():
                               '-DMIKAI_LINUX_DEPLOY_QT=ON',
                               f'-DMIKAI_LINUX_MPV_ARCHIVE={runtime}',
                               f'-DMIKAI_LINUX_MPV_EXPECTED_SHA256={runtime_sha256}'])
+        configure.append('-DMIKAI_TEST_NATIVE_QPA=ON')
         if windows:
             # GCC 13.1 MinGW's LTO refuses this tree's duplicated weak destructor
             # thunks (PipFloat : QWidget, ChromeHost) and the link dies on
@@ -175,9 +180,24 @@ def main():
         # hermetic launcher and properties, so CI still exercises every suite -
         # now with one ctest result per suite instead of one for all of them.
         # Running both would merely execute every suite twice.
-        run('ctest', ['ctest', '--test-dir', build, '--output-on-failure', '--no-tests=error',
-                      '--timeout', '900', '--label-exclude', 'mikai_tests_blob',
-                      '--output-junit', evidence / 'ctest.xml'], timeout=2400)
+        ctest = ['ctest', '--test-dir', build, '--output-on-failure', '--no-tests=error',
+                 '--timeout', '900', '--label-exclude', 'mikai_tests_blob',
+                 '--output-junit', evidence / 'ctest.xml']
+        if windows:
+            run('ctest', ctest, timeout=2400)
+        else:
+            ctest_with_wm = [
+                'xvfb-run', '-a', '-s', '-screen 0 1280x800x24 +extension GLX',
+                'bash', '-euc',
+                'openbox --sm-disable &\n'
+                'wm_pid=$!\n'
+                'trap \'kill "$wm_pid" 2>/dev/null || true; wait "$wm_pid" 2>/dev/null || true\' EXIT\n'
+                'sleep 1\n'
+                'kill -0 "$wm_pid"\n'
+                '"$@"',
+                'mikai-ctest-with-wm', *ctest,
+            ]
+            run('ctest', ctest_with_wm, timeout=2400)
         # Exit 2 is missing externally-owned source roots; exit 3 remains an
         # actual redistribution block, not a successful native verification.
         code = run('optional-native-manifest', [build / ('mikai_manifest_check' + suffix),
