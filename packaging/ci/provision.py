@@ -288,7 +288,7 @@ def main():
     if vulkan is not None:
         data['vulkanRuntime'] = vulkan
     if software_gl is not None:
-        data['softwareOpenGL'] = software_gl
+        data['softwareOpenGL'] = str(software_gl)
     (args.evidence / 'toolchain.json').write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
     if os.getenv('GITHUB_ENV'):
         with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as stream:

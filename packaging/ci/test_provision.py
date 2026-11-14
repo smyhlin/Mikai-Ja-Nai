@@ -1,6 +1,7 @@
 """Filesystem regression tests for required Qt Quick SDK readiness."""
 import hashlib
 import importlib.util
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -75,6 +76,43 @@ class QuickSdkReadinessTests(unittest.TestCase):
             provision.main()
 
         self.assertTrue((evidence / 'toolchain.json').is_file())
+
+    def test_windows_main_publishes_json_serializable_toolchain_evidence(self):
+        root = self.prefix / 'sdk'
+        evidence = self.prefix / 'evidence'
+        prefix = root / '6.12.0' / 'mingw_64'
+        self.prefix = prefix
+        self.add_required_files()
+        config = prefix / 'lib' / 'cmake' / 'Qt6' / 'Qt6Config.cmake'
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text('# installed base kit\n', encoding='utf-8')
+        software_gl = root / '6.12.0' / 'mingw_64' / 'bin'
+        software_gl.mkdir(parents=True)
+        (software_gl / 'opengl32sw.dll').write_bytes(b'gl')
+        compiler = root / 'Tools' / 'mingw1310_64' / 'bin' / 'g++.exe'
+        compiler.parent.mkdir(parents=True)
+        compiler.write_bytes(b'compiler')
+
+        with patch.object(provision.sys, 'platform', 'win32'), \
+             patch.object(provision.sys, 'argv', ['provision.py', '--root', str(root),
+                                                 '--evidence', str(evidence)]), \
+             patch.object(provision, 'install_windows_sdk', return_value=[]), \
+             patch.object(provision, 'install_windows_vulkan_runtime',
+                          return_value={'installer': 'runtime.exe', 'bytes': 1,
+                                        'sha256': 'abc', 'url': 'https://example.invalid/runtime.exe'}), \
+             patch.object(provision, 'run', return_value='13.1.0'), \
+             patch.dict(provision.os.environ, {'GITHUB_ENV': '', 'GITHUB_PATH': ''}):
+            provision.main()
+
+        toolchain = json.loads((evidence / 'toolchain.json').read_text(encoding='utf-8'))
+        self.assertEqual(toolchain['host'], 'windows')
+        self.assertEqual(toolchain['acquisition'], 'aqt')
+        self.assertEqual(toolchain['softwareOpenGL'], str(software_gl))
+        self.assertEqual(toolchain['qtPrefix'], str(prefix))
+        self.assertEqual(toolchain['compiler'], str(compiler))
+        self.assertEqual(toolchain['path'], [
+            str(compiler.parent), str(software_gl), str(prefix / 'bin')])
+        self.assertEqual(toolchain['vulkanRuntime']['installer'], 'runtime.exe')
 
     def test_windows_software_renderer_is_installed_in_qt_bin(self):
         root = self.prefix / 'sdk'

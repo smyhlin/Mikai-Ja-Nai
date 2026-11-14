@@ -67,7 +67,7 @@ CI sets `MIKAI_TEST_NATIVE_QPA=ON`: widget-only suites stay on Qt's offscreen pl
 - For CI, `packaging/ci/provision.py` acquires Qt 6.12.0 for `win64_mingw` or `linux_gcc_64`.
 - On Linux it uses `aqtinstall` 3.3.0. Qt Declarative and Qt Tools are part of the base kit, not optional module names; Image Formats is requested as an addon.
 - On Windows it does not: aqt resolves `Updates.xml` one directory above where Qt now publishes it, so every `install-qt windows` call fails before downloading anything.
-- The Windows path therefore fetches pinned Qt base, Declarative, SVG, Tools, translations, Image Formats and software OpenGL archives and the MinGW 13.1.0 toolchain, verifies each SHA-256 and size, and extracts them into the layout the installer produces; the verified list is written to `evidence/toolchain.json`. Software OpenGL is a CI runtime prerequisite, not a bundled application dependency.
+- The Windows path therefore fetches pinned Qt base, Declarative, SVG, Tools, translations, Image Formats and software OpenGL archives and the MinGW 13.1.0 toolchain, verifies each SHA-256 and size, and extracts them into the layout the installer produces; the verified list is written to `evidence/toolchain.json`. Its `softwareOpenGL` field records the renderer's directory as a JSON string. Software OpenGL is a CI runtime prerequisite, not a bundled application dependency.
 
 Re-derive a digest only from the same URL.
 
