@@ -511,7 +511,7 @@ void TestStreams::aSignedUrlNeverReachesAnExceptionMessage() {
   bool raised = false;
   QString message;
   try {
-    detectSite(QStringLiteral("https://cdn.example.com/v.mp4?token=SECRET"));
+    detectSite(QStringLiteral("https://cdn.example.com/episode?token=SECRET"));
   } catch (const std::invalid_argument& caught) {
     raised = true;
     message = QString::fromUtf8(caught.what());

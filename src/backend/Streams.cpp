@@ -106,18 +106,30 @@ bool knownMoonSegmentType(const QString& type) {
 }  // namespace
 
 QString detectSite(const QString& pageUrl) {
-    if (pageUrl.contains(QStringLiteral("ashdi"), Qt::CaseInsensitive)) {
-        return QStringLiteral("ashdi");
-    }
-    if (pageUrl.contains(QStringLiteral("moon"), Qt::CaseInsensitive)) {
-        return QStringLiteral("moon");
-    }
-    if (pageUrl.contains(QStringLiteral("tortuga"), Qt::CaseInsensitive)) {
-        return QStringLiteral("tortuga");
-    }
-    if (pageUrl.contains(QStringLiteral(".m3u8"), Qt::CaseInsensitive) ||
-        pageUrl.contains(QStringLiteral(".mp4"), Qt::CaseInsensitive)) {
-        return QStringLiteral("direct");
+    const QUrl url(pageUrl);
+    const QString host = url.host().toLower();
+    const QString path = url.path().toLower();
+    const auto hostIsOrSubdomainOf = [&host](const QString& domain) {
+        return host == domain || host.endsWith(QLatin1Char('.') + domain);
+    };
+    if (url.isValid() && !url.host().isEmpty() &&
+        (url.scheme().compare(QStringLiteral("http"), Qt::CaseInsensitive) == 0 ||
+         url.scheme().compare(QStringLiteral("https"), Qt::CaseInsensitive) == 0)) {
+        if (hostIsOrSubdomainOf(QStringLiteral("ashdi.vip")) &&
+            path.startsWith(QStringLiteral("/vod/")) && path.size() > 5) {
+            return QStringLiteral("ashdi");
+        }
+        if (hostIsOrSubdomainOf(QStringLiteral("moonanime.art")) &&
+            path.startsWith(QStringLiteral("/iframe/")) && path.size() > 8) {
+            return QStringLiteral("moon");
+        }
+        if (hostIsOrSubdomainOf(QStringLiteral("tortuga.tw")) &&
+            path.startsWith(QStringLiteral("/vod/")) && path.size() > 5) {
+            return QStringLiteral("tortuga");
+        }
+        if (path.endsWith(QStringLiteral(".m3u8")) || path.endsWith(QStringLiteral(".mp4"))) {
+            return QStringLiteral("direct");
+        }
     }
     throw std::invalid_argument(
         redactDiagnostic(QStringLiteral("unsupported episode url: ") + pageUrl).toStdString());
