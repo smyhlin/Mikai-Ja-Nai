@@ -238,10 +238,21 @@ void PreparationWindow::maintainTopmost() {
     if (yieldedForModal_) {
         yieldedForModal_ = false;
     } else if ((GetWindowLongPtrW(window, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0) {
-        // Already where this timer exists to keep it; a repeated SetWindowPos
-        // for the same band is a compositor round-trip per tick.
-        stackingFailureReported_ = false;
-        return;
+        // The topmost flag only identifies the band; another topmost HWND may
+        // still precede this one in z-order. Reassert only when that is true.
+        bool coveredByTopmost = false;
+        for (HWND above = GetWindow(window, GW_HWNDPREV);
+             above != nullptr; above = GetWindow(above, GW_HWNDPREV)) {
+            if (IsWindowVisible(above)
+                && (GetWindowLongPtrW(above, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0) {
+                coveredByTopmost = true;
+                break;
+            }
+        }
+        if (!coveredByTopmost) {
+            stackingFailureReported_ = false;
+            return;
+        }
     }
     if (SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0,
                      SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER)) {

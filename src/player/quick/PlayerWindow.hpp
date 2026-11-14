@@ -160,6 +160,7 @@ private:
     void captureWindowedGeometry();
     void restoreWindowedGeometry();
     void syncMinimumSize();
+    void syncFullscreenIntentFromWindowState();
 
     PlayerController* controller_ = nullptr;
     MpvVideoItem* videoItem_ = nullptr;

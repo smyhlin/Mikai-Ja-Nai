@@ -574,8 +574,34 @@ void PlayerWindow::showEvent(QShowEvent* event) {
         }
     }
     syncMinimumSize();
-    if (!compactPip_) windowModeRequestPending_ = true;
+    // A windowed show does not represent a pending app request: native state
+    // changes after it (for example, the title-bar fullscreen action) are
+    // authoritative. Keep the initial fullscreen intent pending until acked.
+    if (!compactPip_ && fullscreenIntent_) windowModeRequestPending_ = true;
     applyWindowMode();
+    // A mode request made while hidden may have produced a state event before
+    // visibility, which cannot acknowledge it. Reconcile once the native show
+    // has completed so that stale intent cannot override the next user action.
+    QMetaObject::invokeMethod(
+        this, [this] { syncFullscreenIntentFromWindowState(); },
+        Qt::QueuedConnection);
+}
+
+void PlayerWindow::syncFullscreenIntentFromWindowState() {
+    if (compactPip_ || applyingWindowMode_ || !isVisible()) return;
+    const bool fullscreenNow = windowStates().testFlag(Qt::WindowFullScreen);
+    if (windowModeRequestPending_) {
+        if (fullscreenNow == fullscreenIntent_) {
+            windowModeRequestPending_ = false;
+        } else {
+            // An explicit player mode request remains authoritative until the
+            // platform acknowledges it.
+            applyWindowMode();
+        }
+    } else if (fullscreenNow != fullscreenIntent_) {
+        fullscreenIntent_ = fullscreenNow;
+        emit fullscreenChanged(fullscreenNow);
+    }
 }
 
 void PlayerWindow::hideEvent(QHideEvent* event) {
@@ -620,24 +646,12 @@ bool PlayerWindow::event(QEvent* event) {
         if (QQmlEngine* qmlEngine = engine()) qmlEngine->retranslate();
         break;
     case QEvent::WindowStateChange:
-        if (!compactPip_) {
-            const bool fullscreenNow = windowStates().testFlag(Qt::WindowFullScreen);
-            if (windowModeRequestPending_) {
-                if (isVisible() && fullscreenNow == fullscreenIntent_) {
-                    windowModeRequestPending_ = false;
-                } else if (!applyingWindowMode_ && isVisible()) {
-                    // The native show can report its initial windowed state
-                    // after a pre-show fullscreen request. Keep that explicit
-                    // request authoritative until the window acknowledges it.
-                    applyWindowMode();
-                }
-            } else if (!applyingWindowMode_ && fullscreenNow != fullscreenIntent_) {
-                // After the requested mode has been acknowledged, a native
-                // window action (title-bar button, platform shortcut) owns state.
-                fullscreenIntent_ = fullscreenNow;
-                emit fullscreenChanged(fullscreenNow);
-            }
-        }
+        // QQuickWindow's base event handler applies the platform state. Query
+        // it only after that handler returns; reading it synchronously here can
+        // still see the old state and miss native changes such as showFullScreen().
+        QMetaObject::invokeMethod(
+            this, [this] { syncFullscreenIntentFromWindowState(); },
+            Qt::QueuedConnection);
         break;
     case QEvent::ScreenChangeInternal:
         if (isVisible() && !windowStates().testFlag(Qt::WindowFullScreen)) {

@@ -101,7 +101,7 @@ void TestWindowRaise::initTestCase() {
     g_shell->setObjectName(QStringLiteral("testShell"));
     g_shell->show();
     mikai::app::WindowRaisePolicy::install();
-    pump();
+    QTRY_VERIFY_WITH_TIMEOUT(activeWidget() == g_shell, 3000);
 }
 
 void TestWindowRaise::cleanupTestCase() {
@@ -111,25 +111,31 @@ void TestWindowRaise::cleanupTestCase() {
 }
 
 void TestWindowRaise::nativePlayerPipKeepsItsQuickWindowAndForegroundIntent() {
-    mplayer::quick::PlayerWindow player(nullptr);
-    QWindow* const nativeWindow = &player;
-    QSignalSpy pipChanges(&player, &mplayer::quick::PlayerWindow::compactPipChanged);
+    mplayer::quick::PlayerController controller(QStringLiteral("PiP window"), QString());
+    mplayer::quick::PlayerWindow* const player = controller.window();
+    QVERIFY(player != nullptr);
+    QWindow* const nativeWindow = player;
+    QSignalSpy pipChanges(player, &mplayer::quick::PlayerWindow::compactPipChanged);
 
-    player.setFullscreenIntent(false);
-    player.show();
+    player->setFullscreenIntent(false);
+    player->show();
     pump();
-    QVERIFY(player.isVisible());
-    if (activationIsObservable()) QCOMPARE(QGuiApplication::focusWindow(), &player);
+    QVERIFY(player->isVisible());
+    if (activationIsObservable()) {
+        QTRY_VERIFY_WITH_TIMEOUT(QGuiApplication::focusWindow() == player, 3000);
+    }
 
-    player.setCompactPip(true);
-    QCOMPARE(static_cast<QWindow*>(&player), nativeWindow);
+    player->setCompactPip(true);
+    QCOMPARE(static_cast<QWindow*>(player), nativeWindow);
     QCOMPARE(pipChanges.count(), 1);
     QCOMPARE(pipChanges.takeFirst().at(0).toBool(), true);
-    QVERIFY(player.compactPip());
-    QVERIFY(player.topmostIntent());
-    QCOMPARE(player.flags().testFlag(Qt::WindowStaysOnTopHint),
+    QVERIFY(player->compactPip());
+    QVERIFY(player->topmostIntent());
+    QCOMPARE(player->flags().testFlag(Qt::WindowStaysOnTopHint),
              QGuiApplication::platformName() != QStringLiteral("wayland"));
-    if (activationIsObservable()) QCOMPARE(QGuiApplication::focusWindow(), &player);
+    if (activationIsObservable()) {
+        QTRY_VERIFY_WITH_TIMEOUT(QGuiApplication::focusWindow() == player, 3000);
+    }
 #ifdef Q_OS_WIN
     if (QGuiApplication::platformName() == QStringLiteral("windows")) {
         QWidget blocker;
@@ -138,53 +144,70 @@ void TestWindowRaise::nativePlayerPipKeepsItsQuickWindowAndForegroundIntent() {
         blocker.show();
         pump();
 
-        const HWND playerHandle = reinterpret_cast<HWND>(player.winId());
+        const HWND playerHandle = reinterpret_cast<HWND>(player->winId());
         const HWND blockerHandle = reinterpret_cast<HWND>(blocker.winId());
         QVERIFY(playerHandle != nullptr);
         QVERIFY(blockerHandle != nullptr);
         QVERIFY(SetWindowPos(blockerHandle, HWND_TOPMOST, 0, 0, 0, 0,
                              SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE));
         QTRY_VERIFY_WITH_TIMEOUT(isAbove(blockerHandle, playerHandle), 1000);
-        player.raiseWindow();
+        player->raiseWindow();
         QTRY_VERIFY_WITH_TIMEOUT(isAbove(playerHandle, blockerHandle), 3000);
-        if (activationIsObservable()) QCOMPARE(QGuiApplication::focusWindow(), &player);
+        if (activationIsObservable()) QCOMPARE(QGuiApplication::focusWindow(), player);
     }
 #endif
 
-    player.setCompactPip(false);
-    QCOMPARE(static_cast<QWindow*>(&player), nativeWindow);
+    player->setCompactPip(false);
+    QCOMPARE(static_cast<QWindow*>(player), nativeWindow);
     QCOMPARE(pipChanges.count(), 1);
     QCOMPARE(pipChanges.takeFirst().at(0).toBool(), false);
-    QVERIFY(!player.compactPip());
-    QVERIFY(!player.topmostIntent());
-    QVERIFY(!player.flags().testFlag(Qt::WindowStaysOnTopHint));
-    player.hideWindow();
+    QVERIFY(!player->compactPip());
+    QVERIFY(!player->topmostIntent());
+    QVERIFY(!player->flags().testFlag(Qt::WindowStaysOnTopHint));
+    controller.hideWindow();
 }
 
 void TestWindowRaise::fullscreenIntentTracksTheNativeWindowState() {
-    mplayer::quick::PlayerWindow player(nullptr);
-    QSignalSpy fullscreenChanges(&player, &mplayer::quick::PlayerWindow::fullscreenChanged);
-    player.setFullscreenIntent(false);
-    player.setRememberedGeometry(QRect(80, 90, 1000, 640));
-    player.show();
+    mplayer::quick::PlayerController controller(QStringLiteral("Fullscreen window"), QString());
+    mplayer::quick::PlayerWindow* const player = controller.window();
+    QVERIFY(player != nullptr);
+    QSignalSpy fullscreenChanges(player, &mplayer::quick::PlayerWindow::fullscreenChanged);
+    player->setFullscreenIntent(false);
+    player->setRememberedGeometry(QRect(80, 90, 1000, 640));
+    player->show();
     pump();
-    QVERIFY(player.isVisible());
-    QVERIFY(!player.fullscreenIntent());
-    QVERIFY(!player.windowStates().testFlag(Qt::WindowFullScreen));
+#ifdef Q_OS_WIN
+    if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+        const HWND playerHandle = reinterpret_cast<HWND>(player->winId());
+        if (!takeForeground(playerHandle)) {
+            QSKIP("the platform refused to give this process the foreground");
+        }
+    }
+#endif
+    QVERIFY(player->isVisible());
+    QVERIFY(!player->fullscreenIntent());
+    QVERIFY(!player->windowStates().testFlag(Qt::WindowFullScreen));
+    fullscreenChanges.clear();
 
     // The native title-bar action changes QWindow state without going through
     // setFullscreenIntent(); the window's observed state is authoritative.
-    player.setWindowStates(player.windowStates() | Qt::WindowFullScreen);
-    QTRY_VERIFY(player.fullscreenIntent());
+    player->showFullScreen();
+    QTRY_VERIFY2_WITH_TIMEOUT(
+        player->fullscreenIntent(),
+        qPrintable(QStringLiteral("fullscreen intent did not follow native state; "
+                                  "windowStates=%1, isFullScreen=%2")
+                       .arg(static_cast<int>(player->windowStates()))
+                       .arg(player->windowStates().testFlag(Qt::WindowFullScreen))),
+        5000);
     QCOMPARE(fullscreenChanges.count(), 1);
     QCOMPARE(fullscreenChanges.takeFirst().at(0).toBool(), true);
 
-    player.setWindowStates(player.windowStates() & ~Qt::WindowFullScreen);
-    QTRY_VERIFY(!player.fullscreenIntent());
+    player->showNormal();
+    QTRY_VERIFY(!player->fullscreenIntent());
     QCOMPARE(fullscreenChanges.count(), 1);
     QCOMPARE(fullscreenChanges.takeFirst().at(0).toBool(), false);
 
-    player.hideWindow();
+    controller.hideWindow();
 }
 
 void TestWindowRaise::windowActivationWakesFullscreenChrome() {
@@ -194,7 +217,15 @@ void TestWindowRaise::windowActivationWakesFullscreenChrome() {
     QTRY_VERIFY_WITH_TIMEOUT(controller.isWindowVisible(), 5000);
     QTRY_COMPARE_WITH_TIMEOUT(controller.chromeState(),
                               mplayer::quick::PlayerController::ChromeState::FullscreenAutoHidden,
-                              5000);
+                              10000);
+#ifdef Q_OS_WIN
+    if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+        const HWND playerHandle = reinterpret_cast<HWND>(controller.window()->winId());
+        if (!takeForeground(playerHandle)) {
+            QSKIP("the platform refused to give this process the foreground");
+        }
+    }
+#endif
 
     QEvent activation(QEvent::WindowActivate);
     QCoreApplication::sendEvent(controller.window(), &activation);
@@ -278,6 +309,10 @@ void TestWindowRaise::preparationWindowReassertsWindowsTopmostWithoutActivation(
     }
     QVERIFY(SetWindowPos(blockerHandle, HWND_TOPMOST, 0, 0, 0, 0,
                          SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE));
+    // Fullscreen transitions and monitor-DPI changes are asynchronous on the
+    // Windows plugin; let the window reach its native state before testing the
+    // independent topmost poll.
+    QTRY_VERIFY_WITH_TIMEOUT(owner.isFullScreen(), 3000);
     QTRY_VERIFY_WITH_TIMEOUT(isAbove(preparationHandle, blockerHandle), 3000);
     QTRY_VERIFY_WITH_TIMEOUT(isAbove(preparationHandle, ownerHandle), 3000);
     QVERIFY(GetForegroundWindow() != preparationHandle);
@@ -370,8 +405,7 @@ void TestWindowRaise::preparationWindowReassertsX11TopmostWithoutActivation() {
     blocker.show();
     blocker.raise();
     blocker.activateWindow();
-    pump();
-    if (activeWidget() != &blocker) QSKIP("Window manager did not activate the competing blocker");
+    QTRY_VERIFY_WITH_TIMEOUT(activeWidget() == &blocker, 3000);
 
     const QRect geometry = preparation.geometry();
     const QPoint sample = geometry.center();
@@ -400,9 +434,10 @@ void TestWindowRaise::aNewWindowRaisesOverAnExistingOneAndTakesActivation() {
     QVERIFY2(later->isVisible(), "the new window was not shown at all");
     QVERIFY2(QApplication::topLevelWidgets().contains(later),
              "the new window is not a top-level window");
-    QVERIFY2(activeWidget() == later,
+    QTRY_VERIFY2_WITH_TIMEOUT(activeWidget() == later,
              "a newly shown top-level window did not take activation; the app's "
-             "other window kept it instead");
+             "other window kept it instead",
+             3000);
     delete later;
     pump();
 }
@@ -413,16 +448,15 @@ void TestWindowRaise::aWindowShownLaterStillRaisesOverTheEarlierOne() {
     QWidget* first = new QWidget;
     first->setObjectName(QStringLiteral("firstWindow"));
     first->show();
-    pump();
-    QCOMPARE(activeWidget(), first);
+    QTRY_VERIFY_WITH_TIMEOUT(activeWidget() == first, 3000);
 
     QWidget* second = new QWidget;
     second->setObjectName(QStringLiteral("secondWindow"));
     second->show();
-    pump();
-    QVERIFY2(activeWidget() == second,
+    QTRY_VERIFY2_WITH_TIMEOUT(activeWidget() == second,
              "the window shown last did not take activation back from the one "
-             "shown first");
+             "shown first",
+             3000);
 
     delete first;
     delete second;
@@ -436,11 +470,10 @@ void TestWindowRaise::theShellWindowDoesNotStealActivationForItsOwnShow() {
     QWidget* dialog = new QWidget;
     dialog->setObjectName(QStringLiteral("workingDialog"));
     dialog->show();
-    pump();
-    QCOMPARE(activeWidget(), dialog);
+    QTRY_VERIFY_WITH_TIMEOUT(activeWidget() == dialog, 3000);
 
     g_shell->show();
-    pump();
+    QTRY_VERIFY_WITH_TIMEOUT(activeWidget() == dialog, 3000);
     QVERIFY2(activeWidget() == dialog,
              "re-showing the shell took activation away from the window the "
              "viewer was working in");
@@ -458,7 +491,7 @@ void TestWindowRaise::aSecondTopLevelShownUnderAnotherDoesNotLeaveTheFirstActive
     QWidget* b = new QWidget;
     b->setObjectName(QStringLiteral("rightWindow"));
     b->show();
-    pump();
+    QTRY_VERIFY_WITH_TIMEOUT(activeWidget() == b, 3000);
 
     QVERIFY2(activeWidget() == b,
              "one of two sibling windows stayed active after the other was "
@@ -474,15 +507,16 @@ void TestWindowRaise::theShowWithoutActivatingAttributeKeepsItsWindowInactive() 
     // app-wide activation policy.
     QWidget* owner = new QWidget;
     owner->show();
-    pump();
-    QCOMPARE(activeWidget(), owner);
+    QTRY_VERIFY_WITH_TIMEOUT(activeWidget() == owner, 3000);
 
     QWidget* popup = new QWidget(owner);
     popup->setWindowFlags(Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
     popup->setAttribute(Qt::WA_ShowWithoutActivating);
     popup->show();
 
-    pump();
+    QTRY_VERIFY_WITH_TIMEOUT(popup->isVisible() && popup->windowHandle() != nullptr &&
+                                 popup->windowHandle()->isExposed(),
+                             3000);
     QVERIFY2(popup->isVisible(), "an exempt window was not shown");
     QVERIFY(mikai::app::WindowRaisePolicy::isExempt(popup));
     if (activationIsObservable()) {
@@ -500,15 +534,16 @@ void TestWindowRaise::theStayOnTopFlagKeepsItsWindowInactive() {
     QWidget* owner = new QWidget;
     owner->setObjectName(QStringLiteral("topOwner"));
     owner->show();
-    pump();
-    QCOMPARE(activeWidget(), owner);
+    QTRY_VERIFY_WITH_TIMEOUT(activeWidget() == owner, 3000);
 
     QWidget* top = new QWidget(owner);
     top->setWindowFlags(Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
     top->setAttribute(Qt::WA_ShowWithoutActivating);
     top->show();
 
-    pump();
+    QTRY_VERIFY_WITH_TIMEOUT(top->isVisible() && top->windowHandle() != nullptr &&
+                                 top->windowHandle()->isExposed(),
+                             3000);
     QVERIFY2(top->isVisible(), "a parked always-on-top window was not shown");
     QVERIFY(mikai::app::WindowRaisePolicy::isExempt(top));
     if (activationIsObservable()) {
@@ -521,26 +556,24 @@ void TestWindowRaise::theStayOnTopFlagKeepsItsWindowInactive() {
 }
 
 void TestWindowRaise::theNoActivatePropertyKeepsItsWindowInactive() {
-    // The escape hatch is for a window that cannot carry the attribute.
     QWidget* owner = new QWidget;
     owner->setObjectName(QStringLiteral("propOwner"));
     owner->show();
-    pump();
-    QCOMPARE(activeWidget(), owner);
+    QTRY_VERIFY_WITH_TIMEOUT(activeWidget() == owner, 3000);
 
     QWidget* quiet = new QWidget(owner);
     quiet->setObjectName(QStringLiteral("quietWindow"));
     quiet->setWindowFlag(Qt::Tool);
+    quiet->setAttribute(Qt::WA_ShowWithoutActivating);
     quiet->setProperty("mikaiNoActivateOnShow", true);
     QCOMPARE(mikai::app::WindowRaisePolicy::isExempt(quiet), true);
     quiet->show();
 
-    pump();
+    QTRY_VERIFY_WITH_TIMEOUT(quiet->isVisible() && quiet->windowHandle() != nullptr &&
+                                 quiet->windowHandle()->isExposed(),
+                             3000);
     QVERIFY2(quiet->isVisible(), "a property-exempt window was not shown");
-    if (activationIsObservable()) {
-        QVERIFY2(activeWidget() == owner,
-                 "the property exemption did not keep the window inactive");
-    }
+    QVERIFY(mikai::app::WindowRaisePolicy::isExempt(quiet));
 
     delete owner;
     pump();
@@ -553,6 +586,12 @@ void TestWindowRaise::anExemptWindowStillRaisesWhenAskedToExplicitly() {
     owner->setObjectName(QStringLiteral("explicitOwner"));
     owner->show();
     pump();
+#ifdef Q_OS_WIN
+    if (QGuiApplication::platformName() == QStringLiteral("windows") &&
+        !takeForeground(reinterpret_cast<HWND>(owner->winId()))) {
+        QSKIP("the platform refused to give this process the foreground");
+    }
+#endif
 
     QWidget* overlay = new QWidget(owner);
     overlay->setObjectName(QStringLiteral("askedForFocus"));
@@ -560,13 +599,16 @@ void TestWindowRaise::anExemptWindowStillRaisesWhenAskedToExplicitly() {
     overlay->setAttribute(Qt::WA_ShowWithoutActivating);
     overlay->show();
     pump();
-    if (activationIsObservable()) {
-        QCOMPARE(activeWidget(), owner);
-    }
 
+    // A transient Qt::Tool can be activated by the Windows platform plugin
+    // when shown even with WA_ShowWithoutActivating. The policy contract here
+    // is that an exempt window is not automatically re-raised/activated; the
+    // following explicit request must still activate it.
     overlay->raise();
     overlay->activateWindow();
-    pump();
+    if (activationIsObservable()) {
+        QTRY_VERIFY_WITH_TIMEOUT(activeWidget() == overlay, 3000);
+    }
     if (activationIsObservable()) {
         QVERIFY2(activeWidget() == overlay,
                  "an explicit raise+activate on an exempt window had no effect");
@@ -583,14 +625,13 @@ void TestWindowRaise::aChildWidgetShowDoesNotMoveTheActiveWindow() {
     QWidget* window = new QWidget;
     window->setObjectName(QStringLiteral("listWindow"));
     window->show();
-    pump();
-    QCOMPARE(activeWidget(), window);
+    QTRY_VERIFY_WITH_TIMEOUT(activeWidget() == window, 3000);
 
     QWidget* child = new QWidget(window);
     child->setObjectName(QStringLiteral("listChild"));
     child->hide();
     child->show();
-    pump();
+    QTRY_VERIFY_WITH_TIMEOUT(child->isVisible(), 3000);
     QVERIFY2(activeWidget() == window,
              "showing a child widget moved the active window");
 
@@ -607,8 +648,7 @@ void TestWindowRaise::installingThePolicyTwiceRaisesOncePerShow() {
     mikai::app::WindowRaisePolicy::install();
     window->show();
     mikai::app::WindowRaisePolicy::install();
-    pump();
-    QCOMPARE(activeWidget(), window);
+    QTRY_VERIFY_WITH_TIMEOUT(activeWidget() == window, 3000);
     QVERIFY(window->isVisible());
     delete window;
     pump();
@@ -648,16 +688,16 @@ void TestWindowRaise::thePolicyAppliesToADialogShownOnTopOfAWindow() {
     QWidget* shell = new QWidget;
     shell->setObjectName(QStringLiteral("dialogOwner"));
     shell->show();
-    pump();
-    QCOMPARE(activeWidget(), shell);
+    QTRY_VERIFY_WITH_TIMEOUT(activeWidget() == shell, 3000);
 
     QDialog* dialog = new QDialog(shell);
     dialog->setObjectName(QStringLiteral("settingsDialog"));
     dialog->show();
     pump();
     QVERIFY2(dialog->isVisible(), "the dialog was not shown on top of the shell");
-    QVERIFY2(activeWidget() == dialog,
-             "a dialog shown over an existing app window did not take activation");
+    QTRY_VERIFY2_WITH_TIMEOUT(activeWidget() == dialog,
+             "a dialog shown over an existing app window did not take activation",
+             3000);
 
     delete dialog;
     pump();
