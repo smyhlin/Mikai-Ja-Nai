@@ -1,5 +1,7 @@
 #include "TestCompareLoading.hpp"
 
+#include "../QuickPlayerTestSupport.hpp"
+
 #include <player/core/VideoSession.hpp>
 #include <player/quick/PlayerController.hpp>
 #include <player/quick/PlayerWindow.hpp>
@@ -8,9 +10,26 @@
 #include <QSignalSpy>
 #include <QStringList>
 
+namespace {
+bool requireMpvRuntime(QString* error) {
+    return mikai_test::quick::loadExplicitMpvRuntime(error);
+}
+}  // namespace
+
+#define REQUIRE_MPV_RUNTIME()                                                    \
+    do {                                                                         \
+        QString runtimeError;                                                    \
+        if (!requireMpvRuntime(&runtimeError)) {                                 \
+            if (qEnvironmentVariableIsEmpty("MIKAI_MPV_MODULE")) {              \
+                QSKIP(qPrintable(runtimeError));                                \
+            }                                                                    \
+            QFAIL(qPrintable(runtimeError));                                     \
+        }                                                                        \
+    } while (false)
+
 void TestCompareLoading::openingIndicatorEndsOnPresentedFrame() {
-    const QString media =
-        QFileInfo(QStringLiteral("resources/benchmarks/1920x1080.mp4")).absoluteFilePath();
+    REQUIRE_MPV_RUNTIME();
+    const QString media = mikai_test::quick::benchmarkVideoPath();
     QVERIFY2(QFileInfo(media).isFile(), qPrintable(media));
 
     mplayer::quick::PlayerController controller(QStringLiteral("Loading test"), media);
@@ -41,10 +60,10 @@ void TestCompareLoading::openingIndicatorEndsOnPresentedFrame() {
             eventOrder.indexOf(QStringLiteral("opening")));
 }
 void TestCompareLoading::openingIndicatorTracksSourceReplacement() {
-    const QString first =
-        QFileInfo(QStringLiteral("resources/benchmarks/1920x1080.mp4")).absoluteFilePath();
-    const QString replacement =
-        QFileInfo(QStringLiteral("resources/benchmarks/1280x720.mp4")).absoluteFilePath();
+    REQUIRE_MPV_RUNTIME();
+    const QString first = mikai_test::quick::benchmarkVideoPath();
+    const QString replacement = QDir::cleanPath(
+        QStringLiteral(MIKAI_SOURCE_DIR "/resources/benchmarks/1280x720.mp4"));
     QVERIFY(QFileInfo(first).isFile());
     QVERIFY(QFileInfo(replacement).isFile());
 
@@ -69,8 +88,8 @@ void TestCompareLoading::openingIndicatorTracksSourceReplacement() {
 }
 
 void TestCompareLoading::durationPositionAndPlayingFanOut() {
-    const QString media =
-        QFileInfo(QStringLiteral("resources/benchmarks/1920x1080.mp4")).absoluteFilePath();
+    REQUIRE_MPV_RUNTIME();
+    const QString media = mikai_test::quick::benchmarkVideoPath();
     QVERIFY(QFileInfo(media).isFile());
 
     mplayer::quick::PlayerController controller(QStringLiteral("Loading test"), media);
@@ -94,11 +113,11 @@ void TestCompareLoading::durationPositionAndPlayingFanOut() {
 }
 
 void TestCompareLoading::failedOpenIsNamedOnceAndRecovered() {
+    REQUIRE_MPV_RUNTIME();
     const QString missing =
         QFileInfo(QStringLiteral("resources/benchmarks/missing-loading-test.mp4"))
             .absoluteFilePath();
-    const QString valid =
-        QFileInfo(QStringLiteral("resources/benchmarks/1920x1080.mp4")).absoluteFilePath();
+    const QString valid = mikai_test::quick::benchmarkVideoPath();
     mplayer::quick::PlayerController controller(QStringLiteral("Loading test"), missing);
     auto* window = controller.window();
     QVERIFY(window != nullptr);

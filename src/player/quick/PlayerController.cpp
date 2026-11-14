@@ -265,7 +265,7 @@ void PlayerController::connectSession() {
     });
     connect(session_, &VideoSession::openingChanged, this, [this](bool opening) {
         if (opening) {
-            syncOpeningOverlay();
+            showOpeningOverlay();
         } else {
             hideOpeningOverlay();
         }
@@ -1288,10 +1288,11 @@ void PlayerController::closeAuxiliaryWindows() {
         clip->close();
         delete clip;
     }
-    if (mediaInformationWindow_ != nullptr) {
-        mediaInformationWindow_->close();
-        mediaInformationWindow_->deleteLater();
-        mediaInformationWindow_.clear();
+    QWidget* mediaInformation = mediaInformationWindow_.data();
+    mediaInformationWindow_.clear();
+    if (mediaInformation != nullptr) {
+        mediaInformation->close();
+        delete mediaInformation;
     }
 }
 
