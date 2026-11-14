@@ -16,6 +16,8 @@ Open **Settings** from the main window. The settings window has these pages:
 
 The sidebar groups the pages as listed, and the window normally opens on **Customization → General**; an invalid stored preset binding opens **Application → Keyboard shortcuts** instead so the conflict is visible. Page contents scroll independently; the **Save** and **Cancel** buttons stay in the Settings footer. **Save** commits preferences immediately and remains open (displaying an inline **Saved** confirmation for a moment), allowing continuous adjustments across multiple pages without closing the window; **Cancel**, Escape, or closing the window closes it. For detailed processing, component installation and benchmark instructions, see the [processing guide](processing-guide.md).
 
+**Check for updates automatically** controls the startup release check. It is enabled by default; save Settings to change it. The check sends one unauthenticated request to GitHub for the latest stable release. The main window also offers **Check for updates** on demand. A notice links to the release page and can suppress reminders for that version. No update is downloaded or installed by the app.
+
 ## Change appearance and display preferences
 
 In **Customization → General**:

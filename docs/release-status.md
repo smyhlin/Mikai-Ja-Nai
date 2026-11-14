@@ -18,7 +18,7 @@ public-release approval.
 | Compare and Clip | Compare captures a held frame and renders candidate sides; Clip opens a separate seekable-media editor. | The Windows synthetic-video probe opened Clip and verified both Compare pictures and playback resume on close. It did not verify clip export, every Compare candidate or native model inference in Compare. |
 | Optional processing | Anime4K, Standard AnimeJaNai v0.27.0 / package 3.11.0 and prepared Native workflows are separate. TensorRT for RTX is Windows-only; runtimes and models are acquired separately. | The earlier RTX 5090 engine observations below belong to the previous runtime cohort, not an inference proof for the new pins. |
 | Settings and storage | Settings cover appearance, processing, components and benchmarks. Native/model storage follows `MIKAI_NATIVE_ROOT` → writable executable-adjacent store → app-local data. Standard TensorRT additionally uses the upstream shared per-user store and Components relocation controls. | Relocation moves shared runtime packs, not models/engines. Windows loaded DLLs can block a move; close other AI apps and restart first. Existing user stores are never test fixtures. |
-| Updates | In-app update notification, automatic updates and nightly builds remain listed in [TODO](../TODO.md). | These are planned items, not shipped updater guarantees. |
+| Updates | The source checks GitHub for stable release notifications at startup or on demand. | Automatic installation and nightly channels remain listed in [TODO](../TODO.md); the notification does not download or install updates. |
 
 ### November mpv input update
 

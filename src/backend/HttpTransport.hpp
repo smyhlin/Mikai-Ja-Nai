@@ -35,6 +35,7 @@ struct HttpFetchResult {
     QByteArray body;
     bool cancelled = false;
     bool timedOut = false;
+    bool responseTooLarge = false;
     QString networkError;
     QuotaSnapshot quota;
     QString cacheControl;
@@ -48,6 +49,7 @@ struct HttpFetchOptions {
     // Collect arbitrary headers only for callers that need them.
     bool collectHeaders = false;
     std::function<void(qint64 received, qint64 total)> progress;
+    qint64 maxResponseBytes = 0;
 };
 
 // Runs one bounded GET on the calling thread; retry policy remains with callers.

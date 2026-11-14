@@ -12,11 +12,13 @@
 #include <native/components/NativeGpuProbe.hpp>
 #include "state/NativePlaybackAssembly.hpp"
 #include "state/QualityCache.hpp"
+#include "state/SettingsKeys.hpp"
 #include "theme/Metrics.hpp"
 #include "theme/Theme.hpp"
 #include "workers/Runner.hpp"
 
 #include <backend/MikaiClient.hpp>
+#include <backend/UpdateCheck.hpp>
 #include <native/prepare/NativePreparationContext.hpp>
 #include <native/bundle/NativeRuntimeSelection.hpp>
 
@@ -27,6 +29,7 @@
 #include <memory>
 #include <optional>
 #include <QtCore/QDebug>
+#include <QtCore/QDateTime>
 #include <QtCore/QElapsedTimer>
 #include <QtCore/QMetaObject>
 #include <QtCore/QTimer>
@@ -39,6 +42,8 @@
 #include <QUrl>
 #include <QVariant>
 #include <QApplication>
+#include <QCheckBox>
+#include <QDesktopServices>
 #include <QCloseEvent>
 #include <QKeyEvent>
 #include <QDialog>
@@ -49,6 +54,8 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QScreen>
+#include <QSettings>
+#include <QToolButton>
 #include <QSizePolicy>
 #include <QHBoxLayout>
 #include <QStackedWidget>
@@ -245,14 +252,22 @@ MainWindow::MainWindow(backend::MikaiClient& client, StartupMode startupMode, QW
     connect(search_, &SearchPage::openRequested, this,
             [this](const QString& ref, const QString& poster) { openTitle(ref, poster); });
     connect(search_, &SearchPage::settingsRequested, this, &MainWindow::openSettings);
+    connect(search_, &SearchPage::checkForUpdatesRequested, this,
+            [this] { checkForUpdates(true); });
     connect(search_, &SearchPage::accessSettingsRequested, this,
             &MainWindow::openAccessSettings);
     connect(search_, &SearchPage::mediaFileRequested, this, &MainWindow::chooseMediaFile);
     connect(search_, &SearchPage::mediaUrlRequested, this, &MainWindow::chooseMediaUrl);
     stack_->addWidget(search_);
+    QTimer::singleShot(0, this, [this] {
+        QSettings settings;
+        if (settings.value(QString::fromLatin1(kUpdateNotificationsEnabled), true).toBool())
+            checkForUpdates(false);
+    });
 }
 
 MainWindow::~MainWindow() {
+    updateCheckAlive_->store(false);
     delete videoDrop_;
     videoDrop_ = nullptr;
     // Destruction cannot be refused: the player is closed anyway, with the
@@ -290,6 +305,14 @@ void MainWindow::retranslateUi() {
     if (acquisitionDetails_ != nullptr) acquisitionDetails_->setText(tr("Components"));
     if (acquisitionCancel_ != nullptr) acquisitionCancel_->setText(tr("Cancel"));
     restateEnginePreparation();
+    if (search_ != nullptr) {
+        if (auto* updates = search_->findChild<QToolButton*>(
+                QStringLiteral("checkForUpdatesButton")); updates != nullptr) {
+            updates->setText(tr("Check for updates"));
+            updates->setToolTip(tr("Check for updates"));
+            updates->setAccessibleName(tr("Check for updates"));
+        }
+    }
 }
 
 QString MainWindow::enginePreparationTitle() const {
@@ -770,6 +793,104 @@ void MainWindow::ensureNativeComponents() {
     // The Download path resumes when the settings dialog it opened closes.
     // Skip, and a Download that never opened settings, resume here.
     resumePlaybackAfterComponentAsk();
+}
+
+void MainWindow::checkForUpdates(bool manual) {
+    if (updateCheckInFlight_) {
+        updateCheckManualRequested_ = updateCheckManualRequested_ || manual;
+        return;
+    }
+    updateCheckInFlight_ = true;
+    updateCheckManualRequested_ = manual;
+    const auto alive = updateCheckAlive_;
+    runner_->run(
+        [] {
+            const backend::UpdateCheckResult checked =
+                backend::checkForUpdates(QStringLiteral(MIKAI_PROJECT_VERSION));
+            QVariantMap value;
+            value.insert(QStringLiteral("status"), static_cast<int>(checked.status));
+            value.insert(QStringLiteral("version"), checked.version);
+            value.insert(QStringLiteral("url"), checked.releaseUrl);
+            return value;
+        },
+        [this, alive](const QVariant& value) {
+            if (!alive->load()) return;
+            updateCheckInFlight_ = false;
+            const bool manual = std::exchange(updateCheckManualRequested_, false);
+            const auto status = static_cast<backend::UpdateCheckStatus>(
+                value.toMap().value(QStringLiteral("status")).toInt());
+            const QString version = value.toMap().value(QStringLiteral("version")).toString();
+            const QUrl url = value.toMap().value(QStringLiteral("url")).toUrl();
+            QSettings().setValue(QString::fromLatin1(kUpdateNotificationsLastChecked),
+                                 QDateTime::currentDateTimeUtc());
+            if (status == backend::UpdateCheckStatus::UpdateAvailable) {
+                QSettings settings;
+                if (manual || settings.value(QString::fromLatin1(kUpdateNotificationsEnabled), true)
+                                  .toBool()) {
+                    if (manual || settings.value(
+                            QString::fromLatin1(kUpdateNotificationsDismissedVersion))
+                                      .toString() != version) {
+                        showUpdateResult(QStringLiteral("available"), version, url, manual);
+                    }
+                }
+            } else if (manual) {
+                showUpdateResult(status == backend::UpdateCheckStatus::UpToDate
+                                     ? QStringLiteral("current") : QStringLiteral("failed"),
+                                 version, url, true);
+            }
+        },
+        [this, alive](const backend::Failure&) {
+            if (!alive->load()) return;
+            updateCheckInFlight_ = false;
+            const bool manual = std::exchange(updateCheckManualRequested_, false);
+            QSettings().setValue(QString::fromLatin1(kUpdateNotificationsLastChecked),
+                                 QDateTime::currentDateTimeUtc());
+            if (manual) showUpdateResult(QStringLiteral("failed"), {}, {}, true);
+        });
+}
+
+void MainWindow::showUpdateResult(const QString& status, const QString& version,
+                                  const QUrl& releaseUrl, bool manual) {
+    auto* dialog = new QMessageBox(this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setIcon(status == QStringLiteral("available") ? QMessageBox::Information
+                                                           : status == QStringLiteral("failed")
+                                                                 ? QMessageBox::Warning
+                                                                 : QMessageBox::Information);
+    if (status == QStringLiteral("available")) {
+        dialog->setWindowTitle(tr("Update available"));
+        dialog->setText(tr("A newer version is available: %1 (current: %2).")
+                            .arg(version, QStringLiteral(MIKAI_PROJECT_VERSION)));
+        auto* dismissVersion = new QCheckBox(
+            tr("Don't remind me about version %1").arg(version), dialog);
+        dialog->setCheckBox(dismissVersion);
+        QPushButton* open = dialog->addButton(tr("Open release"), QMessageBox::AcceptRole);
+        connect(open, &QPushButton::clicked, dialog, [releaseUrl] {
+            const QString host = releaseUrl.host().toLower();
+            if (releaseUrl.scheme() == QLatin1String("https") &&
+                (host == QLatin1String("github.com") || host == QLatin1String("www.github.com")) &&
+                releaseUrl.path().contains(QStringLiteral("/releases"))) {
+                QDesktopServices::openUrl(releaseUrl);
+            }
+        });
+        connect(dialog, &QMessageBox::finished, this, [dismissVersion, version] {
+            if (dismissVersion->isChecked()) {
+                QSettings().setValue(QString::fromLatin1(kUpdateNotificationsDismissedVersion),
+                                     version);
+            }
+        });
+    } else if (status == QStringLiteral("current")) {
+        dialog->setWindowTitle(tr("You're up to date"));
+        dialog->setText(tr("You are using the latest available version (%1).")
+                            .arg(QStringLiteral(MIKAI_PROJECT_VERSION)));
+    } else {
+        dialog->setWindowTitle(tr("Update check failed"));
+        dialog->setText(tr("Could not check for updates. Please try again later."));
+    }
+    dialog->addButton(tr("Dismiss"), QMessageBox::RejectRole);
+    Q_UNUSED(manual);
+    dialog->setModal(false);
+    dialog->show();
 }
 
 void MainWindow::openSettings() {

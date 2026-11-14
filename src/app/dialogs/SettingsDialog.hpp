@@ -531,6 +531,8 @@ private:
     QLabel* feedsHint_ = nullptr;
     QLabel* languageTitle_ = nullptr;
     QLabel* languageHint_ = nullptr;
+    QCheckBox* updateNotifications_ = nullptr;
+    QLabel* updateNotificationsHint_ = nullptr;
     QLabel* presetsHeading_ = nullptr;
     QLabel* presetsDescription_ = nullptr;
     QLabel* nativeHeading_ = nullptr;

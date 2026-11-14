@@ -53,6 +53,12 @@ inline constexpr std::string_view kWatchHistoryKey = "title/watchHistory";
 // Quality cache backing key (QualityCache.cpp).
 inline constexpr std::string_view kQualityUrls = "quality/urls";
 
+// Update notifications.
+inline constexpr std::string_view kUpdateNotificationsEnabled = "updates/enabled";
+inline constexpr std::string_view kUpdateNotificationsLastChecked = "updates/lastChecked";
+inline constexpr std::string_view kUpdateNotificationsDismissedVersion =
+    "updates/dismissedVersion";
+
 // Interface language (I18n.hpp; kept name so existing users, including
 // probes, resolve).
 inline constexpr std::string_view kUiLanguageSettingKey = "ui/language";

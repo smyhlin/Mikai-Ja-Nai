@@ -22,6 +22,7 @@
 #include "TestCrashLog.hpp"
 #include "TestModels.hpp"
 #include "TestUpdateFeed.hpp"
+#include "TestUpdateCheck.hpp"
 #include "TestPublicApiUi.hpp"
 #include "TestPagers.hpp"
 #include "TestQualityCache.hpp"
@@ -130,7 +131,7 @@ constexpr const char* kSuites[] = {
     "TestThemeRoles",
     "TestStreams", "TestPagers",
     "TestQualityCache", "TestRateLimiter", "TestWatchHistory", "TestDownloads", "TestDiagnostics",
-    "TestApiClient", "TestFeedRender", "TestUpdateFeed", "TestPublicApiUi",
+    "TestApiClient", "TestFeedRender", "TestUpdateFeed", "TestUpdateCheck", "TestPublicApiUi",
     "TestRunner",
     "TestLayering", "TestWindowRaise", "TestSystemIntegration", "TestCrashLog", "TestClipboard", "TestLiveOracle",
 #ifdef Q_OS_WIN
@@ -459,6 +460,7 @@ int main(int argc, char** argv) {
   runWrapper("TestApiClient", runTestApiClient);
   runWrapper("TestFeedRender", runTestFeedRender);
   runWrapper("TestUpdateFeed", runTestUpdateFeed);
+  runWrapper("TestUpdateCheck", runTestUpdateCheck);
   runWrapper("TestPublicApiUi", runTestPublicApiUi);
   runWrapper("TestRunner", runTestRunner);
 #ifdef MIKAI_WITH_MODEL_INSPECTION

@@ -212,6 +212,8 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/backend/TestReleases.cpp
     tests/cpp/backend/TestUpdateFeed.hpp
     tests/cpp/backend/TestUpdateFeed.cpp
+    tests/cpp/backend/TestUpdateCheck.hpp
+    tests/cpp/backend/TestUpdateCheck.cpp
     tests/cpp/backend/TestStreams.hpp
     tests/cpp/backend/TestStreams.cpp
     # Player & shader suites
@@ -526,6 +528,7 @@ if(MIKAI_BUILD_PROBES)
     TestApiClient
     TestFeedRender
     TestUpdateFeed
+    TestUpdateCheck
     TestPublicApiUi
     TestRunner
     TestLayering

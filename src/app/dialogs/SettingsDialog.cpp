@@ -619,6 +619,8 @@ void SettingsDialog::save() {
     // settings - no new settings page.
     settings.setValue(QString::fromLatin1(mplayer::VideoSession::kAutoAdvanceSettingKey),
                       autoAdvance_->isChecked());
+    settings.setValue(QString::fromLatin1(kUpdateNotificationsEnabled),
+                      updateNotifications_->isChecked());
     using HdrPolicy = mplayer::VideoSession::HdrToneMappingPolicy;
     switch (committedHdrPolicy) {
         case 1: mplayer::VideoSession::setHdrToneMappingPolicy(HdrPolicy::Stable); break;

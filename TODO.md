@@ -1,6 +1,6 @@
 ## Todo
 
-- [ ] in-app update notification
+- [x] in-app update notification
 - [ ] auto-update from GitHub Releases
 - [ ] nightly builds
 

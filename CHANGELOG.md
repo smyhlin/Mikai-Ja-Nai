@@ -6,6 +6,8 @@ Published changes are recorded with their downloads on the [GitHub releases page
 
 This release introduces the player-only Qt Quick/QML frontend while retaining the C++ playback engine and Widgets application pages.
 
+- Notify about newer stable GitHub releases at startup or on demand, with an option to disable startup checks or suppress a particular version. Updates are not downloaded or installed automatically.
+
 - Fix a fatal QML lifetime error when closing an episode player: the player is disposed after the close-button handler returns, leaving the title page open.
 - Update the pinned Windows and Linux mpv forks to the November 11/12 releases, deploy the enhanced-scene companion and its notices, and retain HTTPS support through the Linux FFmpeg TLS rebuild.
 - Restore Quick probe/test compilation and derive QML tooling imports from the player module target without replacing deployment-owned `qt.conf`.

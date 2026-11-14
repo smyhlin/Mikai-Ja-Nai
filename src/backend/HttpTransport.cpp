@@ -131,6 +131,15 @@ HttpFetchResult runBlockingFetch(QNetworkAccessManager* manager, const QNetworkR
     });
     QObject::connect(&abortDrainTimer, &QTimer::timeout, &loop, &QEventLoop::quit);
     QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    if (options.maxResponseBytes > 0) {
+        reply->setReadBufferSize(options.maxResponseBytes + 1);
+        QObject::connect(reply, &QIODevice::readyRead, &loop, [&] {
+            if (reply->bytesAvailable() > options.maxResponseBytes) {
+                result.responseTooLarge = true;
+                reply->abort();
+            }
+        });
+    }
     // Quiet requests must remain cancellable.
     QTimer cancelWatch;
     cancelWatch.setInterval(kCancelSliceMs);

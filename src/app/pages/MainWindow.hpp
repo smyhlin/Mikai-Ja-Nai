@@ -7,6 +7,8 @@
 #include <QString>
 #include <QWidget>
 #include <optional>
+#include <atomic>
+#include <memory>
 #include <player/shell/ProcessingSettingsIntent.hpp>
 
 #include <native/bundle/NativeRuntimeSelection.hpp>
@@ -92,6 +94,9 @@ private:
     /// keeps its own dismiss timer.
     void restateEnginePreparation();
 
+    void checkForUpdates(bool manual);
+    void showUpdateResult(const QString& status, const QString& version,
+                          const QUrl& releaseUrl, bool manual);
     void openSettings();
     /// Opens Settings on the Components tab, landing on the element the startup
     /// prompt warned about. Plain dialog, no intent: nothing is armed.
@@ -202,6 +207,9 @@ private:
     /// True between scheduling a setup offer and the turn that presents it, so
     /// two inventory results cannot queue two asks.
     bool setupPromptScheduled_ = false;
+    std::shared_ptr<std::atomic<bool>> updateCheckAlive_ = std::make_shared<std::atomic<bool>>(true);
+    bool updateCheckInFlight_ = false;
+    bool updateCheckManualRequested_ = false;
     QWidget* acquisitionBar_ = nullptr;
     QProgressBar* acquisitionProgress_ = nullptr;
     QLabel* acquisitionStatus_ = nullptr;

@@ -462,6 +462,17 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     theme::applyActionRole(settingsButton_, theme::ActionRole::Secondary);
     connect(settingsButton_, &QToolButton::clicked, this, &SearchPage::settingsRequested);
     sidebarLayout->addWidget(settingsButton_);
+    updatesButton_ = new QToolButton(sidebar_);
+    updatesButton_->setObjectName(QStringLiteral("checkForUpdatesButton"));
+    updatesButton_->setText(tr("Check for updates"));
+    updatesButton_->setToolTip(tr("Check for updates"));
+    updatesButton_->setAccessibleName(tr("Check for updates"));
+    updatesButton_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    updatesButton_->setFixedHeight(theme::kControlHeight);
+    updatesButton_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    theme::applyActionRole(updatesButton_, theme::ActionRole::Secondary);
+    connect(updatesButton_, &QToolButton::clicked, this, &SearchPage::checkForUpdatesRequested);
+    sidebarLayout->addWidget(updatesButton_);
 
     // The field is one framed control: a leading glyph, the line edit, and a
     // non-interactive keycap in the trailing inset. The keycap is a sibling of
@@ -845,7 +856,7 @@ void SearchPage::updateSidebarPresentation(bool force) {
                                                          : Qt::AlignHCenter);
     }
     for (QToolButton* button : {homeButton_, filtersButton_, teamsButton_, mediaButton_,
-                                keysButton_, settingsButton_}) {
+                                keysButton_, settingsButton_, updatesButton_}) {
         if (button == nullptr) continue;
         button->setToolButtonStyle(expanded ? Qt::ToolButtonTextBesideIcon
                                             : Qt::ToolButtonIconOnly);
@@ -907,6 +918,11 @@ void SearchPage::retranslateUi() {
         settingsButton_->setText(tr("Settings"));
         settingsButton_->setToolTip(tr("API token settings"));
         settingsButton_->setAccessibleName(tr("API token settings"));
+    }
+    if (updatesButton_ != nullptr) {
+        updatesButton_->setText(tr("Check for updates"));
+        updatesButton_->setToolTip(tr("Check for updates"));
+        updatesButton_->setAccessibleName(tr("Check for updates"));
     }
     if (searchButton_ != nullptr) {
         searchButton_->setText(tr("Search"));

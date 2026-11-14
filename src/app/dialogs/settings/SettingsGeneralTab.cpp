@@ -363,6 +363,22 @@ QWidget* SettingsDialog::buildGeneralTab() {
         QString::fromLatin1(mplayer::VideoSession::kAutoAdvanceSettingKey), true).toBool());
     hdrLayout->addWidget(autoAdvance_);
 
+    updateNotifications_ =
+        new QCheckBox(tr("Check for updates automatically"), hdrCard);
+    updateNotifications_->setObjectName(QStringLiteral("updateNotificationsCheck"));
+    polishInteractiveControl(updateNotifications_, theme::kSettingsControlSize);
+    updateNotifications_->setChecked(
+        QSettings().value(QString::fromLatin1(kUpdateNotificationsEnabled), true).toBool());
+    hdrLayout->addWidget(updateNotifications_);
+
+    updateNotificationsHint_ = new QLabel(
+        tr("Checks for a newer stable release using one unauthenticated request to GitHub. "
+           "No update is downloaded or installed."),
+        hdrCard);
+    styleMutedCaption(updateNotificationsHint_);
+    updateNotificationsHint_->setWordWrap(true);
+    hdrLayout->addWidget(updateNotificationsHint_);
+
     root->addWidget(hdrCard);
 
     // ── Card 5: Video scaling (GOAL-H2) ─────────────────────────────────
@@ -772,6 +788,10 @@ void SettingsDialog::retranslateGeneralTab() {
     restateLanguage(QStringLiteral("uk"), tr("Ukrainian"));
     language_->setAccessibleName(tr("Interface language"));
 
+    updateNotifications_->setText(tr("Check for updates automatically"));
+    updateNotificationsHint_->setText(
+        tr("Checks for a newer stable release using one unauthenticated request to GitHub. "
+           "No update is downloaded or installed."));
     playbackTitle_->setText(tr("HDR playback"));
     playbackHint_->setText(
         tr("HDR tone mapping controls how HDR video is mapped to the display. "

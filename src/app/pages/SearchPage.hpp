@@ -100,6 +100,7 @@ public:
 Q_SIGNALS:
     void openRequested(const QString& ref, const QString& poster);
     void settingsRequested();
+    void checkForUpdatesRequested();
     /// The quota chip was activated: open Settings on its Access page.
     void accessSettingsRequested();
     void mediaFileRequested();
@@ -431,6 +432,7 @@ private:
     QAction* openUrlAction_ = nullptr;
     QToolButton* keysButton_ = nullptr;
     QToolButton* settingsButton_ = nullptr;
+    QToolButton* updatesButton_ = nullptr;
     QPushButton* searchButton_ = nullptr;
     QLineEdit* query_ = nullptr;
     QToolButton* filtersButton_ = nullptr;

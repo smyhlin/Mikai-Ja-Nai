@@ -75,6 +75,8 @@ add_library(mikai_backend STATIC
   src/backend/Releases.hpp
   src/backend/UpdateFeed.cpp
   src/backend/UpdateFeed.hpp
+  src/backend/UpdateCheck.cpp
+  src/backend/UpdateCheck.hpp
   src/backend/Runtime.cpp
   src/backend/Runtime.hpp
   src/backend/Streams.cpp
