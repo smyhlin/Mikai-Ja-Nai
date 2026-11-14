@@ -27,6 +27,7 @@
 #include <QOpenGLFunctions>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QQuickStyle>
 #include <QSGRendererInterface>
 #include <QPointer>
 #include <QRunnable>
@@ -1874,6 +1875,7 @@ int main(int argc, char** argv) {
     if (qgetenv("QT_OPENGL").compare("software", Qt::CaseInsensitive) != 0)
         QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL);
     QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+    QQuickStyle::setStyle(QStringLiteral("Basic"));
     QApplication app(argc,argv);
     app.setQuitOnLastWindowClosed(false);
     if(QCoreApplication::arguments().contains(QStringLiteral("--foreground-helper")))
@@ -1951,6 +1953,11 @@ int main(int argc, char** argv) {
         evidence.write(QJsonDocument(row).toJson(QJsonDocument::Compact));
         evidence.write("\n");
         evidence.flush();
+        const QString result=row.value(QStringLiteral("result")).toString();
+        if(result==QLatin1String("FAIL")||result==QLatin1String("INVALID")) {
+            std::fprintf(stderr,"Probe failure: %s\n",
+                         QJsonDocument(row).toJson(QJsonDocument::Compact).constData());
+        }
     };
     if(hoverCanary) {
         const QString platform=QGuiApplication::platformName();
@@ -1983,9 +1990,7 @@ int main(int argc, char** argv) {
                              window->setProperty("probePlaybackError", message);
                          });
         window->setFlag(Qt::WindowDoesNotAcceptFocus, true);
-        // fullscreen_ defaults to true; toggling here actually switches the
-        // canary to windowed mode. Use the same presentation path as the other
-        // probe modes so the scene is shown before playback starts.
+        controller->toggleFullscreen();
         controller->showWindow();
         window->resize(960, 540);
     } else {

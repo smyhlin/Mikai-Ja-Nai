@@ -114,6 +114,8 @@ def main():
         run('python-dependencies', [sys.executable, '-m', 'pip', 'freeze'])
         run('provision-contracts', [sys.executable, '-m', 'unittest', 'discover',
                                     '-s', ROOT / 'packaging/ci', '-p', 'test_provision.py'])
+        run('build-contracts', [sys.executable, '-m', 'unittest', 'discover',
+                                '-s', ROOT / 'packaging/ci', '-p', 'test_build.py'])
         run('release-contracts', [sys.executable, '-m', 'unittest', 'discover',
                                   '-s', ROOT / 'packaging/ci', '-p', 'test_release.py'])
         if windows:
@@ -309,8 +311,9 @@ def main():
         verdict.update(status='passed', artifacts=files,
                        commit=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip())
     finally:
-        if (build / 'Testing').is_dir():
-            shutil.copytree(build / 'Testing', evidence / 'Testing', dirs_exist_ok=True)
+        for directory in ('Testing', '_hover-canary'):
+            if (build / directory).is_dir():
+                shutil.copytree(build / directory, evidence / directory, dirs_exist_ok=True)
         (evidence / 'verification.json').write_text(json.dumps(verdict, indent=2) + '\n', encoding='utf-8')
 
 
