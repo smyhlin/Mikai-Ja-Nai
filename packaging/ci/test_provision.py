@@ -78,7 +78,7 @@ class QuickSdkReadinessTests(unittest.TestCase):
         self.assertTrue((evidence / 'toolchain.json').is_file())
 
     def test_windows_main_publishes_json_serializable_toolchain_evidence(self):
-        root = self.prefix / 'sdk'
+        root = self.prefix / 'sdk' / '..' / 'sdk'
         evidence = self.prefix / 'evidence'
         prefix = root / '6.12.0' / 'mingw_64'
         self.prefix = prefix
@@ -107,11 +107,12 @@ class QuickSdkReadinessTests(unittest.TestCase):
         toolchain = json.loads((evidence / 'toolchain.json').read_text(encoding='utf-8'))
         self.assertEqual(toolchain['host'], 'windows')
         self.assertEqual(toolchain['acquisition'], 'aqt')
-        self.assertEqual(toolchain['softwareOpenGL'], str(software_gl))
-        self.assertEqual(toolchain['qtPrefix'], str(prefix))
-        self.assertEqual(toolchain['compiler'], str(compiler))
+        self.assertEqual(toolchain['softwareOpenGL'], str(software_gl.resolve()))
+        self.assertEqual(toolchain['qtPrefix'], str(prefix.resolve()))
+        self.assertEqual(toolchain['compiler'], str(compiler.resolve()))
         self.assertEqual(toolchain['path'], [
-            str(compiler.parent), str(software_gl), str(prefix / 'bin')])
+            str(compiler.parent.resolve()), str(software_gl.resolve()),
+            str((prefix / 'bin').resolve())])
         self.assertEqual(toolchain['vulkanRuntime']['installer'], 'runtime.exe')
 
     def test_windows_software_renderer_is_installed_in_qt_bin(self):

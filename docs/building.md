@@ -72,6 +72,8 @@ The hover-preview integration test waits for the opening state to clear before s
 - On Windows it does not: aqt resolves `Updates.xml` one directory above where Qt now publishes it, so every `install-qt windows` call fails before downloading anything.
 - The Windows path therefore fetches pinned Qt base, Declarative, SVG, Tools, translations, Image Formats and software OpenGL archives and the MinGW 13.1.0 toolchain, verifies each SHA-256 and size, and extracts them into the layout the installer produces; the verified list is written to `evidence/toolchain.json`. Its `softwareOpenGL` field records the renderer's directory as a JSON string. Software OpenGL is a CI runtime prerequisite, not a bundled application dependency.
 
+Provisioning records resolved absolute SDK paths in `toolchain.json`; Windows 8.3 aliases such as `RUNNER~1` expand to their long names.
+
 Re-derive a digest only from the same URL.
 
 The Windows CI build also passes `-DMIKAI_DISABLE_IPO=ON`: GCC 13.1 MinGW's LTO rejects the duplicated weak destructor thunks this tree's multiple-inheritance widgets emit, and the link fails on `multiple definition` where a non-LTO link merges them. Pass the same flag by hand for a local MinGW GCC 13 build; it is the compiler version that matters, not whether the build is native or cross. `MIKAI_DISABLE_IPO=OFF` remains the default, so a newer MinGW keeps LTO.
