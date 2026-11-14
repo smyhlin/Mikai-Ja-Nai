@@ -114,8 +114,8 @@ bool openPlayer(PlayerController* controller) {
     if (window == nullptr) return false;
     controller->showWindow();
     if (!QTest::qWaitForWindowExposed(window, 15000)) return false;
-    if (!window->session()->waitForContext(20000)) return false;
     controller->startPlayer();
+    if (!window->session()->waitForContext(20000)) return false;
     return settleUntil([controller] { return controller->duration() > 10.0; }, 30000);
 }
 bool startPlaying(PlayerController* controller) {
@@ -225,7 +225,7 @@ void TestPlaybackControls::nestedEnhancementMenuActivatesTheSelectedPreset() {
     auto* quality = controller.submenuModel(QStringLiteral("anime4k"), qualityRow);
     QVERIFY(quality != nullptr);
 
-    const int hqARow = quality->indexOfId(QStringLiteral("hq_a"));
+    const int hqARow = quality->indexOfId(QStringLiteral("anime4k.hq_a"));
     QVERIFY(hqARow >= 0);
     const auto preset = quality->row(hqARow);
     QCOMPARE(preset.action, mplayer::quick::PlayerMenuModel::Action::SetEnhancement);
@@ -245,8 +245,9 @@ void TestPlaybackControls::qualityMenuSortsAvailableHeightsDescendingAndMaintain
         {1080, QStringLiteral("duplicate-stream-1080")},
         {360, QStringLiteral("stream-360")},
     };
+    RecordingHost host;
     PlayerController controller(QStringLiteral("quality menu"), QStringLiteral("stream-720"),
-                                qualities, 720, nullptr);
+                                qualities, 720, &host);
 
     const auto* menu = controller.qualityMenu();
     QVERIFY(menu != nullptr);
@@ -306,10 +307,15 @@ void TestPlaybackControls::transportActionsUpdateTypedControllerAndSessionState(
     QVERIFY(controller.muted());
 
     controller.seekTo(1.0);
-    QVERIFY(settleUntil([&] { return std::abs(controller.position() - 1.0) < 0.25; }, 10000));
+    QVERIFY(settleUntil([&] {
+        return std::abs(controller.position() - 1.0) < 0.25 &&
+               std::abs(session->position() - 1.0) < 0.25;
+    }, 10000));
     controller.togglePlayPause();
     QVERIFY(settleUntil([&] { return !controller.playing() && coreIsPaused(session); }, 10000));
-    QVERIFY(std::abs(controller.position() - session->position()) < 0.25);
+    QVERIFY(settleUntil([&] {
+        return std::abs(controller.position() - session->position()) < 0.25;
+    }, 5000));
 }
 
 void TestPlaybackControls::keyboardStepsAreResolvedByTheSessionCore() {
@@ -406,6 +412,8 @@ void TestPlaybackControls::quickTimelinePointerSeeksAndTimeLabelsFormat() {
     PlayerController controller(QStringLiteral("timeline"), fixture);
     QVERIFY(openPlayer(&controller));
     controller.session()->setPaused(true);
+    QVERIFY2(settleUntil([&] { return coreIsPaused(controller.session()); }, 5000),
+             "the playback core did not pause before timeline interaction");
     auto* window = controller.window();
     QVERIFY(window != nullptr);
     auto* timeline = timelineItem(window->contentItem());
@@ -415,7 +423,10 @@ void TestPlaybackControls::quickTimelinePointerSeeksAndTimeLabelsFormat() {
     const double target = controller.duration() * 0.5;
 
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, windowPoint(timeline, 0.5));
-    QVERIFY2(settleUntil([&] { return std::abs(controller.position() - target) < 0.75; }, 10000),
+    QVERIFY2(settleUntil([&] {
+                 return std::abs(controller.position() - target) < 0.75 &&
+                        std::abs(controller.session()->position() - target) < 0.75;
+             }, 10000),
              "clicking the Quick timeline did not seek the session");
     QTest::keyClick(window, Qt::Key_Right);
     QVERIFY2(settleUntil([&] { return std::abs(controller.position() - (target + 5.0)) < 0.75; },
@@ -573,6 +584,8 @@ void TestPlaybackControls::skipForwardUsesEightyFiveSecondsWhenReachable() {
     session->setPaused(true);
     session->seek(1.0);
     QVERIFY(settleUntil([&] { return std::abs(session->position() - 1.0) < 0.25; }, 10000));
+    QVERIFY2(settleUntil([&] { return coreIsPaused(session); }, 5000),
+             "the paused seek intent did not reach the playback core");
 
     controller.skipForward();
     QVERIFY2(settleUntil([&] { return std::abs(session->position() - 86.0) < 0.75; }, 10000),
@@ -593,6 +606,8 @@ void TestPlaybackControls::skipAtEndDoesNotRestartTheSource() {
     session->setPaused(true);
     session->seek(1.0);
     QVERIFY(settleUntil([&] { return std::abs(session->position() - 1.0) < 0.25; }, 10000));
+    QVERIFY2(settleUntil([&] { return coreIsPaused(session); }, 5000),
+             "the paused seek intent did not reach the playback core");
     const auto duration = coreNumber(session, "duration");
     const auto sourceBefore = coreText(session, "filename");
     QVERIFY(duration && *duration > 10.0);

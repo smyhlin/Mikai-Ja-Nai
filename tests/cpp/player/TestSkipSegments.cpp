@@ -44,11 +44,11 @@ public:
             if (error != nullptr) *error = QStringLiteral("Quick player window was not exposed");
             return false;
         }
+        controller.startPlayer();
         if (!window->session()->waitForContext(20000)) {
             if (error != nullptr) *error = QStringLiteral("Quick player render context is unavailable");
             return false;
         }
-        controller.startPlayer();
         QElapsedTimer timer;
         timer.start();
         while (timer.elapsed() < 30000 && controller.session()->duration() <= 2.0) {
@@ -60,7 +60,17 @@ public:
             return false;
         }
         controller.session()->setPaused(true);
-        return true;
+        QElapsedTimer pauseTimer;
+        pauseTimer.start();
+        while (pauseTimer.elapsed() < 5000) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+            const auto paused = controller.session()->probeMpvProperty(
+                QStringLiteral("pause"), mplayer::ProbePropertyKind::Flag);
+            if (paused && paused->flag) return true;
+            QThread::msleep(10);
+        }
+        if (error != nullptr) *error = QStringLiteral("Quick player did not apply the paused state");
+        return false;
     }
 
     PlayerController controller;
@@ -70,9 +80,17 @@ bool seekAndSettle(PlayerController& controller, double seconds) {
     controller.seekTo(seconds);
     QElapsedTimer timer;
     timer.start();
+    QElapsedTimer settled;
+    settled.invalidate();
     while (timer.elapsed() < 8000) {
         QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
-        if (std::abs(controller.session()->position() - seconds) < 0.25) return true;
+        if (std::abs(controller.session()->position() - seconds) < 0.25 &&
+            std::abs(controller.position() - seconds) < 0.25) {
+            if (!settled.isValid()) settled.start();
+            if (settled.elapsed() >= 300) return true;
+        } else {
+            settled.invalidate();
+        }
         QThread::msleep(10);
     }
     return false;
@@ -82,9 +100,17 @@ bool seekExactlyAndSettle(PlayerController& controller, double seconds) {
     controller.session()->seekExact(seconds);
     QElapsedTimer timer;
     timer.start();
+    QElapsedTimer settled;
+    settled.invalidate();
     while (timer.elapsed() < 8000) {
         QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
-        if (std::abs(controller.session()->position() - seconds) < 0.10) return true;
+        if (std::abs(controller.session()->position() - seconds) < 0.10 &&
+            std::abs(controller.position() - seconds) < 0.10) {
+            if (!settled.isValid()) settled.start();
+            if (settled.elapsed() >= 300) return true;
+        } else {
+            settled.invalidate();
+        }
         QThread::msleep(10);
     }
     return false;
@@ -147,9 +173,11 @@ void TestSkipSegments::theClockControlsOverlappingSkipOffers() {
                                         segment("ending", endingStart, endingEnd)});
 
     QVERIFY(seekExactlyAndSettle(fixture.controller, openingStart));
-    QCOMPARE(offerValues(fixture.controller), QStringList{QStringLiteral("0")});
+    QTRY_COMPARE_WITH_TIMEOUT(offerValues(fixture.controller),
+                              QStringList{QStringLiteral("0")}, 5000);
     QVERIFY(seekAndSettle(fixture.controller, duration * 0.20));
-    QCOMPARE(offerValues(fixture.controller), QStringList{QStringLiteral("0")});
+    QTRY_COMPARE_WITH_TIMEOUT(offerValues(fixture.controller),
+                              QStringList{QStringLiteral("0")}, 5000);
     QVERIFY(seekAndSettle(fixture.controller, duration * 0.50));
     QCOMPARE(offerValues(fixture.controller), (QStringList{QStringLiteral("0"),
                                                            QStringLiteral("1"),
@@ -162,16 +190,41 @@ void TestSkipSegments::theClockControlsOverlappingSkipOffers() {
     QCOMPARE(overlapping.at(1).action, PlayerMenuModel::Action::SkipSegment);
     QCOMPARE(overlapping.at(2).id, QStringLiteral("skip.2"));
     QCOMPARE(overlapping.at(2).action, PlayerMenuModel::Action::SkipSegment);
-    QVERIFY(seekExactlyAndSettle(fixture.controller, recapEnd));
+    // Seek just beyond the exclusive recap end: an exact seek can settle on a
+    // nearby decoded timestamp, so aim inside the following non-recap interval.
+    QVERIFY(seekExactlyAndSettle(fixture.controller,
+                                 recapEnd + (openingEnd - recapEnd) * 0.5));
     QCOMPARE(offerValues(fixture.controller),
              (QStringList{QStringLiteral("0"), QStringLiteral("1")}));
     QVERIFY(seekAndSettle(fixture.controller, duration * 0.62));
     QCOMPARE(offerValues(fixture.controller),
              (QStringList{QStringLiteral("0"), QStringLiteral("1")}));
-    QVERIFY(seekExactlyAndSettle(fixture.controller, openingEnd));
+    // Likewise, test the opening's exclusive end from safely inside the next
+    // interval rather than relying on sub-frame boundary precision.
+    QVERIFY(seekExactlyAndSettle(fixture.controller,
+                                 openingEnd + (mixedEnd - openingEnd) * 0.5));
     QCOMPARE(offerValues(fixture.controller), QStringList{QStringLiteral("1")});
     QVERIFY(seekAndSettle(fixture.controller, duration * 0.70));
     QCOMPARE(offerValues(fixture.controller), QStringList{QStringLiteral("1")});
+
+    session->setPaused(true);
+    QTRY_VERIFY_WITH_TIMEOUT(([session] {
+        const auto paused = session->probeMpvProperty(
+            QStringLiteral("pause"), mplayer::ProbePropertyKind::Flag);
+        return paused && paused->flag;
+    }()), 5000);
+    const double boundary = fixture.controller.position();
+    QVERIFY(boundary > 1.0);
+    QVERIFY(boundary + 1.0 < duration);
+    QVERIFY(std::abs(session->position() - boundary) < 0.10);
+    fixture.controller.setSkipSegments(
+        {segment("ending", boundary - 1.0, boundary),
+         segment("opening", boundary, boundary + 1.0)});
+    QCOMPARE(offerValues(fixture.controller), QStringList{QStringLiteral("1")});
+    fixture.controller.setSkipSegments({segment("opening", openingStart, openingEnd),
+                                        segment("mixed_opening", mixedStart, mixedEnd),
+                                        segment("recap", recapStart, recapEnd),
+                                        segment("ending", endingStart, endingEnd)});
     QVERIFY(seekAndSettle(fixture.controller, duration * 0.82));
     QVERIFY(offers(fixture.controller).isEmpty());
     QVERIFY(seekAndSettle(fixture.controller, duration * 0.90));

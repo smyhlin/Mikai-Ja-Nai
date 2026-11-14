@@ -17,6 +17,7 @@
 #include <player/quick/PlayerController.hpp>
 #include <player/shell/PlayerHost.hpp>
 #include <player/core/VideoSession.hpp>
+#include "../QuickPlayerTestSupport.hpp"
 #include <state/QualityCache.hpp>
 #include <state/WatchHistory.hpp>
 #include <support/I18n.hpp>
@@ -55,6 +56,7 @@
 #include <QtGui/QTextDocument>
 #include <QtGui/QTextFragment>
 #include <QtNetwork/QHostAddress>
+#include <QtNetwork/QNetworkProxy>
 #include <QtNetwork/QTcpServer>
 #include <QtNetwork/QTcpSocket>
 #include <QtTest/QSignalSpy>
@@ -236,26 +238,23 @@ QJsonObject releasePayload() {
   return release;
 }
 
-/// The provider's own URL shape, kept as a path so the fixture can serve it
-/// while `detectSite` still recognises the provider.
-QString providerUrlShape(const QString& provider) {
-  if (provider == QLatin1String("moon")) {
-    return QStringLiteral("moonanime.art/iframe");
-  }
-  if (provider == QLatin1String("tortuga")) {
-    return QStringLiteral("tortuga.tw/vod");
-  }
-  return QStringLiteral("ashdi.vip/vod");
-}
-
-/// One episode source naming `provider`, pointed at the fixture itself so the
-/// quality probe's request for it is observable.
+/// One episode source naming a canonical provider URL. The fixture's scoped
+/// HTTP proxy sends quality probes back to the local server.
 QJsonObject providerSource(const QString& provider, int port, int episode) {
+  const QString host = provider == QLatin1String("moon")
+                           ? QStringLiteral("moonanime.art")
+                           : provider == QLatin1String("tortuga")
+                                 ? QStringLiteral("tortuga.tw")
+                                 : QStringLiteral("ashdi.vip");
+  const QString path = provider == QLatin1String("moon")
+                           ? QStringLiteral("/iframe")
+                           : QStringLiteral("/vod");
   return QJsonObject{
       {QStringLiteral("provider"), provider},
-      {QStringLiteral("embedUrl"), QStringLiteral("http://127.0.0.1:%1/%2/%3")
+      {QStringLiteral("embedUrl"), QStringLiteral("http://%1:%2%3/%4")
+                                       .arg(host)
                                        .arg(port)
-                                       .arg(providerUrlShape(provider))
+                                       .arg(path)
                                        .arg(episode)}};
 }
 
@@ -315,7 +314,8 @@ QByteArray pngBytes() {
 
 class ApiFixture final : public QObject {
  public:
-  explicit ApiFixture(QObject* parent = nullptr) : QObject(parent) {
+  explicit ApiFixture(QObject* parent = nullptr)
+      : QObject(parent), previousProxy_(QNetworkProxy::applicationProxy()) {
     connect(&server_, &QTcpServer::newConnection, this, [this] {
       while (QTcpSocket* socket = server_.nextPendingConnection()) {
         // Per-socket buffers: the title page asks for the detail and the player
@@ -331,7 +331,18 @@ class ApiFixture final : public QObject {
           connection.served = true;
           const QByteArray line = connection.buffer.left(connection.buffer.indexOf("\r\n"));
           const QList<QByteArray> parts = line.split(' ');
-          const QString target = QString::fromLatin1(parts.value(1));
+          const QUrl requestUrl(QString::fromLatin1(parts.value(1)));
+          const QString target = requestUrl.isValid() && !requestUrl.scheme().isEmpty()
+                                     ? (requestUrl.host().endsWith(QStringLiteral("ashdi.vip")) ||
+                                                requestUrl.host().endsWith(QStringLiteral("moonanime.art")) ||
+                                                requestUrl.host().endsWith(QStringLiteral("tortuga.tw"))
+                                            ? QStringLiteral("/") + requestUrl.host() +
+                                                  requestUrl.path(QUrl::FullyEncoded)
+                                            : requestUrl.path(QUrl::FullyEncoded)) +
+                                           (requestUrl.query().isEmpty()
+                                                ? QString()
+                                                : QStringLiteral("?") + requestUrl.query())
+                                     : QString::fromLatin1(parts.value(1));
           requests.append(target);
           const bool poster = target.endsWith(QStringLiteral("/poster.png")) ||
                               target.endsWith(QStringLiteral("/ua-poster.png"));
@@ -365,13 +376,23 @@ class ApiFixture final : public QObject {
     });
   }
   ~ApiFixture() override {
+    if (proxyInstalled_) QNetworkProxy::setApplicationProxy(previousProxy_);
     for (QTcpSocket* socket : findChildren<QTcpSocket*>(QString(), Qt::FindDirectChildrenOnly)) {
       socket->disconnect();
       socket->abort();
     }
   }
-  bool start() { return server_.listen(QHostAddress::LocalHost, 0); }
-  QString base() const { return QStringLiteral("http://127.0.0.1:%1/public/v1").arg(server_.serverPort()); }
+  bool start() {
+    if (!server_.listen(QHostAddress::LocalHost, 0)) return false;
+    QNetworkProxy::setApplicationProxy(
+        QNetworkProxy(QNetworkProxy::HttpProxy, QStringLiteral("127.0.0.1"), server_.serverPort()));
+    proxyInstalled_ = true;
+    return true;
+  }
+  quint16 port() const { return server_.serverPort(); }
+  QString base() const {
+    return QStringLiteral("http://127.0.0.1:%1/public/v1").arg(server_.serverPort());
+  }
 
   QStringList catalogueTitles() const {
     return {QStringLiteral("Probe"), QStringLiteral("Second Probe"), teamCatalogueTitle()};
@@ -403,6 +424,8 @@ class ApiFixture final : public QObject {
   }
 
  private:
+  QNetworkProxy previousProxy_;
+  bool proxyInstalled_ = false;
   struct Connection {
     QByteArray buffer;
     bool served = false;
@@ -2717,6 +2740,13 @@ void TestPublicApiUi::managerActionRowsShareOneWidth() {
 }
 
 void TestPublicApiUi::quickResumeIsOfferedOncePerEpisodeToken() {
+  QString runtimeError;
+  if (!mikai_test::quick::loadExplicitMpvRuntime(&runtimeError)) {
+    if (qEnvironmentVariableIsEmpty("MIKAI_MPV_MODULE")) {
+      QSKIP(qPrintable(runtimeError));
+    }
+    QFAIL(qPrintable(runtimeError));
+  }
   const QString fixture = QDir::toNativeSeparators(
       QStringLiteral(MIKAI_SOURCE_DIR "/resources/benchmarks/1920x1080.mp4"));
   QVERIFY2(QFileInfo::exists(fixture), qPrintable(fixture));
@@ -2728,6 +2758,7 @@ void TestPublicApiUi::quickResumeIsOfferedOncePerEpisodeToken() {
   controller.setEpisodeResumePoint(3.0);
   controller.showWindow();
   bool insideOpen = false;
+  QTRY_VERIFY_WITH_TIMEOUT(controller.isWindowVisible(), 10000);
   bool resumeRaisedInsideOpen = false;
   connect(&controller, &mplayer::quick::PlayerController::resumeSheetChanged, &controller,
           [&controller, &insideOpen, &resumeRaisedInsideOpen] {
@@ -2762,6 +2793,13 @@ void TestPublicApiUi::quickResumeIsOfferedOncePerEpisodeToken() {
 }
 
 void TestPublicApiUi::staleQuickResumeAnswerCannotAffectTheNextEpisode() {
+  QString runtimeError;
+  if (!mikai_test::quick::loadExplicitMpvRuntime(&runtimeError)) {
+    if (qEnvironmentVariableIsEmpty("MIKAI_MPV_MODULE")) {
+      QSKIP(qPrintable(runtimeError));
+    }
+    QFAIL(qPrintable(runtimeError));
+  }
   const QString fixture = QDir::toNativeSeparators(
       QStringLiteral(MIKAI_SOURCE_DIR "/resources/benchmarks/1920x1080.mp4"));
   QVERIFY2(QFileInfo::exists(fixture), qPrintable(fixture));
@@ -2776,6 +2814,7 @@ void TestPublicApiUi::staleQuickResumeAnswerCannotAffectTheNextEpisode() {
   controller.setEpisodeResumePoint(3.0);
   controller.showWindow();
   mplayer::VideoSession* session = controller.session();
+  QTRY_VERIFY_WITH_TIMEOUT(controller.isWindowVisible(), 10000);
   QVERIFY(session != nullptr);
   QSignalSpy loaded(session, &mplayer::VideoSession::mediaLoaded);
   controller.startPlayer();

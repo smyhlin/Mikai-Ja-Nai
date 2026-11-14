@@ -45,6 +45,7 @@
 #include <QtCore/QUrl>
 #include <QtGui/QContextMenuEvent>
 #include <QtNetwork/QHostAddress>
+#include <QtNetwork/QNetworkProxy>
 #ifdef Q_OS_WIN
 #include <QtCore/qt_windows.h>
 #endif
@@ -265,8 +266,6 @@ QJsonObject release(const QString& kind, const QString& teamName, const QString&
   for (int number = 1; number <= episodeCount; ++number) {
     QJsonObject source;
     source.insert(QStringLiteral("provider"), QStringLiteral("ashdi"));
-    // The optional marker keeps the extractor's provider branch on loopback;
-    // without it extraction is refused before any request.
     source.insert(QStringLiteral("embedUrl"), embedBase + QStringLiteral("/%1").arg(number));
 
     QJsonArray sources;
@@ -301,6 +300,7 @@ class CannedApi : public QObject {
 
   explicit CannedApi(QObject* parent = nullptr) : QObject(parent) {}
   ~CannedApi() override {
+    if (proxyInstalled_) QNetworkProxy::setApplicationProxy(previousProxy_);
     for (QTcpSocket* socket : sockets_) {
       socket->abort();
       socket->deleteLater();
@@ -316,6 +316,10 @@ class CannedApi : public QObject {
       return false;
     }
     connect(&server_, &QTcpServer::newConnection, this, &CannedApi::onNewConnection);
+    previousProxy_ = QNetworkProxy::applicationProxy();
+    QNetworkProxy::setApplicationProxy(
+        QNetworkProxy(QNetworkProxy::HttpProxy, QStringLiteral("127.0.0.1"), server_.serverPort()));
+    proxyInstalled_ = true;
     return true;
   }
 
@@ -323,14 +327,16 @@ class CannedApi : public QObject {
     return QStringLiteral("http://127.0.0.1:%1/public/v1").arg(server_.serverPort());
   }
 
+  quint16 port() const { return server_.serverPort(); }
+
   void setMode(Mode mode) { mode_ = mode; }
 
   /// How many episodes each canned release carries. The default is the twelve
   /// the render tests count; a test that needs a second episode page raises it.
   void setReleaseEpisodeCount(int count) { releaseEpisodeCount_ = qMax(1, count); }
 
-  /// Marks episode URLs for the extractor, so a quality request reaches this
-  /// loopback server instead of being refused. Off by default.
+  /// Uses canonical provider URLs for test episodes; the scoped HTTP proxy
+  /// routes them back to this fixture. Off by default.
   void setEmbedMarkers(bool enabled) { embedMarkers_ = enabled; }
 
   /// Makes marked embed URLs return a small playable HLS fixture.
@@ -394,7 +400,16 @@ class CannedApi : public QObject {
       buffered = buffered.mid(end + 4);
 
       const QList<QByteArray> parts = requestLine.split(' ');
-      const QString target = QString::fromLatin1(parts.value(1));
+      const QUrl requestUrl(QString::fromLatin1(parts.value(1)));
+      const QString target = requestUrl.isValid() && !requestUrl.scheme().isEmpty()
+                                 ? (requestUrl.host().endsWith(QStringLiteral("ashdi.vip"))
+                                        ? QStringLiteral("/") + requestUrl.host() +
+                                              requestUrl.path(QUrl::FullyEncoded)
+                                        : requestUrl.path(QUrl::FullyEncoded)) +
+                                       (requestUrl.query().isEmpty()
+                                            ? QString()
+                                            : QStringLiteral("?") + requestUrl.query())
+                                 : QString::fromLatin1(parts.value(1));
       {
         QMutexLocker locker(&mutex_);
         ++requests_;
@@ -406,7 +421,7 @@ class CannedApi : public QObject {
 
   void answer(QTcpSocket* socket, const QString& target) {
     if (embedDelayMs_ > 0 && delayedEmbedEpisode_ > 0 &&
-        target.startsWith(QStringLiteral("/embed/ashdi.vip/vod/")) &&
+        target.startsWith(QStringLiteral("/ashdi.vip/vod/")) &&
         target.endsWith(QStringLiteral("/%1").arg(delayedEmbedEpisode_)) &&
         !delayedEmbedRequests_.contains(target)) {
       delayedEmbedRequests_.insert(target);
@@ -451,7 +466,7 @@ class CannedApi : public QObject {
     const QString prefix = QStringLiteral("/public/v1");
     const QString rest = path.startsWith(prefix) ? path.mid(prefix.size()) : path;
 
-    if (successfulEmbedResponses_ && rest.startsWith(QStringLiteral("/embed/ashdi.vip/vod/"))) {
+    if (successfulEmbedResponses_ && rest.startsWith(QStringLiteral("/ashdi.vip/vod/"))) {
       return QStringLiteral("<script>file: 'http://127.0.0.1:%1/hls/master.m3u8';</script>")
           .arg(server_.serverPort())
           .toUtf8();
@@ -605,10 +620,11 @@ class CannedApi : public QObject {
     return QStringLiteral("http://127.0.0.1:%1/embed").arg(server_.serverPort());
   }
 
-  /// One release's episode pages; the marker only selects the extractor branch,
-  /// the connection still goes to loopback and the server answers 404.
+  /// Canonical provider host and path; the fixture's scoped HTTP proxy routes
+  /// the request back to this server without relaxing production URL checks.
   QString releaseEmbedBase() const {
-    return embedBase() + (embedMarkers_ ? QStringLiteral("/ashdi.vip/vod") : QString());
+    return embedMarkers_ ? QStringLiteral("http://ashdi.vip:%1/vod").arg(server_.serverPort())
+                         : embedBase();
   }
 
   void send(QTcpSocket* socket, int status, const QString& contentType, const QByteArray& body) {
@@ -624,6 +640,8 @@ class CannedApi : public QObject {
     socket->flush();
   }
 
+  QNetworkProxy previousProxy_;
+  bool proxyInstalled_ = false;
   QTcpServer server_;
   QList<QTcpSocket*> sockets_;
   QHash<QTcpSocket*, QByteArray> buffers_;
@@ -3101,6 +3119,14 @@ void TestFeedRender::closingEpisodePlayerKeepsTitlePageUsable() {
 }
 
 void TestFeedRender::switchingReleasePreservesAnOpenPlayerQualityRequest() {
+  const QString openingLanguage = mikai::app::activeInterfaceLanguage();
+  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
+  const auto restoreLanguage = qScopeGuard([openingLanguage] {
+    mikai::app::applyInterfaceLanguage(openingLanguage);
+    QCoreApplication::processEvents();
+  });
+  Q_UNUSED(restoreLanguage);
+
   CannedApi api;
   QString error;
   QVERIFY2(api.start(&error), qPrintable(error));
@@ -3171,7 +3197,7 @@ void TestFeedRender::switchingReleasePreservesAnOpenPlayerQualityRequest() {
   // Start a release-owned playback and then join that same in-flight extraction
   // from the live player. The release switch must drop only the former callback.
   QTest::mouseClick(secondEpisode, Qt::LeftButton);
-  const QString delayedPath = QStringLiteral("/embed/ashdi.vip/vod/voice/2");
+  const QString delayedPath = QStringLiteral("/ashdi.vip/vod/voice/2");
   QTRY_VERIFY_WITH_TIMEOUT(api.requestedPaths().contains(delayedPath), 10000);
 
   const QString openingEpisodeLabel = controller->episodeLabel();
@@ -3209,7 +3235,7 @@ void TestFeedRender::switchingReleasePreservesAnOpenPlayerQualityRequest() {
 
   QTRY_VERIFY_WITH_TIMEOUT(controller->episodeLabel().contains(QStringLiteral("2")), 15000);
   QCOMPARE(controller->currentEmbed(),
-           api.baseUrl() + QStringLiteral("/embed/ashdi.vip/vod/voice/2"));
+           QStringLiteral("http://ashdi.vip:%1/vod/voice/2").arg(api.port()));
   QCOMPARE(controller->currentEpisodeIndex(), 1);
   QVERIFY(controller->hasPreviousEpisode());
   QVERIFY(controller->hasNextEpisode());
@@ -3347,6 +3373,14 @@ void TestFeedRender::episodeMarksPersistAcrossReopenAndViewChanges() {
 }
 
 void TestFeedRender::episodeContextMenuActionsUpdateOnlyTheOrderedPreviousEpisodes() {
+  const QString openingLanguage = mikai::app::activeInterfaceLanguage();
+  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
+  const auto restoreLanguage = qScopeGuard([openingLanguage] {
+    mikai::app::applyInterfaceLanguage(openingLanguage);
+    QCoreApplication::processEvents();
+  });
+  Q_UNUSED(restoreLanguage);
+
   clearEpisodeHistory();
   const auto clearHistory = qScopeGuard([] { clearEpisodeHistory(); });
   const QString ref = QString::number(kRef);
@@ -3382,8 +3416,9 @@ void TestFeedRender::episodeContextMenuActionsUpdateOnlyTheOrderedPreviousEpisod
   QTRY_VERIFY_WITH_TIMEOUT(
       tabPage->findChildren<QPushButton*>(QStringLiteral("episodeButton")).size() >= kEpisodes,
       30000);
-  QPushButton* clicked = episodePill(*tabPage, QStringLiteral("5"));
-  QVERIFY(clicked != nullptr);
+  QPushButton* clicked = nullptr;
+  QTRY_VERIFY_WITH_TIMEOUT(
+      (clicked = episodePill(*tabs->currentWidget(), QStringLiteral("5"))) != nullptr, 10000);
 
   ContextMenuActionResult action =
       activateEpisodeContextAction(clicked, QStringLiteral("episodeWatchPreviousAction"));
@@ -3539,6 +3574,14 @@ void TestFeedRender::episodeContextMenuHandlesPagingAndSpecialIdentifiers() {
 }
 
 void TestFeedRender::titlePageRendersDeclaredEpisodesTheReleaseLacks() {
+  const QString openingLanguage = mikai::app::activeInterfaceLanguage();
+  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
+  const auto restoreLanguage = qScopeGuard([openingLanguage] {
+    mikai::app::applyInterfaceLanguage(openingLanguage);
+    QCoreApplication::processEvents();
+  });
+  Q_UNUSED(restoreLanguage);
+
   clearEpisodeHistory();
   const auto clearHistory = qScopeGuard([] { clearEpisodeHistory(); });
   const QString ref = QString::number(kRef);
@@ -3569,9 +3612,14 @@ void TestFeedRender::titlePageRendersDeclaredEpisodesTheReleaseLacks() {
   QTRY_COMPARE_WITH_TIMEOUT(
       tabPage->findChildren<QPushButton*>(QStringLiteral("episodeButton")).size(), kEpisodes, 10000);
 
-  QPushButton* carried = episodePill(*tabPage, QStringLiteral("9"));
-  QPushButton* missing = episodePill(*tabPage, QStringLiteral("10"));
-  QVERIFY(carried != nullptr && missing != nullptr);
+  QPushButton* carried = nullptr;
+  QPushButton* missing = nullptr;
+  QTRY_VERIFY_WITH_TIMEOUT([&] {
+    QWidget* currentTabPage = tabs->currentWidget();
+    carried = episodePill(*currentTabPage, QStringLiteral("9"));
+    missing = episodePill(*currentTabPage, QStringLiteral("10"));
+    return carried != nullptr && missing != nullptr;
+  }(), 10000);
   QVERIFY(carried->isEnabled());
   QVERIFY2(!missing->isEnabled(), "a declared-but-missing episode was offered as playable");
 
@@ -3634,6 +3682,14 @@ void TestFeedRender::titlePageKeepsSpecialEpisodeIdentifiers() {
 }
 
 void TestFeedRender::clickingAnEpisodeDoesNotAdvanceTheCurrentEpisode() {
+  const QString openingLanguage = mikai::app::activeInterfaceLanguage();
+  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
+  const auto restoreLanguage = qScopeGuard([openingLanguage] {
+    mikai::app::applyInterfaceLanguage(openingLanguage);
+    QCoreApplication::processEvents();
+  });
+  Q_UNUSED(restoreLanguage);
+
   clearEpisodeHistory();
   const auto clearHistory = qScopeGuard([] { clearEpisodeHistory(); });
   const QString ref = QString::number(kRef);
@@ -3670,8 +3726,9 @@ void TestFeedRender::clickingAnEpisodeDoesNotAdvanceTheCurrentEpisode() {
   QVERIFY(toggle != nullptr);
   QTRY_VERIFY_WITH_TIMEOUT(toggle->isVisible() && toggle->isEnabled(), 5000);
 
-  QPushButton* clicked = episodePill(*tabPage, QStringLiteral("5"));
-  QVERIFY(clicked != nullptr);
+  QPushButton* clicked = nullptr;
+  QTRY_VERIFY_WITH_TIMEOUT(
+      (clicked = episodePill(*tabs->currentWidget(), QStringLiteral("5"))) != nullptr, 10000);
   QTest::mouseClick(clicked, Qt::LeftButton);
   QCoreApplication::processEvents();
 

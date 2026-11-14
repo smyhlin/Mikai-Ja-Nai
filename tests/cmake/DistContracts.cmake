@@ -209,28 +209,35 @@ endfunction()
 #      source - it IS the shipped compiler runtime, so nothing new is invented.
 #   3. The configured Qt bin directory, where a genuine x64 runtime DLL lives
 #      beside Qt6Core.dll.
-#   4. Any x64 DLL in the configured build tree.
+#   4. The configured build's adjacent mpv DLL, if it is already deployed.
+#   5. Any x64 runtime DLL in the configured build tree.
 # A text fixture is never used: if none of these exist the scenario reports a
 # missing prerequisite instead of passing on a fake module.
+get_filename_component(_repo_root "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 set(_pe_candidates)
 if(DIST_CONTRACT_PE_SOURCE)
   list(APPEND _pe_candidates "${DIST_CONTRACT_PE_SOURCE}")
 endif()
 list(APPEND _pe_candidates
-  "${CMAKE_CURRENT_SOURCE_DIR}/dist-mikai/libwinpthread-1.dll"
-  "${CMAKE_CURRENT_SOURCE_DIR}/dist-mikai/libgcc_s_seh-1.dll")
+  "${CMAKE_CURRENT_BINARY_DIR}/mpv/libmpv-2.dll"
+  "${_repo_root}/build/release/mpv/libmpv-2.dll"
+  "${_repo_root}/dist-mikai/libwinpthread-1.dll"
+  "${_repo_root}/dist-mikai/libgcc_s_seh-1.dll")
+if(MIKAI_DIST_CONTRACT_PE_SOURCE)
+  list(APPEND _pe_candidates "${MIKAI_DIST_CONTRACT_PE_SOURCE}")
+endif()
 if(WINDEPLOYQT_BIN_DIR)
   list(APPEND _pe_candidates
     "${WINDEPLOYQT_BIN_DIR}/libwinpthread-1.dll"
     "${WINDEPLOYQT_BIN_DIR}/libgcc_s_seh-1.dll"
     "${WINDEPLOYQT_BIN_DIR}/Qt6Core.dll")
 endif()
-if(MIKAI_DIST_CONTRACT_PE_SOURCE)
-  list(APPEND _pe_candidates "${MIKAI_DIST_CONTRACT_PE_SOURCE}")
-endif()
 file(GLOB_RECURSE _pe_glob LIST_DIRECTORIES FALSE
-  "${CMAKE_CURRENT_SOURCE_DIR}/build/*/libwinpthread-1.dll"
-  "${CMAKE_CURRENT_SOURCE_DIR}/build/*/libgcc_s_seh-1.dll")
+  "${_repo_root}/build/*/libwinpthread-1.dll"
+  "${_repo_root}/build/*/libgcc_s_seh-1.dll")
+file(GLOB_RECURSE _mpv_pe_glob LIST_DIRECTORIES FALSE
+  "${_repo_root}/build/*/mpv/libmpv-2.dll")
+list(APPEND _pe_candidates ${_mpv_pe_glob})
 list(APPEND _pe_candidates ${_pe_glob})
 
 set(_pe_source "")
@@ -358,14 +365,20 @@ foreach(_clip IN LISTS _clips)
   file(WRITE "${_source_dir}/resources/benchmarks/${_clip}" "synthetic clip ${_clip}\n")
 endforeach()
 
-# One locally built mpv archive, reused by every scenario. The script verifies
-# its SHA-256 against the value passed in, extracts it, and checks that the DLL
-# inside is a genuine x64 PE - all of which the round-trip below satisfies
-# without a network fetch.
+# One synthetic local mpv archive, reused by every scenario. The packaged API
+# DLL and scene-filter DLL are genuine x64 PE copies; the required license
+# notices are synthetic text fixtures. The round-trip exercises the production
+# archive verification and required-member checks without a network fetch.
 set(_mpv_stage "${_scratch}/input/mpv-stage")
 file(MAKE_DIRECTORY "${_mpv_stage}")
 file(COPY "${_pe_source}" DESTINATION "${_mpv_stage}")
 file(RENAME "${_mpv_stage}/${_pe_name}" "${_mpv_stage}/libmpv-2.dll")
+file(COPY_FILE "${_pe_source}" "${_mpv_stage}/ajn-mvtools.dll")
+file(MAKE_DIRECTORY "${_mpv_stage}/licenses/mvtools")
+file(WRITE "${_mpv_stage}/licenses/mvtools/LICENSE"
+  "Synthetic license fixture for DistContracts.\n")
+file(WRITE "${_mpv_stage}/licenses/mvtools/UPSTREAM.md"
+  "Synthetic upstream notice fixture for DistContracts.\n")
 set(_mpv_archive "${_scratch}/input/mpv/verified-mpv.7z")
 set(_mpv_cache "${_scratch}/cache/mpv")
 file(MAKE_DIRECTORY "${_scratch}/input/mpv")
@@ -377,11 +390,25 @@ if(NOT EXISTS "${_mpv_archive}")
 endif()
 file(SHA256 "${_mpv_archive}" _mpv_archive_sha)
 
+# Minimal Qt/QML fixture matching the production inputs. The stub's location
+# makes its parent the synthetic Qt prefix used by dist.cmake.
+set(_qml_scan_dir "${_scratch}/input/qml-scan")
+file(MAKE_DIRECTORY "${_qml_scan_dir}")
+set(_qt_qml_source "${_scratch}/input/qml/DistContracts")
+file(MAKE_DIRECTORY "${_qt_qml_source}")
+file(WRITE "${_qt_qml_source}/Fixture.qml" "import QtQuick\nItem {}\n")
+set(_qml_manifest "${_scratch}/input/qml-imports.json")
+file(WRITE "${_qml_manifest}"
+  "{\"schema\":\"mikai.qt.qml-imports/1\",\"qtVersion\":\"6.12.0\",\"files\":[\"qml/DistContracts/Fixture.qml\"]}\n")
+
 set(_common_args
   "EXE=${_exe_path}"
   "WINDEPLOYQT=${_stub_bin}"
   "SHADERS=${_shaders_src}"
   "SOURCE_DIR=${_source_dir}"
+  "MIKAI_QML_SCAN_DIR=${_qml_scan_dir}"
+  "MIKAI_QML_IMPORT_MANIFEST=${_qml_manifest}"
+  "MIKAI_QT_VERSION=6.12.0"
   "MIKAI_MPV_ARCHIVE_NAME=verified-mpv.7z"
   "MIKAI_MPV_ARCHIVE_URL=https://invalid.invalid/unverified"
   "MIKAI_MPV_ARCHIVE_SHA256=${_mpv_archive_sha}"
@@ -696,6 +723,11 @@ _run_dist(_rc _out _err "valid-assembly"
   "MIKAI_DIST_NATIVE_ROOT=${_native_root}")
 _check(_rc EQUAL 0
   "a valid assembly containing forbidden payload succeeds with no stowaway refusal")
+if(NOT _rc EQUAL 0)
+  message(STATUS
+    "${_prefix}: valid-assembly child stdout:\n${_out}\n"
+    "valid-assembly child stderr:\n${_err}")
+endif()
 
 # THE STRIP BOUNDARY. Ordinary runtime content must survive: the sweep exists to
 # remove per-machine downloads, not to empty the bundle it copied. A strip that
@@ -807,6 +839,9 @@ _run_dist(_rc _out _err "missing-benchmark-clip"
   "WINDEPLOYQT=${_stub_bin}"
   "SHADERS=${_shaders_src}"
   "SOURCE_DIR=${_clip_source}"
+  "MIKAI_QML_SCAN_DIR=${_qml_scan_dir}"
+  "MIKAI_QML_IMPORT_MANIFEST=${_qml_manifest}"
+  "MIKAI_QT_VERSION=6.12.0"
   "MIKAI_MPV_ARCHIVE_NAME=verified-mpv.7z"
   "MIKAI_MPV_ARCHIVE_URL=https://invalid.invalid/unverified"
   "MIKAI_MPV_ARCHIVE_SHA256=${_mpv_archive_sha}"

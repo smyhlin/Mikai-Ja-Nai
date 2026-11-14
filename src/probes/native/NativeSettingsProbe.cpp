@@ -4767,6 +4767,12 @@ QJsonObject videoScalingRestartRead(mikai::backend::MikaiClient& client, Runner&
           "the fresh process reads the complete saved policy from the store");
     evidence.insert(QStringLiteral("read"), videoScalePolicyJson(read));
 
+    // Production startup loads the persisted policy before constructing any
+    // player or Settings page. Mirror that bootstrap in this probe process.
+    VideoSession::setVideoScalePolicy(read);
+    check(VideoSession::videoScalePolicy() == expected,
+          "startup publishes the persisted policy before the General page opens");
+
     {
         SettingsDialog dialog(client, runner);
         const VideoScaleControls controls = videoScaleControls(dialog);
@@ -4818,7 +4824,25 @@ int main(int argc, char** argv) {
     using mikai::probes::isolation::Options;
     Options isolationOptions;
     isolationOptions.probe = "native_settings_probe";
+    // These settings-only scenarios never load mpv, so do not ask isolation to
+    // duplicate the potentially large runtime. Keep executable isolation
+    // enabled: even direct invocations must not run beside a real native store.
+    bool videoScalingSettingsOnly = false;
+    for (int i = 1; i < argc; ++i) {
+        const QByteArray argument(argv[i]);
+        if (argument == "--video-scaling-smoke" ||
+            argument == "--video-scaling-smoke-read") {
+            videoScalingSettingsOnly = true;
+            break;
+        }
+    }
+    const bool hadMpvModule = qEnvironmentVariableIsSet("MIKAI_MPV_MODULE");
+    const QByteArray mpvModule = qgetenv("MIKAI_MPV_MODULE");
+    if (videoScalingSettingsOnly) qunsetenv("MIKAI_MPV_MODULE");
     const Gate gate = enter(argc, argv, isolationOptions);
+    if (videoScalingSettingsOnly && hadMpvModule) {
+        qputenv("MIKAI_MPV_MODULE", mpvModule);
+    }
     if (gate != Gate::RunHere) return exitCode();
 
     QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);

@@ -6,6 +6,7 @@
 
 #include <QFileInfo>
 #include <QQuickItem>
+#include <QScreen>
 
 namespace {
 
@@ -72,7 +73,6 @@ void TestTimelineMarks::quickTimelineProjectsControllerMarksAndKeepsTheirBoundar
     mplayer::quick::PlayerController controller(QStringLiteral("Timeline marks test"), media);
     auto* window = controller.window();
     QVERIFY(window != nullptr);
-    window->resize(1000, 620);
     window->showWindowed();
     controller.startPlayer();
 
@@ -82,6 +82,11 @@ void TestTimelineMarks::quickTimelineProjectsControllerMarksAndKeepsTheirBoundar
     QQuickItem* timeline = timelineItem(window);
 
     const double duration = controller.duration();
+    const int geometryTestWindowWidth = 940;
+    QVERIFY(geometryTestWindowWidth >= window->minimumWidth());
+    window->resize(geometryTestWindowWidth, window->height());
+    QTRY_COMPARE_WITH_TIMEOUT(window->width(), geometryTestWindowWidth, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(timeline->width() > 0.0, 5000);
     const double firstStart = duration * 0.2;
     const double boundary = duration * 0.4;
     const double secondEnd = duration * 0.6;
@@ -136,16 +141,32 @@ void TestTimelineMarks::quickTimelineProjectsControllerMarksAndKeepsTheirBoundar
     QVERIFY(qAbs(leftClipped->width() - qreal(leftClippedEnd / duration) * width) <= 1.0);
 
     const qreal originalWidth = timeline->width();
-    window->resize(1200, 620);
+    const int availableWidth = window->screen() != nullptr
+                                   ? window->screen()->availableGeometry().width()
+                                   : window->width();
+    const int minimumWidth = window->minimumWidth();
+    const int currentWindowWidth = window->width();
+    // Prefer shrinking: an apparent increase up to availableGeometry().width()
+    // can still be rejected by the native window frame's work-area limits.
+    const int resizedWindowWidth =
+        currentWindowWidth >= minimumWidth + 80
+            ? currentWindowWidth - 80
+            : qMin(availableWidth - 32, currentWindowWidth + 80);
+    QVERIFY2(resizedWindowWidth >= minimumWidth && resizedWindowWidth != currentWindowWidth,
+             "the desktop must provide a window width change within the player's size limits");
+    window->resize(resizedWindowWidth, window->height());
+    QTRY_COMPARE_WITH_TIMEOUT(window->width(), resizedWindowWidth, 5000);
     QTRY_VERIFY_WITH_TIMEOUT(qAbs(timeline->width() - originalWidth) > 1.0, 5000);
     const qreal resizedWidth = timeline->width();
-    QVERIFY(qAbs(first->x() - qreal(firstStart / duration) * resizedWidth) <= 1.0);
-    QVERIFY(qAbs(first->width() - qreal((boundary - firstStart) / duration) * resizedWidth) <= 1.0);
-    QVERIFY(qAbs(second->x() - qreal(boundary / duration) * resizedWidth) <= 1.0);
-    QVERIFY(qAbs(second->x() + second->width() -
-                 qreal(secondEnd / duration) * resizedWidth) <= 1.0);
-    QVERIFY(qAbs(clipped->x() + clipped->width() - resizedWidth) <= 1.0);
-    QVERIFY(qAbs(leftClipped->x()) <= 1.0);
-    QVERIFY(qAbs(leftClipped->width() -
-                 qreal(leftClippedEnd / duration) * resizedWidth) <= 1.0);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        qAbs(first->x() - qreal(firstStart / duration) * resizedWidth) <= 1.0 &&
+            qAbs(first->width() - qreal((boundary - firstStart) / duration) * resizedWidth) <= 1.0 &&
+            qAbs(second->x() - qreal(boundary / duration) * resizedWidth) <= 1.0 &&
+            qAbs(second->x() + second->width() -
+                 qreal(secondEnd / duration) * resizedWidth) <= 1.0 &&
+            qAbs(clipped->x() + clipped->width() - resizedWidth) <= 1.0 &&
+            qAbs(leftClipped->x()) <= 1.0 &&
+            qAbs(leftClipped->width() -
+                 qreal(leftClippedEnd / duration) * resizedWidth) <= 1.0,
+        5000);
 }

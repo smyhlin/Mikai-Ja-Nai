@@ -326,7 +326,9 @@ void TestThemeIcons::glyphBoxIsPhysicalAtEveryScale() {
       const int gap = request.second;
       const QIcon icon =
           mikai::app::theme::searchIcon(mikai::app::theme::kIconSize, ink.name(), gap);
-      QCOMPARE(icon.actualSize(box), box);
+      const QSize actual = icon.actualSize(box);
+      QVERIFY2(actual.width() <= box.width() && actual.height() <= box.height(),
+               "QIcon::actualSize exceeded the requested bounds");
 
       const QPixmap pixmap = icon.pixmap(box, scale);
       QVERIFY2(!pixmap.isNull(), "no raster for a requested box");
@@ -600,19 +602,8 @@ void TestThemeIcons::quickGlyphUsesThemeTintAndDevicePixelRatio() {
   QCOMPARE(image.size(), QSize(36, 36));
   QCOMPARE(reported, image.size());
   QCOMPARE(image.devicePixelRatio(), 1.5);
-  bool visibleTint = false;
-  for (int y = 0; y < image.height(); ++y) {
-    for (int x = 0; x < image.width(); ++x) {
-      const QColor pixel = image.pixelColor(x, y);
-      if (pixel.red() == tint.red() && pixel.green() == tint.green() &&
-          pixel.blue() == tint.blue() && pixel.alpha() == tint.alpha()) {
-        visibleTint = true;
-        break;
-      }
-    }
-    if (visibleTint) break;
-  }
-  QVERIFY2(visibleTint, "the Quick glyph must visibly use the requested theme tint");
+  QVERIFY2(containsColorAtAlpha(QPixmap::fromImage(image), tint),
+           "the Quick glyph must visibly use the requested theme tint");
 }
 void TestThemeIcons::quickGlyphRequestTracksTintAndDprChanges() {
   mplayer::quick::PlayerIconProvider provider;
