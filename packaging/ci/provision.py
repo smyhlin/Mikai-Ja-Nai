@@ -79,6 +79,13 @@ WINDOWS_SDK = (
         'sha256': 'a7b502294a903b64fccd4a41ba39f48d3f6c9a5ece167f0cfaeac920d15b344f',
         'into': 'tools',
     },
+    {
+        'url': WINDOWS_QT_ROOT + '/qt6_6120/qt6_6120_mingw/qt.qt6.6120.win64_mingw/'
+               '6.12.0-0-202609280346opengl32sw-64-mesa_11_2_2-signed_sha256.7z',
+        'bytes': 5474526,
+        'sha256': 'f51918c465a229efb528e26ea4e74e433663fac99a9296accdfbb090e48ac3b8',
+        'into': 'qt-bin',
+    },
 )
 
 
@@ -127,11 +134,17 @@ def install_windows_sdk(root, evidence):
             with urllib.request.urlopen(entry['url'], timeout=600) as response, \
                     target.open('wb') as stream:
                 shutil.copyfileobj(response, stream, 1 << 20)
-        measured = hashlib.file_digest(target.open('rb'), 'sha256').hexdigest()
+        with target.open('rb') as stream:
+            measured = hashlib.file_digest(stream, 'sha256').hexdigest()
         if measured != entry['sha256'] or target.stat().st_size != entry['bytes']:
             raise RuntimeError(
                 f'{name} does not match its pin ({measured}, {target.stat().st_size} bytes)')
-        destination = root / '6.12.0' / 'mingw_64' if entry['into'] == 'qt' else root
+        destinations = {
+            'qt': root / '6.12.0' / 'mingw_64',
+            'qt-bin': root / '6.12.0' / 'mingw_64' / 'bin',
+            'tools': root,
+        }
+        destination = destinations[entry['into']]
         destination.mkdir(parents=True, exist_ok=True)
         subprocess.run([seven_zip(), 'x', '-y', f'-o{destination}', str(target)],
                        check=True, stdout=subprocess.DEVNULL)
@@ -234,12 +247,13 @@ def main():
 
     archives = []
     vulkan = None
+    software_gl = None
     if host == 'windows':
         archives = install_windows_sdk(args.root, args.evidence)
         vulkan = install_windows_vulkan_runtime(args.evidence)
     else:
         install('install-qt', host, 'desktop', '6.12.0', arch, '-O', str(args.root),
-                '-m', 'qtdeclarative', 'qtimageformats', 'qttools')
+                '-m', 'qtimageformats')
     prefixes = list((args.root / '6.12.0').glob('*/lib/cmake/Qt6/Qt6Config.cmake'))
     if len(prefixes) != 1:
         raise RuntimeError(f'Expected exactly one Qt6 SDK under {args.root}, found {prefixes}')
@@ -253,6 +267,10 @@ def main():
             raise RuntimeError('Linux bundled mpv builds require patchelf as a build-only dependency')
         print(f'patchelf={patchelf}', flush=True)
     if host == 'windows':
+        software_gl = args.root / '6.12.0' / 'mingw_64' / 'bin'
+        if not (software_gl / 'opengl32sw.dll').is_file():
+            raise RuntimeError(f'Qt software OpenGL archive did not provide {software_gl / "opengl32sw.dll"}')
+        bins.insert(0, software_gl)
         # Qt's published 6.12.0 MinGW kit is 13.1.0; its toolchain archive is in
         # the pinned table, so the compiler is never an arbitrary PATH one.
         compilers = list((args.root / 'Tools').glob('*/bin/g++.exe'))
@@ -269,6 +287,8 @@ def main():
             'archives': archives}
     if vulkan is not None:
         data['vulkanRuntime'] = vulkan
+    if software_gl is not None:
+        data['softwareOpenGL'] = software_gl
     (args.evidence / 'toolchain.json').write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
     if os.getenv('GITHUB_ENV'):
         with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as stream:
