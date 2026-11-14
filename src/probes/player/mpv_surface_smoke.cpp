@@ -1518,8 +1518,11 @@ int main(int argc, char** argv) {
     }
     int filteredArgc = static_cast<int>(passthrough.size());
     // QApplication requires argv[argc] == nullptr, which a vector of exactly
-    // argc char* pointers does not provide.
-    QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL);
+    // argc char* pointers does not provide. Qt's application attribute is
+    // equivalent to QT_OPENGL=desktop and overrides the environment choice;
+    // leave it unset when the caller explicitly requests software rendering.
+    if (qgetenv("QT_OPENGL").compare("software", Qt::CaseInsensitive) != 0)
+        QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL);
     passthrough.push_back(nullptr);
     QApplication app(filteredArgc, passthrough.data());
     app.setQuitOnLastWindowClosed(false);

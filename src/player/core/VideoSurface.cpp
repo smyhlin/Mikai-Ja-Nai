@@ -556,9 +556,15 @@ bool VideoSurface::ensureRenderContext(std::shared_ptr<MpvHandle> core, QString*
     try {
         // `core` is the session's shared lease: the bridge keeps it for as long
         // as a render context exists, so the core cannot die before the render
-        // context is freed. The callback only schedules work.
+        // context is freed. mpv may invoke its update callback on a render
+        // thread; all widget/context work must run on this object's GUI thread.
         created = bridge_->createRenderContext(
-            core, presenterToken_, [this] { onRenderUpdate(); }, &why);
+            core, presenterToken_,
+            [this] {
+                QMetaObject::invokeMethod(this, [this] { onRenderUpdate(); },
+                                          Qt::QueuedConnection);
+            },
+            &why);
     } catch (const MpvError& error) {
         why = QString::fromUtf8(error.what());
         created = false;
