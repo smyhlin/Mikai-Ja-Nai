@@ -297,14 +297,19 @@ if(NOT deploy_rc EQUAL 0)
 endif()
 if(MIKAI_PUBLIC_RELEASE)
   # windeployqt scans source but can deploy modules outside the reviewed file
-  # list. Rebuild only the staged QML tree from named manifest entries below.
+  # list. Rebuild the staged Qt runtime from reviewed inputs, not its output.
   file(REMOVE_RECURSE "${DIST_DIR}/qml")
+  file(GLOB deployed_qt_libraries LIST_DIRECTORIES FALSE "${DIST_DIR}/Qt6*.dll")
+  if(deployed_qt_libraries)
+    file(REMOVE ${deployed_qt_libraries})
+  endif()
   set(dist_qt_runtime_modules
     Qt6Core.dll Qt6Gui.dll Qt6Widgets.dll Qt6Network.dll
     Qt6OpenGL.dll Qt6OpenGLWidgets.dll Qt6Qml.dll Qt6QmlCore.dll
     Qt6QmlModels.dll Qt6QmlWorkerScript.dll Qt6Quick.dll
     Qt6QuickControls2.dll Qt6QuickControls2Basic.dll
-    Qt6QuickControls2BasicStyleImpl.dll Qt6QuickTemplates2.dll Qt6QuickLayouts.dll)
+    Qt6QuickControls2BasicStyleImpl.dll Qt6QuickTemplates2.dll
+    Qt6QuickLayouts.dll)
   # QML can load modules that are absent from the executable's PE imports.
   foreach(module IN LISTS dist_qt_runtime_modules)
     if(NOT EXISTS "${qt_bin_dir}/${module}")
@@ -596,16 +601,38 @@ if(MIKAI_PUBLIC_RELEASE)
   set(CMAKE_GET_RUNTIME_DEPENDENCIES_TOOL objdump)
   set(CMAKE_GET_RUNTIME_DEPENDENCIES_COMMAND "${MIKAI_RELEASE_OBJDUMP}")
   file(GLOB_RECURSE deployed_libraries LIST_DIRECTORIES FALSE "${DIST_DIR}/*.dll")
+  # Treat the Qt and MinGW SDK copies as authoritative scan inputs. The staged
+  # files have the same names and hashes, but including both locations makes
+  # CMake report conflicting dependencies rather than deduplicating them.
+  foreach(module IN LISTS dist_qt_runtime_modules)
+    list(REMOVE_ITEM deployed_libraries "${DIST_DIR}/${module}")
+    list(APPEND deployed_libraries "${qt_bin_dir}/${module}")
+  endforeach()
   get_filename_component(mpv_dll_dir "${mpv_dll}" DIRECTORY)
+  foreach(runtime libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
+    if(EXISTS "${qt_bin_dir}/${runtime}")
+      list(REMOVE_ITEM deployed_libraries "${DIST_DIR}/${runtime}")
+      list(APPEND deployed_libraries "${qt_bin_dir}/${runtime}")
+    elseif(EXISTS "${compiler_bin}/${runtime}")
+      list(REMOVE_ITEM deployed_libraries "${DIST_DIR}/${runtime}")
+      list(APPEND deployed_libraries "${compiler_bin}/${runtime}")
+    endif()
+  endforeach()
+  # Keep the executable's directory out of dependency search: it contains the
+  # staged copies and would be a second candidate beside the SDK inputs.
+  set(dependency_scan_dir "${DIST_DIR}/.dependency-scan")
+  file(MAKE_DIRECTORY "${dependency_scan_dir}")
+  file(COPY_FILE "${dist_exe}" "${dependency_scan_dir}/${exe_name}" ONLY_IF_DIFFERENT)
   file(GET_RUNTIME_DEPENDENCIES
-    EXECUTABLES "${dist_exe}"
+    EXECUTABLES "${dependency_scan_dir}/${exe_name}"
     LIBRARIES ${deployed_libraries}
-    DIRECTORIES "${DIST_DIR}" "${qt_bin_dir}" "${compiler_bin}" "${mpv_dll_dir}"
+    DIRECTORIES "${qt_bin_dir}" "${mpv_dll_dir}"
     PRE_EXCLUDE_REGEXES "^[aA][pP][iI]-" "^[eE][xX][tT]-"
     POST_EXCLUDE_REGEXES ".*[/\\\\]([Ss][Yy][Ss][Tt][Ee][Mm]32|[Ss][Yy][Ss][Ww][Oo][Ww]64)[/\\\\].*"
     RESOLVED_DEPENDENCIES_VAR resolved_dependencies
     UNRESOLVED_DEPENDENCIES_VAR unresolved_dependencies
     CONFLICTING_DEPENDENCIES_PREFIX dependency_conflicts)
+  file(REMOVE_RECURSE "${dependency_scan_dir}")
   if(unresolved_dependencies OR dependency_conflicts_FILENAMES)
     message(FATAL_ERROR
       "dist: dependency closure failed; unresolved=${unresolved_dependencies}; conflicting=${dependency_conflicts_FILENAMES}")
