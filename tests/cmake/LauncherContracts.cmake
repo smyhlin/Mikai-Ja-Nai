@@ -429,6 +429,95 @@ check(NOT _environment_leftover "environment-isolation child removes its owned s
 cleanup("${_environment_parent}")
 
 # ===========================================================================
+# Scenario 4: Windows releases an external file consumer after child exit
+# ===========================================================================
+
+if(WIN32)
+  set(_consumer_parent "${_workspace}/consumer-parent")
+  file(MAKE_DIRECTORY "${_consumer_parent}")
+  set(_consumer_ready "${_workspace}/consumer.ready")
+  set(_consumer_started "${_workspace}/consumer.started")
+  set(_consumer_script "${_workspace}/consumer.ps1")
+  set(_consumer_release "${_workspace}/consumer.release")
+  set(_consumer_done "${_workspace}/consumer.done")
+  file(WRITE "${_consumer_script}"
+    "param([string]$Parent,[string]$Ready,[string]$Started,[string]$Release,[string]$Done,[switch]$Hold)\n"
+    "Set-Content -NoNewline -Path $Started -Value 'started'\n"
+    "$deadline = [DateTime]::UtcNow.AddSeconds(20)\n"
+    "while ([DateTime]::UtcNow -lt $deadline) {\n"
+    "  $file = Get-ChildItem -Path $Parent -Filter delayed-consumer.dat -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1\n"
+    "  if ($file) {\n"
+    "    try {\n"
+    "      $stream = [IO.File]::Open($file.FullName,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::None)\n"
+    "      Set-Content -NoNewline -Path $Ready -Value 'ready'\n"
+    "      if ($Hold) { while (-not (Test-Path $Release)) { Start-Sleep -Milliseconds 20 } } else { Start-Sleep -Milliseconds 400 }\n"
+    "      $stream.Dispose()\n"
+    "      Set-Content -NoNewline -Path $Done -Value 'done'\n"
+    "      exit 0\n"
+    "    } catch { Start-Sleep -Milliseconds 10 }\n"
+    "  } else { Start-Sleep -Milliseconds 10 }\n"
+    "}\n"
+    "exit 1\n")
+  execute_process(
+    COMMAND powershell -NoProfile -NonInteractive -Command
+      "Start-Process powershell -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-File','${_consumer_script}','${_consumer_parent}','${_consumer_ready}','${_consumer_started}','${_consumer_release}','${_consumer_done}')"
+    RESULT_VARIABLE _consumer_start_rc)
+  check(_consumer_start_rc EQUAL 0 "the external consumer guardian starts")
+  set(_consumer_wait 0)
+  while(NOT EXISTS "${_consumer_started}" AND _consumer_wait LESS 5000)
+    execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 0.05)
+    math(EXPR _consumer_wait "${_consumer_wait} + 50")
+  endwhile()
+  check(EXISTS "${_consumer_started}" "the contract-owned consumer guardian is ready")
+  run_launcher(_rc _out _err "${_consumer_parent}"
+    --delayed-consumer-ready "${_consumer_ready}")
+  check(_rc EQUAL 0 "a delayed external Windows file consumer preserves the child's exit status")
+  check(NOT _err MATCHES "cannot remove owned scratch"
+         "transient Windows sharing violation is retried")
+  collect_leaks(_consumer_leftover "${_consumer_parent}")
+  check(NOT _consumer_leftover "the consumer-locked owned scratch is eventually removed")
+  check(EXISTS "${_consumer_done}" "the transient consumer releases its handle")
+  cleanup("${_consumer_parent}")
+
+  set(_persistent_parent "${_workspace}/persistent-consumer-parent")
+  file(MAKE_DIRECTORY "${_persistent_parent}")
+  file(WRITE "${_persistent_parent}/NEIGHBOUR-SENTINEL.txt" "must survive\n")
+  set(_persistent_ready "${_workspace}/persistent.ready")
+  set(_persistent_started "${_workspace}/persistent.started")
+  set(_persistent_release "${_workspace}/persistent.release")
+  set(_persistent_done "${_workspace}/persistent.done")
+  execute_process(
+    COMMAND powershell -NoProfile -NonInteractive -Command
+      "Start-Process powershell -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-File','${_consumer_script}','${_persistent_parent}','${_persistent_ready}','${_persistent_started}','${_persistent_release}','${_persistent_done}','-Hold')"
+    RESULT_VARIABLE _persistent_start_rc)
+  check(_persistent_start_rc EQUAL 0 "the persistent external consumer starts")
+  set(_persistent_wait 0)
+  while(NOT EXISTS "${_persistent_started}" AND _persistent_wait LESS 5000)
+    execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 0.05)
+    math(EXPR _persistent_wait "${_persistent_wait} + 50")
+  endwhile()
+  check(EXISTS "${_persistent_started}" "the persistent consumer guardian is ready")
+  run_launcher(_rc _out _err "${_persistent_parent}"
+    --delayed-consumer-ready "${_persistent_ready}")
+  check(_rc EQUAL 2 "a permanent Windows sharing lock makes cleanup fail")
+  check(_err MATCHES "delayed-consumer.dat" "cleanup refusal names the leftover file")
+  check(_err MATCHES "Windows error (32|33|303)"
+         "cleanup refusal reports the native sharing/lock error")
+  collect_leaks(_persistent_leftover "${_persistent_parent}")
+  check(_persistent_leftover "the locked owned scratch remains for diagnosis")
+  check(EXISTS "${_persistent_parent}/NEIGHBOUR-SENTINEL.txt"
+         "persistent-lock refusal leaves the neighbour untouched")
+  file(WRITE "${_persistent_release}" "release")
+  set(_persistent_done_wait 0)
+  while(NOT EXISTS "${_persistent_done}" AND _persistent_done_wait LESS 5000)
+    execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 0.05)
+    math(EXPR _persistent_done_wait "${_persistent_done_wait} + 50")
+  endwhile()
+  check(EXISTS "${_persistent_done}" "the persistent guardian releases its handle")
+  cleanup("${_persistent_parent}")
+endif()
+
+# ===========================================================================
 # Scenario 4: a normal child, with and without an explicit deadline
 # ===========================================================================
 
@@ -464,6 +553,9 @@ run_launcher(_rc _out _err "${_exit_descendant_parent}"
   --print-id "${_exit_child_id}"
   --descendant-id "${_exit_descendant_id}"
   --descendant-ms 600000)
+string(REPLACE "\n" " | " _exit_cleanup_diag "${_err}")
+string(REPLACE ";" "," _exit_cleanup_diag "${_exit_cleanup_diag}")
+string(REPLACE "\\" "/" _exit_cleanup_diag "${_exit_cleanup_diag}")
 check(_rc EQUAL 2 "the launcher reports a detached descendant after normal child exit")
 check(_err MATCHES "cleaned" "the launcher reports normal-exit descendant cleanup")
 check(EXISTS "${_exit_child_id}" "the normally exiting child recorded its identity")
@@ -483,7 +575,7 @@ check(NOT _exit_descendant_alive
        "a detached descendant cannot survive the direct child's normal exit")
 collect_leaks(_exit_descendant_leftover "${_exit_descendant_parent}")
 check(NOT _exit_descendant_leftover
-       "normal-exit descendant cleanup removes only the launcher's owned scratch")
+       "normal-exit descendant cleanup removes only the launcher's owned scratch (leftover='${_exit_descendant_leftover}', stderr='${_exit_cleanup_diag}')")
 
 # Nonzero direct-child exits must take the same ownership-safe path before
 # propagating/returning a failure, rather than leaving a detached process behind.
@@ -496,6 +588,9 @@ run_launcher(_rc _out _err "${_abnormal_descendant_parent}"
   --print-id "${_abnormal_child_id}"
   --descendant-id "${_abnormal_descendant_id}"
   --descendant-ms 600000)
+string(REPLACE "\n" " | " _abnormal_cleanup_diag "${_err}")
+string(REPLACE ";" "," _abnormal_cleanup_diag "${_abnormal_cleanup_diag}")
+string(REPLACE "\\" "/" _abnormal_cleanup_diag "${_abnormal_cleanup_diag}")
 check(EXISTS "${_abnormal_child_id}"
        "the nonzero direct child recorded its identity before exiting")
 read_identity_file(_abnormal_child_pid _abnormal_child_creation "${_abnormal_child_id}")
@@ -519,7 +614,7 @@ check(NOT _abnormal_descendant_alive
        "a detached descendant cannot survive a nonzero direct-child exit")
 collect_leaks(_abnormal_descendant_leftover "${_abnormal_descendant_parent}")
 check(NOT _abnormal_descendant_leftover
-       "nonzero-exit descendant cleanup removes the launcher's owned scratch")
+       "nonzero-exit descendant cleanup removes the launcher's owned scratch (leftover='${_abnormal_descendant_leftover}', stderr='${_abnormal_cleanup_diag}')")
 
 set(_fail_parent "${_workspace}/fail-parent")
 file(MAKE_DIRECTORY "${_fail_parent}")

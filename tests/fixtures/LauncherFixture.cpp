@@ -34,6 +34,8 @@
 #include <QtCore/QCommandLineParser>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDateTime>
+#include <QtCore/QDir>
+#include <QtCore/QElapsedTimer>
 #include <QtCore/QFile>
 #include <QtCore/QProcess>
 #include <QtCore/QThread>
@@ -229,9 +231,13 @@ int main(int argc, char** argv) {
     const QCommandLineOption printEnvironmentOption(
         QStringList() << QStringLiteral("print-environment"),
         QStringLiteral("Print selected environment values for launcher contracts."));
+    const QCommandLineOption delayedConsumerOption(
+        QStringList() << QStringLiteral("delayed-consumer-ready"),
+        QStringLiteral("Create a file and wait for an external consumer to release it."),
+        QStringLiteral("ready-file"));
     parser.addOptions({hangOption, exitCodeOption, printIdOption, descendantIdOption,
                         descendantMsOption, parkOnlyOption, parkMsOption,
-                        printEnvironmentOption});
+                        printEnvironmentOption, delayedConsumerOption});
     parser.process(application);
 
     // Internal descendant mode. This is the process a correct launcher reaps
@@ -254,6 +260,17 @@ int main(int argc, char** argv) {
 
     if (parser.isSet(hangOption)) {
         return hangWithDescendant(application);
+    }
+
+    if (parser.isSet(delayedConsumerOption)) {
+        const QString readyPath = parser.value(delayedConsumerOption);
+        QFile held(QDir::current().filePath(QStringLiteral("delayed-consumer.dat")));
+        if (!held.open(QIODevice::WriteOnly) || held.write("held") != 4) return 75;
+        held.close();
+        QElapsedTimer timer;
+        timer.start();
+        while (!QFile::exists(readyPath) && timer.elapsed() < 5000) QThread::msleep(10);
+        return QFile::exists(readyPath) ? 0 : 76;
     }
 
     if (parser.isSet(exitCodeOption)) {

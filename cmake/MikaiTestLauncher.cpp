@@ -227,6 +227,71 @@ qint64 childTimeoutMs(const QString& explicitSpec) {
 // created after the assignment, so nothing the child runs can escape the job,
 // and TerminateJobObject() bounds the whole run.
 
+// A short-lived external file consumer can outlive the test process briefly.
+// Retry only Windows sharing/lock violations; all other failures remain final.
+constexpr int kScratchDeleteAttempts = 20;
+constexpr DWORD kScratchDeleteDelayMs = 50;
+constexpr DWORD kErrorDeletePending = 303;
+
+bool removeOwnedScratchTree(const QString& path, DWORD* error, QString* failedPath) {
+    const QFileInfo info(path);
+    const DWORD attributes = ::GetFileAttributesW(reinterpret_cast<LPCWSTR>(path.utf16()));
+    if (info.isSymLink() ||
+        (attributes != INVALID_FILE_ATTRIBUTES &&
+         (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0)) {
+        *error = ERROR_CANT_ACCESS_FILE;
+        *failedPath = path;
+        return false;
+    }
+    if (info.isDir()) {
+        const QFileInfoList entries = QDir(path).entryInfoList(
+            QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System);
+        for (const QFileInfo& entry : entries) {
+            if (!removeOwnedScratchTree(entry.absoluteFilePath(), error, failedPath)) return false;
+        }
+        if (::RemoveDirectoryW(reinterpret_cast<LPCWSTR>(path.utf16()))) return true;
+    } else if (::DeleteFileW(reinterpret_cast<LPCWSTR>(path.utf16()))) {
+        return true;
+    }
+    *error = ::GetLastError();
+    *failedPath = path;
+    return false;
+}
+
+bool hasDeleteAccessOrTransientBlock(const QString& path) {
+    const DWORD attributes = ::GetFileAttributesW(reinterpret_cast<LPCWSTR>(path.utf16()));
+    if (attributes == INVALID_FILE_ATTRIBUTES ||
+        (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0 ||
+        (attributes & FILE_ATTRIBUTE_READONLY) != 0) {
+        return false;
+    }
+    HANDLE handle = ::CreateFileW(reinterpret_cast<LPCWSTR>(path.utf16()), DELETE,
+                                  FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                  nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    if (handle != INVALID_HANDLE_VALUE) {
+        ::CloseHandle(handle);
+        return true;
+    }
+    const DWORD probeError = ::GetLastError();
+    return probeError == ERROR_SHARING_VIOLATION ||
+           probeError == ERROR_LOCK_VIOLATION ||
+           probeError == kErrorDeletePending;
+}
+
+bool removeOwnedScratchTreeWithRetry(const QString& path, DWORD* error, QString* failedPath) {
+    for (int attempt = 0; attempt < kScratchDeleteAttempts; ++attempt) {
+        if (removeOwnedScratchTree(path, error, failedPath)) return true;
+        const bool sharingFailure = *error == ERROR_SHARING_VIOLATION ||
+                                    *error == ERROR_LOCK_VIOLATION ||
+                                    *error == kErrorDeletePending;
+        const bool deleteAccessConfirmed =
+            *error == ERROR_ACCESS_DENIED && hasDeleteAccessOrTransientBlock(*failedPath);
+        if (!sharingFailure && !deleteAccessConfirmed) return false;
+        ::Sleep(kScratchDeleteDelayMs);
+    }
+    return false;
+}
+
 // Terminate-any-process-that-joins-the-job limit, set before the child does.
 bool applyKillOnClose(HANDLE job) {
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits;
@@ -1203,10 +1268,25 @@ int main(int argc, char** argv) {
     // failure, a child crash or a timeout kill. The public build output is never
     // moved/edited. This is the sole cleanup owner; the child is already gone by
     // the time any path above returns.
-    if (!scratch.remove()) {
-        std::fprintf(stderr, "[mikai_test_launcher] cannot remove owned scratch: %s\n",
-                     qPrintable(scratch.path()));
+#ifdef Q_OS_WIN
+    DWORD cleanupError = ERROR_SUCCESS;
+    QString cleanupFailurePath;
+    const bool removed = removeOwnedScratchTreeWithRetry(scratch.path(), &cleanupError,
+                                                         &cleanupFailurePath);
+    if (!removed) {
+        std::fprintf(stderr,
+                     "[mikai_test_launcher] cannot remove owned scratch entry '%s' "
+                     "(owned root '%s', Windows error %lu)\n",
+                     qPrintable(cleanupFailurePath), qPrintable(scratch.path()),
+                     static_cast<unsigned long>(cleanupError));
         return result != 0 ? result : 2;
     }
+#else
+    if (!scratch.remove()) {
+        std::fprintf(stderr, "[mikai_test_launcher] cannot remove owned scratch '%s': %s\n",
+                     qPrintable(scratch.path()), qPrintable(scratch.errorString()));
+        return result != 0 ? result : 2;
+    }
+#endif
     return result;
 }

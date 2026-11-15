@@ -204,6 +204,8 @@ ctest --test-dir build/linux-release --output-on-failure
 - For the repository's focused-suite launcher rules, consult [AGENTS.md](../AGENTS.md#running-individual-test-suites) when available.
 - A successful build/test is not inference-performance evidence.
 
+`mikai_test_launcher` removes only its owned disposable run directory after the child and its descendants have exited. Windows cleanup allows a one-second retry budget for sharing/lock violations, pending deletion and retiring executable images with confirmed delete access. Permission errors, readonly/reparse entries and persistent locks remain failures with the leftover path and native error. `LauncherContracts` exercises temporary and persistent file locks with a separate guardian process, plus descendant teardown. Linux retains its normal unlink semantics.
+
 Every build stamps its own identity, so two builds of the same `0.1.0` can be told apart:
 
 ```bash
