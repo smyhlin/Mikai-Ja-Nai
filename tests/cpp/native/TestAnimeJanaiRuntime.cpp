@@ -1728,10 +1728,13 @@ void TestAnimeJanaiRuntime::catalogWatcherRearmsAfterAtomicReplacementAndInPlace
     changed.clear();
     {
         QSaveFile replacement(path);
-        QVERIFY(replacement.open(QIODevice::WriteOnly));
+        replacement.setDirectWriteFallback(false);
+        const bool opened = replacement.open(QIODevice::WriteOnly);
+        QVERIFY2(opened, qPrintable(replacement.errorString()));
         const QByteArray replacementBytes = taggedIdentityGraph(QByteArrayLiteral("atomic-replacement"));
         QVERIFY(replacement.write(replacementBytes) == replacementBytes.size());
-        QVERIFY(replacement.commit());
+        const bool committed = replacement.commit();
+        QVERIFY2(committed, qPrintable(replacement.errorString()));
     }
     QVERIFY(changed.wait(5000));
     const qint64 replacedBytes = QFileInfo(path).size();

@@ -206,6 +206,8 @@ ctest --test-dir build/linux-release --output-on-failure
 
 `mikai_test_launcher` removes only its owned disposable run directory after the child and its descendants have exited. Windows cleanup allows a one-second retry budget for sharing/lock violations, pending deletion and retiring executable images with confirmed delete access. Permission errors, readonly/reparse entries and persistent locks remain failures with the leftover path and native error. `LauncherContracts` exercises temporary and persistent file locks with a separate guardian process, plus descendant teardown. Linux retains its normal unlink semantics.
 
+`TestAnimeJanaiRuntime` exercises watched model replacement with `QSaveFile` and direct-write fallback disabled. Open and commit failures report Qt's original filesystem error; the regression does not retry or substitute an in-place write.
+
 Every build stamps its own identity, so two builds of the same `0.1.0` can be told apart:
 
 ```bash
