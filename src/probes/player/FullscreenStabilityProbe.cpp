@@ -527,6 +527,9 @@ int runQuickHoverCanary(mplayer::quick::PlayerController* controller, int second
     const quint64 epoch=session->sourceEpoch();
     const quint64 frames=session->playbackDiagnostics().renderedOutputFrames;
     const double startPosition=session->position();
+    // Release the startup hold only after video and visible output are ready;
+    // playback time and every canary gate begin at this boundary.
+    session->setEnginePreparationPaused(false);
     QElapsedTimer clock; clock.start();
     qint64 prev=0,maxGap=0;
     int gestures=0,ticks=0,slow=0,loopSeeks=0;
@@ -2032,6 +2035,11 @@ int main(int argc, char** argv) {
     } else {
         controller->showWindow();
         window->showFullscreen();
+    }
+    if (hoverCanary) {
+        // Install the pause hold before startPlayer submits loadfile, so the
+        // fixture cannot reach EOF while its first frame is being presented.
+        controller->session()->setEnginePreparationPaused(true);
     }
     controller->startPlayer();
     if(hoverCanary) {

@@ -747,6 +747,10 @@ The probe selects the same Basic Quick Controls style as the application and ini
 windowed presentation through the controller before starting playback. The verdict uses the
 session's frame-timing log plus pacing and chrome counters.
 
+Startup holds the session's engine-preparation pause until video and its first visible output
+are ready, then releases it at the measurement boundary. The 6 s fixture therefore cannot reach
+EOF during startup, before the measurement loop's seek-to-start handling is active.
+
 ```bat
 cmake --build build/release --target fullscreen_stability_probe --parallel 4
 ctest --test-dir build/release -R ^HoverPlaybackCanary$ --output-on-failure
