@@ -220,14 +220,6 @@ Item {
         }
     }
 
-    Connections {
-        target: root.controller
-        function onMediaChanged() {
-            root.previewDismissed()
-            root.controller.hideHoverPreview()
-        }
-    }
-
     focus: false
     activeFocusOnTab: true
 

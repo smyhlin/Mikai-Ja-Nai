@@ -9,6 +9,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QEvent>
 #include <QFile>
 #include <QEventLoop>
 #include <QFileInfo>
@@ -142,6 +143,7 @@ void TestHoverPreview::theQuickTimelineHoverDragLeaveAndReloadUseDecodedFrames()
     auto* window = controller.window();
     QVERIFY(window != nullptr);
     window->resize(1000, 620);
+    controller.showWindow();
     window->showWindowed();
     QVERIFY2(settleUntil([&] { return controller.duration() > 0.0; }, 20000),
              "the real player session did not load the preview fixture");
@@ -169,6 +171,13 @@ void TestHoverPreview::theQuickTimelineHoverDragLeaveAndReloadUseDecodedFrames()
         QStringLiteral("image://mikai-hover/")));
     const QString hoveredTime = controller.hoverPreviewTime();
     QVERIFY(!hoveredTime.isEmpty());
+    const QUrl hoveredSource = controller.hoverPreviewSource();
+    QEvent languageChange(QEvent::LanguageChange);
+    QCoreApplication::sendEvent(window, &languageChange);
+    QVERIFY2(controller.hoverPreviewVisible() &&
+                 controller.hoverPreviewTime() == hoveredTime &&
+                 controller.hoverPreviewSource() == hoveredSource,
+             "a non-source media metadata notification dismissed the active preview");
 
     auto* preview = root->findChild<QQuickItem*>(QStringLiteral("player.timeline.preview"));
     QVERIFY(preview != nullptr);
@@ -228,6 +237,17 @@ void TestHoverPreview::theQuickTimelineHoverDragLeaveAndReloadUseDecodedFrames()
              "the final hover before reload did not decode");
     const uint64_t oldEpoch = controller.session()->sourceEpoch();
     const QUrl oldPreview = controller.hoverPreviewSource();
+    QSignalSpy hoverTransitions(&controller, &mplayer::quick::PlayerController::hoverPreviewChanged);
+    const int previewRequestedIndex =
+        timeline->metaObject()->indexOfSignal("previewRequested(double,QPointF)");
+    const int previewDismissedIndex =
+        timeline->metaObject()->indexOfSignal("previewDismissed()");
+    QVERIFY(previewRequestedIndex >= 0);
+    QVERIFY(previewDismissedIndex >= 0);
+    QSignalSpy previewRequests(timeline, timeline->metaObject()->method(previewRequestedIndex));
+    QSignalSpy previewDismissals(timeline, timeline->metaObject()->method(previewDismissedIndex));
+    QVERIFY(previewRequests.isValid());
+    QVERIFY(previewDismissals.isValid());
     QVERIFY(!oldPreview.isEmpty());
     controller.startPlayer();
     QVERIFY2(settleUntil([&] { return controller.session()->sourceEpoch() > oldEpoch; }, 2000),
@@ -239,10 +259,21 @@ void TestHoverPreview::theQuickTimelineHoverDragLeaveAndReloadUseDecodedFrames()
              "the reloaded source did not become ready for preview");
     QVERIFY2(settleUntil([&] { return !controller.openingLoading(); }, 20000),
              "the opening overlay did not clear after reloading the preview fixture");
-    // Reload does not move the physical pointer. Re-send hover as an actual
-    // leave/re-enter transition; a same-position mouseMove may be coalesced by
-    // the platform and therefore never reach the Quick HoverHandler.
+    hoverTransitions.clear();
+    previewRequests.clear();
+    previewDismissals.clear();
     QTest::mouseMove(window, QPoint(8, 8));
+    QVERIFY2(settleUntil([&] {
+                 for (QObject* item : timeline->findChildren<QObject*>()) {
+                     if (QString::fromLatin1(item->metaObject()->className()).contains(
+                             QStringLiteral("MouseArea")) &&
+                         item->property("enabled").toBool()) {
+                         return !item->property("containsMouse").toBool();
+                     }
+                 }
+                 return false;
+             }, 2000),
+             "the reload leave did not reach the enabled timeline MouseArea");
     QTest::mouseMove(window, windowPoint(timeline, 0.2));
     const bool reloadedPreviewReady = settleUntil([&] {
         return controller.hoverPreviewVisible() &&
@@ -276,7 +307,11 @@ void TestHoverPreview::theQuickTimelineHoverDragLeaveAndReloadUseDecodedFrames()
             .arg(controller.duration())
             .arg(timeline->width())
             .arg(timeline->height())
-            .arg(inputState.join(QStringLiteral("; ")))));
+            .arg(inputState.join(QStringLiteral("; "))) +
+            QStringLiteral(" previewRequested=%1 previewDismissed=%2 hoverStateChanges=%3")
+                .arg(previewRequests.count())
+                .arg(previewDismissals.count())
+                .arg(hoverTransitions.count())));
     }
     QVERIFY(controller.hoverPreviewSource() != oldPreview);
     QVERIFY(!controller.hoverPreviewTime().isEmpty());
