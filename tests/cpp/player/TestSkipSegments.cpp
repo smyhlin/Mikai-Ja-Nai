@@ -8,6 +8,7 @@
 
 #include <QCoreApplication>
 #include <QElapsedTimer>
+#include <QSignalSpy>
 #include <QEventLoop>
 #include <QStringList>
 #include <QThread>
@@ -44,6 +45,7 @@ public:
             if (error != nullptr) *error = QStringLiteral("Quick player window was not exposed");
             return false;
         }
+        QSignalSpy presented(window, &mplayer::quick::PlayerWindow::framePresented);
         controller.startPlayer();
         if (!window->session()->waitForContext(20000)) {
             if (error != nullptr) *error = QStringLiteral("Quick player render context is unavailable");
@@ -57,6 +59,21 @@ public:
         }
         if (controller.session()->duration() <= 2.0) {
             if (error != nullptr) *error = QStringLiteral("Quick player did not load the benchmark video");
+            return false;
+        }
+        while ((presented.isEmpty() || controller.openingLoading()) && timer.elapsed() < 30000) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+            QThread::msleep(10);
+        }
+        if (presented.isEmpty() || controller.openingLoading()) {
+            if (error != nullptr) {
+                *error = QStringLiteral("Quick player did not present a frame and clear opening "
+                                        "(presented=%1 opening=%2 hasVideo=%3 isOpening=%4)")
+                             .arg(presented.size())
+                             .arg(controller.openingLoading())
+                             .arg(controller.session()->hasVideo())
+                             .arg(controller.session()->isOpening());
+            }
             return false;
         }
         controller.session()->setPaused(true);
@@ -76,7 +93,7 @@ public:
     PlayerController controller;
 };
 
-bool seekAndSettle(PlayerController& controller, double seconds) {
+bool seekAndSettle(PlayerController& controller, double seconds, QString* failure = nullptr) {
     controller.seekTo(seconds);
     QElapsedTimer timer;
     timer.start();
@@ -92,6 +109,23 @@ bool seekAndSettle(PlayerController& controller, double seconds) {
             settled.invalidate();
         }
         QThread::msleep(10);
+    }
+    if (failure != nullptr) {
+        VideoSession* const session = controller.session();
+        const auto corePosition = session->probeMpvProperty(
+            QStringLiteral("time-pos"), mplayer::ProbePropertyKind::Number);
+        *failure = QStringLiteral("seek did not settle: target=%1 sessionPosition=%2 "
+                                  "controllerPosition=%3 duration=%4 hasVideo=%5 isOpening=%6 "
+                                  "openingLoading=%7 corePosition=%8")
+                       .arg(seconds, 0, 'g', 12)
+                       .arg(session->position(), 0, 'g', 12)
+                       .arg(controller.position(), 0, 'g', 12)
+                       .arg(session->duration(), 0, 'g', 12)
+                       .arg(session->hasVideo())
+                       .arg(session->isOpening())
+                       .arg(controller.openingLoading())
+                       .arg(corePosition ? QString::number(corePosition->number, 'g', 12)
+                                         : QStringLiteral("unavailable"));
     }
     return false;
 }
@@ -241,7 +275,9 @@ void TestSkipSegments::aLateSkipListUsesTheCurrentPlaybackPosition() {
     VideoSession* session = fixture.controller.session();
     QTRY_VERIFY_WITH_TIMEOUT(session->duration() > 2.0, 15000);
     const double duration = session->duration();
-    QVERIFY(seekAndSettle(fixture.controller, duration * 0.50));
+    QString seekFailure;
+    QVERIFY2(seekAndSettle(fixture.controller, duration * 0.50, &seekFailure),
+             qPrintable(seekFailure));
     QVERIFY(offers(fixture.controller).isEmpty());
 
     fixture.controller.setSkipSegments(
@@ -263,7 +299,9 @@ void TestSkipSegments::activatingAnOfferSeeksTheRealSessionToItsEnd() {
     const double secondEnd = duration * 0.60;
     fixture.controller.setSkipSegments({segment("mixed_opening", duration * 0.20, firstEnd),
                                         segment("recap", duration * 0.30, secondEnd)});
-    QVERIFY(seekAndSettle(fixture.controller, duration * 0.40));
+    QString seekFailure;
+    QVERIFY2(seekAndSettle(fixture.controller, duration * 0.40, &seekFailure),
+             qPrintable(seekFailure));
     QCOMPARE(offers(fixture.controller).size(), 2);
 
     fixture.controller.activateSkipOffer(1);

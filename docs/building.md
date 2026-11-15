@@ -65,7 +65,7 @@ sudo apt-get install patchelf
 
 CI sets `MIKAI_TEST_NATIVE_QPA=ON`: widget-only suites stay on Qt's offscreen platform, while Quick player suites use native windows and software OpenGL. Windows uses `windows` with Qt's software renderer; Linux uses `xcb` under Xvfb with GLX and Openbox for window-state tests. The option defaults to OFF for other builds. The isolated launcher stages each test away from installed native stores.
 
-The hover-preview integration test waits for the opening state to clear before sending timeline input, both initially and after reload. Duration metadata alone does not establish that the first frame and timeline layout are ready.
+The hover-preview integration test waits for the opening state to clear before sending timeline input, both initially and after reload. Duration metadata alone does not establish that the first frame and timeline layout are ready. `TestSkipSegments` requires presented video and a cleared opening state before exercising real seeks.
 
 - For CI, `packaging/ci/provision.py` acquires Qt 6.12.0 for `win64_mingw` or `linux_gcc_64`.
 - On Linux it uses `aqtinstall` 3.3.0. Qt Declarative and Qt Tools are part of the base kit, not optional module names; Image Formats is requested as an addon.
