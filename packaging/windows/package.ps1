@@ -68,7 +68,7 @@ if ($RequirePublicReady -and -not $publicReady) {
 if (-not $publicReady) {
     Write-Warning 'Preparing PRIVATE REVIEW artifacts only. Redistribution/publication is blocked; see included third-party.json and release evidence.'
 }
-$isccCommand = Get-Command $ISCC -CommandType Application -ErrorAction SilentlyContinue
+$isccCommand = Get-Command $ISCC -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($null -eq $isccCommand) {
     # Inno Setup is not normally on PATH after a standard per-machine install.
     foreach ($root in @(${env:ProgramFiles(x86)}, $env:ProgramFiles, $env:LOCALAPPDATA)) {
@@ -81,7 +81,7 @@ if ($null -eq $isccCommand) {
     }
 }
 if ($null -eq $isccCommand) { throw 'Install Inno Setup 6.3+ separately, put ISCC.exe on PATH, or pass -ISCC <path>. No toolchain is downloaded by this script.' }
-$cmake = (Get-Command cmake -CommandType Application).Source
+$cmake = (Get-Command cmake -CommandType Application | Select-Object -First 1).Source
 # Building the actual app is intentional; no probes, test or native targets are packaged.
 Invoke-Checked $cmake @('--build', $build, '--config', 'Release', '--target', 'mikai')
 

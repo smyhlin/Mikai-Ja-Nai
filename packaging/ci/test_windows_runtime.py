@@ -118,6 +118,109 @@ extern "C" __declspec(dllexport) void qtcore_fixture() {}
         shutil.copy2(self.bad_runtime_dir / 'libstdc++-6.dll', payload / 'libstdc++-6.dll')
         self.assembler.validate_qt_mingw_runtime(payload)
 
+    def test_package_script_selects_first_duplicate_tool_and_creates_real_artifacts(self):
+        cmake = shutil.which('cmake')
+        iscc = shutil.which('ISCC.exe') or shutil.which('iscc.exe')
+        powershell = shutil.which('pwsh') or shutil.which('powershell')
+        ninja = shutil.which('ninja')
+        missing = [name for name, path in (
+            ('cmake', cmake), ('Inno Setup ISCC.exe', iscc),
+            ('PowerShell', powershell), ('Ninja', ninja),
+        ) if path is None]
+        if missing:
+            raise RuntimeError('Windows package regression requires ' + ', '.join(missing) + ' on PATH')
+        compiler = pathlib.Path(os.environ['MIKAI_TEST_CXX']).resolve()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            build = root / 'build'
+            build.mkdir()
+            output = root / 'artifacts'
+            output.mkdir()
+            poison = root / 'poison'
+            poison.mkdir()
+            poison_source = root / 'poison.cpp'
+            poison_source.write_text('int main() { return 73; }\n', encoding='utf-8')
+            compiled = subprocess.run(
+                [str(compiler), str(poison_source), '-o', str(poison / 'cmake.exe')],
+                check=False, capture_output=True, text=True)
+            self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
+            shutil.copy2(poison / 'cmake.exe', poison / 'ISCC.exe')
+
+            project = root / 'fixture'
+            project.mkdir()
+            (project / 'main.cpp').write_text('int main() { return 0; }\n', encoding='utf-8')
+            (project / 'CMakeLists.txt').write_text(
+                'cmake_minimum_required(VERSION 3.21)\n'
+                'project(package_regression LANGUAGES CXX)\n'
+                'add_executable(mikai main.cpp)\n',
+                encoding='utf-8')
+            configured = subprocess.run(
+                [cmake, '-S', str(project), '-B', str(build), '-G', 'Ninja',
+                 '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_CXX_COMPILER=' + str(compiler),
+                 '-DCMAKE_MAKE_PROGRAM=' + ninja],
+                check=False, capture_output=True, text=True)
+            self.assertEqual(configured.returncode, 0, configured.stdout + configured.stderr)
+
+            metadata = {
+                'configuration': 'Release',
+                'sourceDir': str(ROOT),
+                'version': '0.0.0',
+            }
+            (build / 'mikai-package-Release.json').write_text(
+                json.dumps(metadata), encoding='utf-8')
+            stage = build / 'mikai-package-Release.cmake'
+            stage.write_text(
+                'file(MAKE_DIRECTORY "${DIST_DIR}")\n'
+                f'file(COPY "{(build / "mikai.exe").as_posix()}" DESTINATION "${{DIST_DIR}}")\n'
+                f'file(COPY "{(ROOT / "LICENSE").as_posix()}" DESTINATION "${{DIST_DIR}}")\n'
+                'file(WRITE "${DIST_DIR}/VERSION" "mikai 0.0.0")\n',
+                encoding='utf-8')
+
+            env = os.environ.copy()
+            env['PATH'] = os.pathsep.join((
+                str(pathlib.Path(cmake).resolve().parent),
+                str(pathlib.Path(iscc).resolve().parent),
+                str(poison),
+                str(compiler.parent),
+                env.get('PATH', ''),
+            ))
+            packaged = subprocess.run(
+                [powershell, '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+                 '-File', str(ROOT / 'packaging' / 'windows' / 'package.ps1'),
+                 '-BuildDir', str(build), '-OutputDir', str(output)],
+                check=False, capture_output=True, text=True, env=env)
+            self.assertEqual(packaged.returncode, 0, packaged.stdout + packaged.stderr)
+
+            base = 'mikai-0.0.0-windows-x64'
+            zip_path = output / (base + '-portable.zip')
+            setup_path = output / (base + '-setup.exe')
+            receipt_path = output / (base + '-release.json')
+            self.assertEqual(setup_path.read_bytes()[:2], b'MZ')
+            receipt = json.loads(receipt_path.read_text(encoding='utf-8'))
+            artifacts = {entry['name']: entry for entry in receipt['artifacts']}
+            for artifact in (zip_path, setup_path):
+                entry = artifacts[artifact.name]
+                digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+                self.assertEqual(entry['sha256'], digest)
+                self.assertEqual(entry['bytes'], artifact.stat().st_size)
+            inventory = {entry['path']: entry for entry in receipt['payload']}
+            exe_bytes = (build / 'mikai.exe').read_bytes()
+            self.assertIn('mikai.exe', inventory)
+            self.assertEqual(inventory['mikai.exe']['sha256'],
+                             hashlib.sha256(exe_bytes).hexdigest())
+            with zipfile.ZipFile(zip_path) as archive:
+                packaged_names = {
+                    name[len(base) + 1:] for name in archive.namelist()
+                    if name.startswith(base + '/') and not name.endswith('/')
+                }
+                self.assertEqual(packaged_names, set(inventory))
+                for relative, entry in inventory.items():
+                    packaged = archive.read(base + '/' + relative)
+                    self.assertEqual(entry['bytes'], len(packaged), relative)
+                    self.assertEqual(entry['sha256'], hashlib.sha256(packaged).hexdigest(), relative)
+                packaged_exe = archive.read(base + '/mikai.exe')
+                self.assertEqual(packaged_exe, exe_bytes)
+
     def test_dist_closes_real_pe_dependencies_from_compiler_bin(self):
         required_tools = {
             'cmake': shutil.which('cmake'),

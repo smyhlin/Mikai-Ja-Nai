@@ -133,6 +133,7 @@ pwsh -NoProfile -File packaging/windows/smoke.ps1 `
 
 - The payload is assembled on Windows only: `package.ps1` reads the generated `build/mikai-package-Release.json` (version, configuration, executable, source directory), refuses a build that does not belong to this checkout/Release configuration, then runs `build/mikai-package-Release.cmake`. That generated script includes `cmake/dist.cmake` with `MIKAI_PUBLIC_RELEASE` set, so the allowlisted Qt plugins, the PE import closure, the MinGW runtime, the pinned `libmpv-2.dll`, benchmark clips, translations, licences and `qt.conf` are validated rather than assumed.
 - `package.ps1` then writes an explicit `payload-files.iss` inventory from the assembled tree and compiles `packaging/windows/mikai.iss` with `AppVersion`, `StageDir`, `PayloadFiles` and `OutputDir`, so the installer can only ship files that were actually assembled. No recursive source glob and no AI payload can enter it.
+- Inno Setup and CMake discovery select the first matching application in `PATH` order, even when another installation or a Chocolatey shim provides the same name. Pass `-ISCC <path>` to select a specific installer compiler.
 - `packaging/windows/assemble-payload.py` is exercised only by `packaging/ci/test_windows_runtime.py` as a runtime-contract check; it is not the packaging path.
 
 These outputs are local build products, not approval to upload them. Do not publish the Windows binaries while the mpv dependency/source/license closure described above remains unresolved.
