@@ -4,17 +4,24 @@
 #include "player/quick/PlayerController.hpp"
 #include "player/quick/PlayerWindow.hpp"
 #include "player/core/VideoSession.hpp"
+#include "player/shell/FramePreviewService.hpp"
 
 #include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QFile>
 #include <QEventLoop>
 #include <QFileInfo>
 #include <QMouseEvent>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QSignalSpy>
+#include <QStringList>
+#include <QTemporaryDir>
 #include <QThread>
 #include <QUrl>
+
+#include <cmath>
 
 namespace {
 
@@ -81,6 +88,48 @@ bool TestHoverPreview::requireRuntime() {
     QTest::qSkip("set MIKAI_MPV_MODULE to a real libmpv runtime to run this",
                  __FILE__, __LINE__);
     return false;
+}
+
+void TestHoverPreview::sameUrlSourceEpochRecoversAfterUnavailableSource() {
+    if (!requireRuntime()) return;
+    const QString clip = fixtureClip();
+    QVERIFY2(QFileInfo::exists(clip), qPrintable(clip));
+
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString source = directory.filePath(QStringLiteral("preview.mp4"));
+    QVERIFY(!QFileInfo::exists(source));
+
+    mplayer::shell::FramePreviewService service;
+    QSignalSpy ready(&service, &mplayer::shell::FramePreviewService::frameReady);
+    QSignalSpy unavailable(&service, &mplayer::shell::FramePreviewService::frameUnavailable);
+    QVERIFY(ready.isValid());
+    QVERIFY(unavailable.isValid());
+
+    service.setSource(source, 41);
+    service.requestFrame(101, 2.0);
+    QVERIFY2(settleUntil([&] { return !unavailable.isEmpty(); }, 20000),
+             "the missing source did not report its real preview failure");
+    QCOMPARE(unavailable.size(), 1);
+    QCOMPARE(unavailable.constFirst().at(0).toULongLong(), quint64(101));
+    QCOMPARE(ready.size(), 0);
+
+    QVERIFY2(QFile::copy(clip, source), "could not populate the owned preview fixture path");
+    ready.clear();
+    unavailable.clear();
+    service.setSource(source, 42);
+    service.requestFrame(102, 2.0);
+    QVERIFY2(settleUntil([&] { return !ready.isEmpty() || !unavailable.isEmpty(); }, 20000),
+             "the replacement epoch did not settle a real preview request");
+
+    QVERIFY2(unavailable.isEmpty(),
+             unavailable.isEmpty() ? "" : qPrintable(unavailable.constFirst().at(2).toString()));
+    QCOMPARE(ready.size(), 1);
+    QCOMPARE(ready.constFirst().at(0).toULongLong(), quint64(102));
+    const double decodedSeconds = ready.constFirst().at(2).toDouble();
+    QVERIFY(std::isfinite(decodedSeconds));
+    QVERIFY(qAbs(decodedSeconds - 2.0) <= 0.75);
+    QVERIFY(!qvariant_cast<QImage>(ready.constFirst().at(3)).isNull());
 }
 
 void TestHoverPreview::theQuickTimelineHoverDragLeaveAndReloadUseDecodedFrames() {
@@ -195,11 +244,40 @@ void TestHoverPreview::theQuickTimelineHoverDragLeaveAndReloadUseDecodedFrames()
     // the platform and therefore never reach the Quick HoverHandler.
     QTest::mouseMove(window, QPoint(8, 8));
     QTest::mouseMove(window, windowPoint(timeline, 0.2));
-    QVERIFY2(settleUntil([&] {
-                 return controller.hoverPreviewVisible() &&
-                        !controller.hoverPreviewSource().isEmpty();
-             }, 20000),
-             "the reloaded source did not produce a fresh hover preview");
+    const bool reloadedPreviewReady = settleUntil([&] {
+        return controller.hoverPreviewVisible() &&
+               !controller.hoverPreviewSource().isEmpty();
+    }, 20000);
+    if (!reloadedPreviewReady) {
+        QStringList inputState;
+        const auto items = timeline->findChildren<QObject*>();
+        for (QObject* item : items) {
+            if (QString::fromLatin1(item->metaObject()->className()).contains(
+                    QStringLiteral("MouseArea"))) {
+                inputState.append(
+                    QStringLiteral("enabled=%1 containsMouse=%2 pressed=%3")
+                        .arg(item->property("enabled").toBool())
+                        .arg(item->property("containsMouse").toBool())
+                        .arg(item->property("pressed").toBool()));
+            }
+        }
+        QFAIL(qPrintable(QStringLiteral(
+            "reloaded hover failed: visible=%1 time=%2 source=%3 epoch=%4 opening=%5 "
+            "timelineVisible=%6 timelineEnabled=%7 seekable=%8 duration=%9 size=%10x%11 "
+            "mouseArea=[%12]")
+            .arg(controller.hoverPreviewVisible())
+            .arg(controller.hoverPreviewTime())
+            .arg(controller.hoverPreviewSource().toString())
+            .arg(controller.session()->sourceEpoch())
+            .arg(controller.openingLoading())
+            .arg(timeline->isVisible())
+            .arg(timeline->isEnabled())
+            .arg(timeline->property("seekable").toBool())
+            .arg(controller.duration())
+            .arg(timeline->width())
+            .arg(timeline->height())
+            .arg(inputState.join(QStringLiteral("; ")))));
+    }
     QVERIFY(controller.hoverPreviewSource() != oldPreview);
     QVERIFY(!controller.hoverPreviewTime().isEmpty());
 }

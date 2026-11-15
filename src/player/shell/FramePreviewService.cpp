@@ -353,7 +353,9 @@ void FramePreviewWorker::setSource(const QString& url, quint64 generation) {
     // Sources arrive in publication order; an older generation is already gone.
     if (generation < generation_) return;
     generation_ = generation;
-    if (url == url_) return;
+    // The service advances generation for a same-URL reload too. Treat that as
+    // a new source: old captures, load state and retry failures belong to the
+    // retired epoch, not merely to a different URL string.
     url_ = url;
     requestedToken_ = 0;
     activeToken_ = 0;

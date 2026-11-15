@@ -11,6 +11,7 @@ class TestHoverPreview : public QObject {
 private slots:
     void initTestCase();
     void theQuickTimelineHoverDragLeaveAndReloadUseDecodedFrames();
+    void sameUrlSourceEpochRecoversAfterUnavailableSource();
 
 private:
     bool requireRuntime();

@@ -815,6 +815,11 @@ After reload, it moves off the timeline before re-entering: repeating the same p
 position need not deliver a new hover event on X11. The old preview must still clear when
 the source epoch changes, and re-entry must publish a different preview URL.
 
+A new epoch also resets the preview worker when the URL is unchanged: pending captures,
+loaded-source state and failure backoff belong to the retired epoch. The real-decoder
+regression first requests a missing owned file, then creates it at the same path and requires
+a decoded frame under the new epoch instead of replaying the old failure.
+
 ## Native scaling framebuffer regression
 
 `TestVideoScaling hiddenPlaybackChangesThePicturePerMode` exercises six display modes, 150% size
