@@ -562,8 +562,14 @@ void TestPlaybackControls::refreshedStreamStartsAtBeginningWithoutResuming() {
                         session->sourceUrl().contains(QStringLiteral("23976fps")) &&
                         session->duration() > 10.0;
              }, 30000), "refreshed stream did not load");
-    QVERIFY2(settleUntil([&] { return session->position() < 0.5; }, 10000),
-             qPrintable(QStringLiteral("refreshed stream incorrectly resumed at %1")
+    QVERIFY2(settleUntil([&] {
+                 if (session->isOpening() || !session->hasVideo() ||
+                     session->position() >= 0.5 || !coreIsPaused(session))
+                     return false;
+                 const auto position = coreNumber(session, "time-pos");
+                 return position && *position >= 0.0 && *position < 0.5;
+             }, 10000),
+             qPrintable(QStringLiteral("refreshed stream did not settle at the beginning: %1")
                             .arg(session->position())));
     QVERIFY(coreIsPaused(session));
 }

@@ -727,6 +727,13 @@ selected graph has no engine for the source resolution; the owned store from
 own models. A close that reports itself refused is a FAIL here - that is the path the close keeps
 for a stop the native side named - so read `closeRefused` and `settleAbandoned` together.
 
+## Stream-refresh restart regression
+
+`TestPlaybackControls` checks that a refreshed stream link starts at zero and retains the
+viewer's explicit pause intent. Quality and dub/sub variant swaps still carry the playhead;
+stream refresh must not reuse that carry-over path. The restart check observes the loaded
+core's playhead, not just the controller's transient timeline reset.
+
 ## Hover-playback pacing canary
 
 GOAL-F/T-F4's regression net is a CTest entry, `HoverPlaybackCanary`. It runs the real

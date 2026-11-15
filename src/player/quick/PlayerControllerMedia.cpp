@@ -311,7 +311,7 @@ void PlayerController::applyRefreshedStreams(const QList<shell::QualityEntry>& q
         if (entry.url == url_ && session_ != nullptr && session_->hasVideo()) {
             return;
         }
-        if (!openStream(entry.url, target, /*resume=*/true)) {
+        if (!openStream(entry.url, target, /*resume=*/false)) {
             ensureOpenFailureVisible();
             return;
         }
