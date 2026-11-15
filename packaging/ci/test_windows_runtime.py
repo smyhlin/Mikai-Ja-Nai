@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import pathlib
@@ -5,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import zipfile
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -43,15 +45,27 @@ extern "C" __declspec(dllexport) void __cxa_call_terminate() {}
                      cls.payload / 'libstdc++-6.dll')
         cls._compile_dll('gcc-runtime.cpp', r'''
 extern "C" __declspec(dllexport) void gcc_runtime_fixture() {}
-''', cls.payload / 'libgcc_s_seh-1.dll')
+''', cls.payload / 'libgcc_s_seh-1.dll',
+                         output_import_library=cls.fixture_dir / 'libgcc_s_seh-1.dll.a')
         cls._compile_dll('pthread-runtime.cpp', r'''
 extern "C" __declspec(dllexport) void pthread_runtime_fixture() {}
-''', cls.payload / 'libwinpthread-1.dll')
+''', cls.payload / 'libwinpthread-1.dll',
+                         output_import_library=cls.fixture_dir / 'libwinpthread-1.dll.a')
         cls._compile_dll('qtcore-importer.cpp', r'''
 extern "C" __declspec(dllimport) void __cxa_call_terminate();
-extern "C" __declspec(dllexport) void qtcore_fixture() { __cxa_call_terminate(); }
+extern "C" __declspec(dllimport) void gcc_runtime_fixture();
+extern "C" __declspec(dllimport) void pthread_runtime_fixture();
+extern "C" __declspec(dllexport) void qtcore_fixture() {
+    __cxa_call_terminate();
+    gcc_runtime_fixture();
+    pthread_runtime_fixture();
+}
 ''', cls.payload / 'Qt6Core.dll',
-                         link_import_library=cls.compatible_runtime_dir / 'libstdc++-6.dll.a')
+                         output_import_library=cls.fixture_dir / 'libQt6Core.dll.a',
+                         link_import_libraries=[
+                             cls.compatible_runtime_dir / 'libstdc++-6.dll.a',
+                             cls.fixture_dir / 'libgcc_s_seh-1.dll.a',
+                             cls.fixture_dir / 'libwinpthread-1.dll.a'])
         cls.bad_runtime_dir = cls.fixture_dir / 'bad-runtime'
         cls.bad_runtime_dir.mkdir()
         cls._compile_dll('old-runtime.cpp', r'''
@@ -67,15 +81,14 @@ extern "C" __declspec(dllexport) void qtcore_fixture() {}
 
     @classmethod
     def _compile_dll(cls, source_name, source, output, output_import_library=None,
-                     link_import_library=None):
+                     link_import_libraries=()):
         source_path = cls.fixture_dir / source_name
         source_path.write_text(source, encoding='utf-8')
         command = [os.environ['MIKAI_TEST_CXX'], '-shared', '-o', str(output)]
         if output_import_library:
             command.append(f'-Wl,--out-implib,{output_import_library}')
         command.append(str(source_path))
-        if link_import_library:
-            command.append(str(link_import_library))
+        command.extend(str(library) for library in link_import_libraries)
         subprocess.run(command, check=True, capture_output=True, text=True)
 
     def _payload_copy(self):
@@ -104,6 +117,125 @@ extern "C" __declspec(dllexport) void qtcore_fixture() {}
         shutil.copy2(self.fixture_dir / 'Qt6Core-no-import.dll', payload / 'Qt6Core.dll')
         shutil.copy2(self.bad_runtime_dir / 'libstdc++-6.dll', payload / 'libstdc++-6.dll')
         self.assembler.validate_qt_mingw_runtime(payload)
+
+    def test_dist_closes_real_pe_dependencies_from_compiler_bin(self):
+        required_tools = {
+            'cmake': shutil.which('cmake'),
+            'objdump': shutil.which('objdump'),
+        }
+        missing = [name for name, path in required_tools.items() if path is None]
+        if missing:
+            self.skipTest('Windows dist closure test requires ' + ', '.join(missing))
+        cmake = pathlib.Path(required_tools['cmake']).resolve()
+        objdump = pathlib.Path(required_tools['objdump']).resolve()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            compiler_bin = root / 'compiler' / 'bin'
+            compiler_bin.mkdir(parents=True)
+            compiler_marker = compiler_bin / 'g++.exe'
+            compiler_marker.write_bytes(b'fixture compiler metadata')
+            for name in ('libgcc_s_seh-1.dll', 'libstdc++-6.dll', 'libwinpthread-1.dll'):
+                shutil.copy2(self.payload / name, compiler_bin / name)
+
+            qt = root / 'qt'
+            qt_bin = qt / 'bin'
+            qt_bin.mkdir(parents=True)
+            modules = (
+                'Qt6Core.dll', 'Qt6Gui.dll', 'Qt6Widgets.dll', 'Qt6Network.dll',
+                'Qt6OpenGL.dll', 'Qt6OpenGLWidgets.dll', 'Qt6Qml.dll', 'Qt6QmlCore.dll',
+                'Qt6QmlModels.dll', 'Qt6QmlWorkerScript.dll', 'Qt6Quick.dll',
+                'Qt6QuickControls2.dll', 'Qt6QuickControls2Basic.dll',
+                'Qt6QuickControls2BasicStyleImpl.dll', 'Qt6QuickTemplates2.dll',
+                'Qt6QuickLayouts.dll',
+            )
+            for name in modules:
+                shutil.copy2(self.payload / 'Qt6Core.dll', qt_bin / name)
+            deploy = qt_bin / 'windeployqt.cmd'
+            deploy.write_text('@echo off\\r\\nexit /b 0\\r\\n', encoding='ascii')
+
+            for relative in self.assembler.load_qml_imports():
+                target = qt / pathlib.Path(relative)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if target.suffix.lower() == '.dll':
+                    shutil.copy2(self.fixture_dir / 'Qt6Core-no-import.dll', target)
+                else:
+                    target.write_text('fixture\\n', encoding='utf-8')
+            manifest = root / self.assembler.QML_MANIFEST_NAME
+            shutil.copy2(ROOT / 'packaging' / 'windows' / self.assembler.QML_MANIFEST_NAME,
+                         manifest)
+
+            for relative in ('platforms/qwindows.dll', 'imageformats/qjpeg.dll',
+                             'imageformats/qwebp.dll', 'tls/qschannelbackend.dll'):
+                target = qt / 'plugins' / pathlib.Path(relative)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(self.fixture_dir / 'Qt6Core-no-import.dll', target)
+
+            source = root / 'source'
+            benchmarks = source / 'resources' / 'benchmarks'
+            benchmarks.mkdir(parents=True)
+            for name in self.assembler.BENCHMARKS:
+                (benchmarks / name).write_bytes(b'benchmark fixture')
+            (source / 'LICENSE').write_text('Fixture license material.\\n', encoding='utf-8')
+            (source / 'packaging' / 'licenses').mkdir(parents=True)
+            (source / 'packaging' / 'third-party.json').write_text('{}\\n', encoding='utf-8')
+            (source / 'packaging' / 'licenses' / 'fixture.txt').write_text(
+                'Fixture license material.\\n', encoding='utf-8')
+
+            shaders = root / 'shaders'
+            shaders.mkdir()
+            (shaders / 'fixture.glsl').write_text('// fixture\\n', encoding='utf-8')
+            qml_scan = root / 'qml-source'
+            qml_scan.mkdir()
+            executable = root / 'mikai.exe'
+            shutil.copy2(self.fixture_dir / 'Qt6Core-no-import.dll', executable)
+
+            archive = root / 'fixture-mpv.zip'
+            with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_STORED) as bundle:
+                fixture_pe = (self.fixture_dir / 'Qt6Core-no-import.dll').read_bytes()
+                bundle.writestr('libmpv-2.dll', fixture_pe)
+                bundle.writestr('ajn-mvtools.dll', fixture_pe)
+                bundle.writestr('licenses/mvtools/LICENSE', 'Fixture license material.\\n')
+                bundle.writestr('licenses/mvtools/UPSTREAM.md', 'Fixture upstream metadata.\\n')
+            archive_sha256 = hashlib.sha256(archive.read_bytes()).hexdigest()
+
+            dist = root / 'dist'
+            cache = root / 'cache'
+            cache.mkdir()
+            system_root = os.environ.get('SystemRoot')
+            if not system_root:
+                self.skipTest('Windows dist closure test requires SystemRoot')
+            environment = os.environ.copy()
+            system_paths = [str(pathlib.Path(system_root) / 'System32')]
+            if environment.get('ComSpec'):
+                system_paths.append(str(pathlib.Path(environment['ComSpec']).parent))
+            environment['PATH'] = os.pathsep.join(system_paths)
+            arguments = [
+                str(cmake), '-DDIST_DIR=' + str(dist), '-DEXE=' + str(executable),
+                '-DWINDEPLOYQT=' + str(deploy), '-DSHADERS=' + str(shaders),
+                '-DSOURCE_DIR=' + str(source), '-DMIKAI_QML_SCAN_DIR=' + str(qml_scan),
+                '-DMIKAI_QML_IMPORT_MANIFEST=' + str(manifest), '-DMIKAI_QT_VERSION=6.12.0',
+                '-DMIKAI_MPV_ARCHIVE_NAME=fixture-mpv.zip',
+                '-DMIKAI_MPV_ARCHIVE_URL=https://invalid.example/fixture-mpv.zip',
+                '-DMIKAI_MPV_ARCHIVE_SHA256=' + archive_sha256,
+                '-DMIKAI_DIST_CACHE_DIR=' + str(cache),
+                '-DMIKAI_DIST_MPV_ARCHIVE=' + str(archive),
+                '-DMIKAI_PUBLIC_RELEASE=ON',
+                '-DMIKAI_RELEASE_COMPILER_BIN=' + str(compiler_marker),
+                '-DMIKAI_RELEASE_OBJDUMP=' + str(objdump),
+                '-DMIKAI_RELEASE_VERSION=0.0.0', '-DMIKAI_RELEASE_QT_VERSION=6.12.0',
+                '-DMIKAI_RELEASE_COMPILER=fixture-mingw',
+                '-P', str(ROOT / 'cmake' / 'dist.cmake'),
+            ]
+            result = subprocess.run(
+                arguments, check=False, capture_output=True, text=True, env=environment,
+                cwd=root)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            inventory = (dist / 'PACKAGE-CONTENTS.sha256').read_text(encoding='utf-8')
+            for name in ('libgcc_s_seh-1.dll', 'libstdc++-6.dll', 'libwinpthread-1.dll'):
+                staged = dist / name
+                fixture_hash = hashlib.sha256((compiler_bin / name).read_bytes()).hexdigest()
+                self.assertEqual(staged.read_bytes(), (compiler_bin / name).read_bytes())
+                self.assertIn(f'{fixture_hash}  {name}', inventory.splitlines())
 
 
 class BenchmarkPayloadTests(unittest.TestCase):

@@ -180,6 +180,10 @@ cmake --build build/linux-release --target dist
 
 The Windows distribution assembly prefers SDK C++ runtime files and then verifies the pair the Windows loader actually uses: if `Qt6Core.dll` imports `__cxa_call_terminate`, the deployed `libstdc++-6.dll` must export it. `cmake/dist.cmake` does this with the configured `objdump` for the public package, and `packaging/windows/assemble-payload.py` (the runtime-contract check used by CI) applies the same rule. A successful package assembly does not establish that the installer has been installed or that the package works on a clean machine; see [release status](release-status.md) for the locally recorded startup check and its limits.
 
+Windows dependency closure also searches the configured MinGW compiler directory, not just
+the Qt SDK and verified mpv directories. Qt's runtime DLLs retain preference; missing,
+conflicting or non-allowlisted dependencies still fail packaging.
+
 ## Tests and probes
 
 Testing is enabled by default through `MIKAI_BUILD_PROBES=ON` and requires Qt Test. Build and run the CTest suite from the corresponding build directory:

@@ -626,7 +626,7 @@ if(MIKAI_PUBLIC_RELEASE)
   file(GET_RUNTIME_DEPENDENCIES
     EXECUTABLES "${dependency_scan_dir}/${exe_name}"
     LIBRARIES ${deployed_libraries}
-    DIRECTORIES "${qt_bin_dir}" "${mpv_dll_dir}"
+    DIRECTORIES "${qt_bin_dir}" "${compiler_bin}" "${mpv_dll_dir}"
     PRE_EXCLUDE_REGEXES "^[aA][pP][iI]-" "^[eE][xX][tT]-"
     POST_EXCLUDE_REGEXES ".*[/\\\\]([Ss][Yy][Ss][Tt][Ee][Mm]32|[Ss][Yy][Ss][Ww][Oo][Ww]64)[/\\\\].*"
     RESOLVED_DEPENDENCIES_VAR resolved_dependencies
