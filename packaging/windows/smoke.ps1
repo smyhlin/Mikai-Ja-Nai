@@ -279,7 +279,12 @@ try {
     $installPath = Join-Path $root 'Install with spaces 日本語'
     $group = 'Mikai Smoke ' + [guid]::NewGuid().ToString('N')
     $exe = Join-Path $installPath 'mikai.exe'
-    $programs = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
+    $programs = [Environment]::GetFolderPath(
+        [Environment+SpecialFolder]::Programs,
+        [Environment+SpecialFolderOption]::DoNotVerify)
+    if ([string]::IsNullOrWhiteSpace($programs)) {
+        throw 'The current user Start Menu Programs folder has no resolvable path.'
+    }
     $groupPath = Join-Path $programs $group
     if (Test-Path -LiteralPath $groupPath) {
         throw "The expected Start Menu group is already present; refusing to alter it: $groupPath"

@@ -119,6 +119,7 @@ pwsh -NoProfile -File packaging/windows/smoke.ps1 `
 ```
 
 - The script refuses to proceed if the current user's Mikai uninstall registration exists.
+- It resolves the Programs known-folder path without requiring that directory to exist yet, as on a fresh runner profile. An unresolvable path still fails; shortcut assertions are not skipped.
 - It installs under a GUID-owned temporary root at a path containing spaces and Unicode, with a unique Start Menu group; checks executable and shortcut metadata; runs the same installer as an upgrade; then silently uninstalls.
 - It verifies owned model/config/log sentinel bytes survive upgrade and uninstall, and that a fixed allowlist of Mikai HKCU integration values is unchanged.
 - It does not launch Mikai or write real QSettings, enable context-menu/default-player/startup settings, or kill unrelated processes.
