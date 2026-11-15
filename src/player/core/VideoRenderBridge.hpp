@@ -316,6 +316,10 @@ private:
     bool engineFrameHoldNeedsLoadLanding_ = false;
     bool engineFrameHoldLandingSeen_ = false;
     uint64_t engineFrameHoldEpoch_ = 0;
+    bool loadPresentationTraceActive_ = false;
+    bool loadPresentationTraceUpdateLogged_ = false;
+    bool loadPresentationTraceRenderLogged_ = false;
+    uint64_t loadPresentationTraceEpoch_ = 0;
     std::unique_ptr<QOpenGLFramebufferObject> engineFrameHoldFbo_;
 
     /// The picture read back before a context was released, at the precision it

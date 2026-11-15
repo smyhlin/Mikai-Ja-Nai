@@ -739,6 +739,12 @@ snapshot is scoped to the current core and source epoch, including a load whose 
 arrives after `FILE_LOADED`. Readiness still requires a fresh presented frame and a paused core
 below 0.5 s; failures report application readiness, core pause/position, dimensions and path.
 
+A source frame remains pending until the matching load-landing notification: the bridge still
+services mpv updates, but does not render or skip that unconfirmed frame. This prevents a
+paused replacement's only new frame from being consumed before it can clear the opening
+indicator. The previous retained picture is not fresh-output proof. `MIKAI_UI_PROFILE=1`
+records the bounded `render.loadHandoff` and `session.loadHandoff` transitions.
+
 ## Hover-playback pacing canary
 
 GOAL-F/T-F4's regression net is a CTest entry, `HoverPlaybackCanary`. It runs the real

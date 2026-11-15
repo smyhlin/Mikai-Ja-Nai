@@ -444,13 +444,18 @@ RenderSnapshot VideoSession::renderSnapshot() const {
 }
 
 void VideoSession::handleFramePresented(const PresentationReport& report) {
-    // The frame this report presents is already counted, so the serial is not
-    // needed beyond this line: a report only says what reached the target.
-    Q_UNUSED(report.serial);
     // A report for a replaced source says nothing about what is loaded now, and
     // letting it clear the new load's opening/landing state would announce a
     // frame the viewer is not looking at.
     if (report.sourceEpoch != 0 && report.sourceEpoch != sourceEpoch()) return;
+    if (report.freshOutputFrame && opening_ && mikai::gui::uiprofile::enabled()) {
+        mikai::gui::uiprofile::log(
+            "session.loadHandoff",
+            QStringLiteral("epoch=%1 phase=fresh-report opening=%2 serial=%3")
+                .arg(static_cast<qulonglong>(report.sourceEpoch))
+                .arg(opening_)
+                .arg(report.serial));
+    }
     ++presentedFrames_;
     if (report.freshOutputFrame) ++diagnostics_.renderedOutputFrames;
     // A recreated renderer that has demonstrably delivered output needs no

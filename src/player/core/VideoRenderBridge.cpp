@@ -649,11 +649,41 @@ RenderResult VideoRenderBridge::renderToOutput(const RenderSnapshot& snapshot) {
         if (!pausedQuiet) {
             const uint64_t flags = render_->update();
             frameArrived = (flags & MPV_RENDER_UPDATE_FRAME) != 0;
+            if (loadPresentationTraceActive_ && frameArrived &&
+                !loadPresentationTraceUpdateLogged_ && mikai::gui::uiprofile::enabled()) {
+                loadPresentationTraceUpdateLogged_ = true;
+                mikai::gui::uiprofile::log(
+                    "render.loadHandoff",
+                    QStringLiteral("epoch=%1 phase=paint-update frame=1 pending=%2 landed=%3")
+                        .arg(static_cast<qulonglong>(loadPresentationTraceEpoch_))
+                        .arg(framePending_)
+                        .arg(engineFrameHoldLandingSeen_));
+            }
             if (!schedule.consumesFrame)
                 schedule = decidePaintSchedule(false, false, false, frameArrived, false);
         }
     }
     const bool frameOwed = framePending_ || frameArrived;
+    const bool loadLandingPending =
+        engineFrameHoldNeedsLoadLanding_ && !engineFrameHoldLandingSeen_;
+    // Keep mpv's first frame owed until FILE_LOADED confirms which source owns it.
+    const bool deferForLoadLanding = loadLandingPending;
+    if (deferForLoadLanding) framePending_ = framePending_ || frameArrived;
+    if (loadLandingPending && frameOwed && !loadPresentationTraceRenderLogged_ &&
+        mikai::gui::uiprofile::enabled()) {
+        loadPresentationTraceRenderLogged_ = true;
+        mikai::gui::uiprofile::log(
+            "render.loadHandoff",
+            QStringLiteral("epoch=%1 phase=prelanding-candidate framePending=%2 "
+                           "frameArrived=%3 wouldConsume=%4 deferred=%5")
+                .arg(static_cast<qulonglong>(loadPresentationTraceEpoch_))
+                .arg(framePending_)
+                .arg(frameArrived)
+                .arg(schedule.consumesFrame)
+                .arg(deferForLoadLanding));
+    }
+    if (deferForLoadLanding)
+        schedule = decidePaintSchedule(false, false, false, false, false);
     const bool consumesFrame = schedule.consumesFrame;
     const bool newOutputFrame = consumesFrame && frameOwed;
     if (schedule.keepsArmedSlot) {
@@ -674,11 +704,12 @@ RenderResult VideoRenderBridge::renderToOutput(const RenderSnapshot& snapshot) {
     }
 
     bool freshOutputFrame = false;
+    bool realFrame = false;
     int frameInfoValid = -1;
     if (engineFrameHoldAwaitingOutput_ || newOutputFrame) {
         mpv_render_frame_info frameInfo{};
         frameInfoValid = render_->nextFrameInfo(frameInfo) ? 1 : 0;
-        const bool realFrame = frameInfoValid == 1 && isRealNewFrame(frameInfo);
+        realFrame = frameInfoValid == 1 && isRealNewFrame(frameInfo);
         // mpv bumps the command epoch at SUBMISSION, so an epoch comparison is
         // already true for the outgoing source's last frame; only the landing
         // event proves the replacement took.
@@ -688,10 +719,27 @@ RenderResult VideoRenderBridge::renderToOutput(const RenderSnapshot& snapshot) {
     }
     // forceRender_ covers a framebuffer Qt hands back empty: a resize or a
     // re-show wipes the picture, and with a paused core no frame is coming.
-    const bool haveFrame = newOutputFrame || forceRender_;
+    const bool haveFrame = newOutputFrame || (forceRender_ && !deferForLoadLanding);
     const bool retainedPictureVisible =
         engineFrameHoldFbo_ != nullptr &&
         (engineFrameHoldActive_ || (engineFrameHoldAwaitingOutput_ && !freshOutputFrame));
+    if (loadPresentationTraceActive_ && !loadPresentationTraceRenderLogged_ &&
+        mikai::gui::uiprofile::enabled() && (newOutputFrame || freshOutputFrame)) {
+        loadPresentationTraceRenderLogged_ = true;
+        mikai::gui::uiprofile::log(
+            "render.loadHandoff",
+            QStringLiteral("epoch=%1 phase=render updateFrame=%2 newFrame=%3 landed=%4 "
+                           "retained=%5 frameInfo=%6 realFrame=%7 fresh=%8")
+                .arg(static_cast<qulonglong>(loadPresentationTraceEpoch_))
+                .arg(frameArrived)
+                .arg(newOutputFrame)
+                .arg(engineFrameHoldLandingSeen_)
+                .arg(retainedPictureVisible)
+                .arg(frameInfoValid)
+                .arg(realFrame)
+                .arg(freshOutputFrame));
+    }
+    if (freshOutputFrame) loadPresentationTraceActive_ = false;
 
     bool presentedFrame = false;
     bool heldPictureDrawn = false;
@@ -710,7 +758,19 @@ RenderResult VideoRenderBridge::renderToOutput(const RenderSnapshot& snapshot) {
         gl->glClear(GL_COLOR_BUFFER_BIT);
     };
 
-    if (retainedPictureVisible) {
+    if (deferForLoadLanding && retainedPictureVisible && engineFrameHoldFbo_) {
+        heldPictureDrawn = drawEngineFrameHold(target, width, height);
+        if (heldPictureDrawn) {
+            outputHasFrame_ = false;
+            result.pass = RenderResult::Pass::HeldPicture;
+            result.presentedHeldPicture = true;
+        }
+    } else if (deferForLoadLanding) {
+        clearOutput();
+        outputHasFrame_ = false;
+        result.pass = RenderResult::Pass::OutputReuse;
+        result.reusedOutput = true;
+    } else if (retainedPictureVisible) {
         heldPictureDrawn = drawEngineFrameHold(target, width, height);
         if (heldPictureDrawn && newOutputFrame) {
             // The hold stands in for the frame this pass consumed, so mpv is told
@@ -814,7 +874,7 @@ RenderResult VideoRenderBridge::renderToOutput(const RenderSnapshot& snapshot) {
     result.holdReleased = result.freshOutputFrame && !retainedPictureVisible;
 
     if (consumesFrame) framePending_ = false;
-    forceRender_ = false;
+    if (!deferForLoadLanding) forceRender_ = false;
 
     if (result.pass != RenderResult::Pass::Failed &&
         result.pass != RenderResult::Pass::None && !schedule.keepsArmedSlot) {
@@ -886,7 +946,6 @@ void VideoRenderBridge::blitOutput(int targetFbo, int targetWidth, int targetHei
 }
 
 void VideoRenderBridge::advanceRenderState(const RenderSnapshot& snapshot, bool canPresent) {
-    Q_UNUSED(snapshot);
     queuedUpdate_.store(0);
     if (render_ == nullptr || !contextReady_.load()) return;
     QOpenGLContext* ctx = QOpenGLContext::currentContext();
@@ -895,6 +954,16 @@ void VideoRenderBridge::advanceRenderState(const RenderSnapshot& snapshot, bool 
     // what releases the core's queued work and allocates its decoder textures.
     const uint64_t flags = render_->update();
     const bool frame = (flags & MPV_RENDER_UPDATE_FRAME) != 0;
+    if (loadPresentationTraceActive_ && frame &&
+        !loadPresentationTraceUpdateLogged_ && mikai::gui::uiprofile::enabled()) {
+        loadPresentationTraceUpdateLogged_ = true;
+        mikai::gui::uiprofile::log(
+            "render.loadHandoff",
+            QStringLiteral("epoch=%1 phase=advance-update frame=1 canPresent=%2 landed=%3")
+                .arg(static_cast<qulonglong>(loadPresentationTraceEpoch_))
+                .arg(canPresent)
+                .arg(engineFrameHoldLandingSeen_));
+    }
     if (canPresent) {
         // Leaving skip mode forces one redraw: the buffer mpv last handed over
         // may have been consumed by a skip.
@@ -905,6 +974,10 @@ void VideoRenderBridge::advanceRenderState(const RenderSnapshot& snapshot, bool 
                 logFrameTiming(QStringLiteral("skip-mode left; forced redraw"));
         }
         unpaintableStreak_ = 0;
+        framePending_ = framePending_ || frame;
+        return;
+    }
+    if (engineFrameHoldNeedsLoadLanding_ && !engineFrameHoldLandingSeen_) {
         framePending_ = framePending_ || frame;
         return;
     }
@@ -1180,6 +1253,15 @@ void VideoRenderBridge::retainAcrossLoad() {
 }
 
 void VideoRenderBridge::armLoadLanding(uint64_t sourceEpoch) {
+    loadPresentationTraceActive_ = true;
+    loadPresentationTraceUpdateLogged_ = false;
+    loadPresentationTraceRenderLogged_ = false;
+    loadPresentationTraceEpoch_ = sourceEpoch;
+    if (mikai::gui::uiprofile::enabled()) {
+        mikai::gui::uiprofile::log(
+            "render.loadHandoff",
+            QStringLiteral("epoch=%1 phase=arm").arg(static_cast<qulonglong>(sourceEpoch)));
+    }
     // The stable output still holds the OUTGOING source's picture at this point.
     // Until the incoming one delivers, "the output has a frame" must not be read
     // as "the current source's picture is on screen": that is what keeps the
@@ -1191,6 +1273,12 @@ void VideoRenderBridge::armLoadLanding(uint64_t sourceEpoch) {
 }
 
 void VideoRenderBridge::noteLoadLanded(uint64_t sourceEpoch) {
+    if (loadPresentationTraceActive_ && sourceEpoch == loadPresentationTraceEpoch_ &&
+        mikai::gui::uiprofile::enabled()) {
+        mikai::gui::uiprofile::log(
+            "render.loadHandoff",
+            QStringLiteral("epoch=%1 phase=landed").arg(static_cast<qulonglong>(sourceEpoch)));
+    }
     if (!engineFrameHoldNeedsLoadLanding_) return;
     if (engineFrameHoldEpoch_ != 0 && sourceEpoch != engineFrameHoldEpoch_) return;
     engineFrameHoldLandingSeen_ = true;
