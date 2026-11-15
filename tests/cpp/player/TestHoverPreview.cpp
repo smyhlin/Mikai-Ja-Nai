@@ -190,6 +190,10 @@ void TestHoverPreview::theQuickTimelineHoverDragLeaveAndReloadUseDecodedFrames()
              "the reloaded source did not become ready for preview");
     QVERIFY2(settleUntil([&] { return !controller.openingLoading(); }, 20000),
              "the opening overlay did not clear after reloading the preview fixture");
+    // Reload does not move the physical pointer. Re-send hover as an actual
+    // leave/re-enter transition; a same-position mouseMove may be coalesced by
+    // the platform and therefore never reach the Quick HoverHandler.
+    QTest::mouseMove(window, QPoint(8, 8));
     QTest::mouseMove(window, windowPoint(timeline, 0.2));
     QVERIFY2(settleUntil([&] {
                  return controller.hoverPreviewVisible() &&

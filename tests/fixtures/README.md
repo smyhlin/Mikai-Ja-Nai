@@ -786,6 +786,13 @@ Linux uses `xcb` under Xvfb with Openbox.
 Failed and invalid verdicts are printed to stderr. CI retains `_hover-canary/samples.jsonl` and
 its frame-timing logs under `evidence/_hover-canary/`, including when CTest fails.
 
+## Timeline hover-preview regression
+
+`TestHoverPreview` checks hover, drag, leave and same-URL reload with decoded frames.
+After reload, it moves off the timeline before re-entering: repeating the same pointer
+position need not deliver a new hover event on X11. The old preview must still clear when
+the source epoch changes, and re-entry must publish a different preview URL.
+
 ## Native scaling framebuffer regression
 
 `TestVideoScaling hiddenPlaybackChangesThePicturePerMode` exercises six display modes, 150% size
