@@ -551,26 +551,62 @@ void TestPlaybackControls::refreshedStreamStartsAtBeginningWithoutResuming() {
                                 {mplayer::shell::QualityEntry{720, first}}, 720, &host);
     QVERIFY(openPlayer(&controller));
     VideoSession* const session = controller.session();
+    const auto describeState = [session](const char* reason) {
+        const auto numberText = [](std::optional<double> value) {
+            return value ? QString::number(*value, 'g', 12) : QStringLiteral("unavailable");
+        };
+        const auto paused = session->probeMpvProperty(QStringLiteral("pause"),
+                                                       mplayer::ProbePropertyKind::Flag);
+        const QString pausedText = paused ? QString::number(paused->flag)
+                                          : QStringLiteral("unavailable");
+        const QString corePosition = numberText(coreNumber(session, "time-pos"));
+        const QString coreWidth = numberText(coreNumber(session, "video-params/w"));
+        const QString coreHeight = numberText(coreNumber(session, "video-params/h"));
+        const auto path = coreText(session, "path");
+        return QStringLiteral("%1: epoch=%2 opening=%3 hasVideo=%4 size=%5x%6 "
+                              "position=%7 corePause=%8 corePosition=%9 "
+                              "coreSize=%10x%11 corePath=%12")
+            .arg(QString::fromLatin1(reason))
+            .arg(static_cast<qulonglong>(session->sourceEpoch()))
+            .arg(session->isOpening())
+            .arg(session->hasVideo())
+            .arg(session->videoWidth())
+            .arg(session->videoHeight())
+            .arg(session->position(), 0, 'g', 12)
+            .arg(pausedText)
+            .arg(corePosition)
+            .arg(coreWidth)
+            .arg(coreHeight)
+            .arg(path.value_or(QStringLiteral("unavailable")));
+    };
     session->setPaused(true);
     session->seek(3.0);
     QVERIFY(settleUntil([&] { return std::abs(session->position() - 3.0) < 0.25; }, 10000));
+    const bool initialVideoReady = settleUntil([&] {
+        return !session->isOpening() && session->hasVideo() &&
+               session->videoWidth() == 320 && session->videoHeight() == 180 &&
+               coreIsPaused(session);
+    }, 10000);
+    if (!initialVideoReady) QFAIL(qPrintable(describeState("initial paused video not ready")));
     const uint64_t oldEpoch = session->sourceEpoch();
 
     controller.applyRefreshedStreams({mplayer::shell::QualityEntry{720, refreshed}}, 720);
-    QVERIFY2(settleUntil([&] {
-                 return session->sourceEpoch() != oldEpoch &&
-                        session->sourceUrl().contains(QStringLiteral("23976fps")) &&
-                        session->duration() > 10.0;
-             }, 30000), "refreshed stream did not load");
-    QVERIFY2(settleUntil([&] {
-                 if (session->isOpening() || !session->hasVideo() ||
-                     session->position() >= 0.5 || !coreIsPaused(session))
-                     return false;
-                 const auto position = coreNumber(session, "time-pos");
-                 return position && *position >= 0.0 && *position < 0.5;
-             }, 10000),
-             qPrintable(QStringLiteral("refreshed stream did not settle at the beginning: %1")
-                            .arg(session->position())));
+    const bool refreshedLoaded = settleUntil([&] {
+        return session->sourceEpoch() != oldEpoch &&
+               session->sourceUrl().contains(QStringLiteral("23976fps")) &&
+               session->duration() > 10.0;
+    }, 30000);
+    if (!refreshedLoaded) QFAIL(qPrintable(describeState("refreshed stream did not load")));
+    const bool refreshedAtBeginning = settleUntil([&] {
+        if (session->isOpening() || !session->hasVideo() ||
+            session->videoWidth() != 320 || session->videoHeight() != 180 ||
+            session->position() >= 0.5 || !coreIsPaused(session))
+            return false;
+        const auto position = coreNumber(session, "time-pos");
+        return position && *position >= 0.0 && *position < 0.5;
+    }, 10000);
+    if (!refreshedAtBeginning)
+        QFAIL(qPrintable(describeState("refreshed stream did not settle at the beginning")));
     QVERIFY(coreIsPaused(session));
 }
 

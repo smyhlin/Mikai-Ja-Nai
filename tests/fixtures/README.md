@@ -732,7 +732,12 @@ for a stop the native side named - so read `closeRefused` and `settleAbandoned` 
 `TestPlaybackControls` checks that a refreshed stream link starts at zero and retains the
 viewer's explicit pause intent. Quality and dub/sub variant swaps still carry the playhead;
 stream refresh must not reuse that carry-over path. The restart check observes the loaded
-core's playhead, not just the controller's transient timeline reset.
+core's playhead, not just the controller's transient timeline reset. Both clips have the same
+320×180 geometry: the session explicitly snapshots the loaded entry's dimensions because mpv
+can coalesce unchanged property notifications after the application's caches reset. The
+snapshot is scoped to the current core and source epoch, including a load whose command reply
+arrives after `FILE_LOADED`. Readiness still requires a fresh presented frame and a paused core
+below 0.5 s; failures report application readiness, core pause/position, dimensions and path.
 
 ## Hover-playback pacing canary
 

@@ -718,6 +718,7 @@ void VideoSession::ensureEngine() {
                             // swaps, so it cannot tell two loads apart.
                             if (entryLoadReported_ && load.epoch == mpv_->sourceEpoch()) {
                                 if (presenter_ != nullptr) presenter_->noteLoadLanded(load.epoch);
+                                requestLoadedVideoParams(load.epoch);
                                 mediaTracksLoaded_ = true;
                                 mediaTracksDirty_ = true;
                                 // FILE_LOADED may precede the command reply that
@@ -761,6 +762,7 @@ void VideoSession::ensureEngine() {
                 entryLoadReported_ = true;
                 if (entrySourceEpoch_ != 0 && entrySourceEpoch_ == mpv_->sourceEpoch()) {
                     mediaTracksLoaded_ = true;
+                    requestLoadedVideoParams(entrySourceEpoch_);
                     mediaTracksDirty_ = true;
                     if (presenter_ != nullptr) presenter_->noteLoadLanded(entrySourceEpoch_);
                     emit mediaLoaded(entryMediaToken_);
@@ -2556,10 +2558,28 @@ void VideoSession::updateStreamStats() {
     emit streamStatsChanged(networkBytesPerSecond_, streamFramesPerSecond_, streamFpsSource_);
 }
 
+void VideoSession::requestLoadedVideoParams(uint64_t epoch) {
+    // Equal-resolution loads can coalesce mpv property events after our caches reset.
+    if (mpv_ == nullptr || epoch == 0 || epoch != mpv_->sourceEpoch()) return;
+    const uint64_t identity = mpv_->coreIdentity();
+    const auto request = [this, epoch, identity](const char* property, double* observed) {
+        mpv_->getPropertyAsync(property, MPV_FORMAT_DOUBLE,
+                               [this, epoch, identity, observed](const AsyncReply& reply) {
+            if (mpv_ == nullptr || mpv_->coreIdentity() != identity ||
+                mpv_->sourceEpoch() != epoch || !entryLoadReported_ ||
+                entrySourceEpoch_ != epoch || !reply.ok() ||
+                reply.format != MPV_FORMAT_DOUBLE) {
+                return;
+            }
+            *observed = reply.number;
+        });
+    };
+    request("video-params/w", &observedVideoWidth_);
+    request("video-params/h", &observedVideoHeight_);
+}
+
 void VideoSession::handleState() {
     if (!mpv_) return;
-    // One value, two answers. The width decides both whether there is a video at
-    // all and how wide it is, and it was observed rather than read.
     const int w = static_cast<int>(observedVideoWidth_);
     const bool vid = !url_.isEmpty() && w > 0;
     if (vid != hasVideo_) hasVideo_ = vid;

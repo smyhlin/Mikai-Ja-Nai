@@ -508,6 +508,7 @@ private:
     void pumpEvents();
     void publishPlayingState(bool playing);
     void handleState();
+    void requestLoadedVideoParams(uint64_t epoch);
     void updateStreamStats();
     void cancelAnimeJanaiOperation();
     void processAnimeJanaiPlan();
