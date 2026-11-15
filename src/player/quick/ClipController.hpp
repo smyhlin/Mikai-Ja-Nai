@@ -3,6 +3,7 @@
 #include "ClipSelection.hpp"
 #include "../core/VideoSession.hpp"
 #include "../shell/ClipExport.hpp"
+#include "../shell/ClipSizeEstimate.hpp"
 #include "../shell/FramePreviewService.hpp"
 
 #include <QAbstractListModel>
@@ -20,6 +21,8 @@ class QQuickImageProvider;
 namespace mplayer::quick {
 
 struct ClipFrameStore;
+struct ClipEstimateBatch;
+struct ClipEstimateSlot;
 
 class ClipThumbnailModel : public QAbstractListModel {
     Q_OBJECT
@@ -71,7 +74,9 @@ class ClipController : public QObject {
     Q_PROPERTY(bool saved READ saved NOTIFY stateChanged)
     Q_PROPERTY(bool cancelPending READ cancelPending NOTIFY stateChanged)
     Q_PROPERTY(int qualityHeight READ qualityHeight WRITE setQualityHeight NOTIFY selectionChanged)
-    Q_PROPERTY(QString estimatedSize READ estimatedSize NOTIFY selectionChanged)
+    Q_PROPERTY(QString estimatedSize READ estimatedSize NOTIFY estimateChanged)
+    Q_PROPERTY(QString estimatedSizeDetails READ estimatedSizeDetails NOTIFY estimateChanged)
+    Q_PROPERTY(bool estimatedSizeReady READ estimatedSizeReady NOTIFY estimateChanged)
     Q_PROPERTY(double progress READ progress NOTIFY stateChanged)
     Q_PROPERTY(QString statusText READ statusText NOTIFY stateChanged)
     Q_PROPERTY(QString overwriteFileName READ overwriteFileName NOTIFY stateChanged)
@@ -111,6 +116,8 @@ public:
     bool cancelPending() const;
     int qualityHeight() const { return qualityHeight_; }
     QString estimatedSize() const;
+    bool estimatedSizeReady() const;
+    QString estimatedSizeDetails() const;
     double progress() const { return progress_; }
     QString statusText() const;
     QString overwriteFileName() const;
@@ -144,6 +151,7 @@ public:
 
 signals:
     void selectionChanged();
+    void estimateChanged();
     void positionChanged();
     void previewChanged();
     void stateChanged();
@@ -156,6 +164,14 @@ private:
     struct TileRequest { int row; double seconds; quint64 generation; };
     struct ActiveTile { TileRequest request; quint64 token; };
 
+    void initializeSizeEstimator();
+    void scheduleSizeEstimate();
+    void queueEstimateSamples();
+    void consumeEstimateFrame(quint64 generation, double decodedSeconds,
+                              const QImage& frame, const QString& reason);
+    void analyzeEstimateSamples();
+    void refreshSizeEstimate();
+    void stopSizeEstimator();
     void initializeSelection(double duration);
     void applySelection(const ClipSelection& selection);
     void pausePreview();
@@ -180,7 +196,7 @@ private:
     double anchor_ = 0.0;
     ClipSelection selection_;
     QSize sourceSize_;
-    double streamBytesPerSecond_ = 0.0;
+    double sourceFps_ = 0.0;
     double position_ = 0.0;
     double pendingSeek_ = 0.0;
     bool seeking_ = false;
@@ -210,6 +226,18 @@ private:
     int tileCount_ = 12;
     double stillRequestedTime_ = 0.0;
     QUrl previewSource_;
+
+    std::shared_ptr<ClipEstimateSlot> estimateSlot_;
+    std::shared_ptr<ClipEstimateBatch> estimateBatch_;
+    QTimer estimateTimer_;
+    quint64 estimateGeneration_ = 0;
+    int estimatePendingFrames_ = 0;
+    bool estimateAnalyzing_ = false;
+    bool estimateUnavailable_ = false;
+    QString estimateError_;
+    std::optional<shell::ClipEncodingProfile> estimateProfile_;
+    std::optional<shell::ClipContentFeatures> estimateFeatures_;
+    std::optional<shell::ClipSizeEstimate> sizeEstimate_;
 
     shell::ClipExport exporter_;
     ExportState exportState_ = ExportState::Editing;

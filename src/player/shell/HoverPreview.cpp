@@ -170,7 +170,7 @@ void HoverPreview::present(double seconds, const QPoint& anchorGlobal, const QRe
     refused_ = false;
     if (changed) chromeUpdate(this);
     pendingToken_ = token_;
-    service_->requestFrame(token_, seconds);
+    service_->requestFrame(token_, seconds, FramePreviewService::CachePolicy::Reuse);
 }
 
 void HoverPreview::prewarm(double seconds) {

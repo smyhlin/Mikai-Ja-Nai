@@ -1026,7 +1026,7 @@ void PlayerController::showHoverPreview(double seconds) {
     const quint64 token = ++hoverPreviewToken_;
     hoverPreviewVisible_ = true;
     emit hoverPreviewChanged();
-    previewService_->requestFrame(token, seconds);
+    previewService_->requestFrame(token, seconds, shell::FramePreviewService::CachePolicy::Reuse);
 }
 
 void PlayerController::hideHoverPreview() {

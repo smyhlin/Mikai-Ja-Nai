@@ -878,7 +878,14 @@ QML editor. It opens a project-owned local video through `PlayerController`,
 then checks decoded still/filmstrip frames, independent video playback and
 audio mute, duration presets, the short-selection span grip, scrubbing without
 retargeting the export interval, live corner radii and compact/wide layouts.
-An optional real Ukrainian catalogue checks that retranslation preserves edits.
+It also checks that a content-based size estimate reaches the visible label,
+follows duration/output geometry and exported audio, and ignores preview mute.
+Low-resolution sources must retain the same estimate when both quality choices
+are capped to their original size. An optional real Ukrainian catalogue checks
+that retranslation preserves edits. A 100 ms selection between thumbnail-cache
+buckets must still produce a ready estimate from its own interval.
+`clip-estimate.png` captures the ready label; `clip-estimate-details.png` captures
+its hovered assumptions tooltip.
 
 It drives the actual asynchronous QML file picker, rejects an existing-file
 replacement and checks the original bytes, then exports a new MP4 through the
@@ -887,6 +894,11 @@ leaving the main player open. JSON, screenshots and the encoded MP4 remain in
 the named output directory. No HTTP, throughput, native processing or visual
 quality claim follows from this probe; the `TestClipExport` suite separately
 covers audio selection, playable output, cancellation and atomic publication.
+
+`TestClipSizeEstimate` covers the C++ image features, adjacent-frame motion,
+encoder-specific bounds, output geometry, invalid metadata and audio allowance.
+The estimator uses uncalibrated priors, not a trial encode or an accuracy promise;
+no Python, OpenCV or ffprobe is needed at runtime.
 
 Run only through `mikai_test_launcher`, which stages an empty owned native
 store and the explicit playback runtime. The probe redirects its settings and

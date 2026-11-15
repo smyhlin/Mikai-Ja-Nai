@@ -905,7 +905,7 @@ void FramePreviewService::setSource(const QString& url, quint64 sourceEpoch) {
     if (worker_ != nullptr) emit sourceChanged(source_, generation_);
 }
 
-void FramePreviewService::requestFrame(quint64 token, double seconds) {
+void FramePreviewService::requestFrame(quint64 token, double seconds, CachePolicy cachePolicy) {
     if (stopped_ || token == 0 || isInternal(token) || !std::isfinite(seconds) || seconds < 0.0) {
         return;
     }
@@ -922,18 +922,20 @@ void FramePreviewService::requestFrame(quint64 token, double seconds) {
                               tr("No media is loaded, so there is no frame to preview."));
         return;
     }
-    if (const std::optional<PreviewFrame> cached = cache_.lookup(sourceEpoch_, seconds)) {
-        // The store answers instead of the decoder: no settle delay, no seek and
-        // nothing on the worker thread. The reply keeps the two times apart, so
-        // the card never prints this request's instant over that picture.
-        QElapsedTimer timer;
-        timer.start();
-        ++stats_.cacheHits;
-        pendingToken_ = 0;
-        stats_.lastHitLatencyUs = timer.nsecsElapsed() / 1000;
-        stats_.lastSettleLatencyMs = timer.elapsed();
-        emit frameReady(token, seconds, cached->decodedSeconds, cached->image);
-        return;
+    if (cachePolicy == CachePolicy::Reuse) {
+        if (const std::optional<PreviewFrame> cached = cache_.lookup(sourceEpoch_, seconds)) {
+            // The store answers instead of the decoder: no settle delay, no seek and
+            // nothing on the worker thread. The reply keeps the two times apart, so
+            // the card never prints this request's instant over that picture.
+            QElapsedTimer timer;
+            timer.start();
+            ++stats_.cacheHits;
+            pendingToken_ = 0;
+            stats_.lastHitLatencyUs = timer.nsecsElapsed() / 1000;
+            stats_.lastSettleLatencyMs = timer.elapsed();
+            emit frameReady(token, seconds, cached->decodedSeconds, cached->image);
+            return;
+        }
     }
     ++stats_.workerRequests;
     // The epoch is part of the request's identity: a reply is only ever a

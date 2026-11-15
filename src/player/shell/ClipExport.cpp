@@ -3,6 +3,7 @@
 #include "MpvApi.hpp"
 #include "MpvHandle.hpp"
 #include "MediaTracks.hpp"
+#include "ClipSizeEstimate.hpp"
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -43,25 +44,12 @@ bool outputSize(const ClipExportRequest& request, QSize& size, QString& error) {
         error = QObject::tr("The source video dimensions are unavailable.");
         return false;
     }
-    const int sourceWidth = request.sourceSize.width();
-    const int sourceHeight = request.sourceSize.height();
-    const int boundedHeight = std::min(sourceHeight, request.maximumHeight);
-    const long double scale = static_cast<long double>(boundedHeight) / sourceHeight;
-    const long double desiredWidth = std::min(
-        static_cast<long double>(sourceWidth), static_cast<long double>(sourceWidth) * scale);
-    const auto nearestEven = [](long double value, int maximum) {
-        const int evenMaximum = maximum & ~1;
-        const long double rounded = std::min(
-            std::floor(value / 2.0L + 0.5L) * 2.0L, static_cast<long double>(evenMaximum));
-        return std::clamp(static_cast<int>(rounded), 2, evenMaximum);
-    };
-    const int width = nearestEven(desiredWidth, sourceWidth);
-    const int height = nearestEven(boundedHeight, boundedHeight);
-    if (width < 2 || height < 2) {
+    const std::optional<QSize> output = clipOutputSize(request.sourceSize, request.maximumHeight);
+    if (!output) {
         error = QObject::tr("The source video is too small to encode as MP4.");
         return false;
     }
-    size = QSize(width, height);
+    size = *output;
     return true;
 }
 
@@ -204,28 +192,6 @@ bool hasSelectedAudioTrack(mpv_handle* handle, mplayer::MpvApi& api,
     return false;
 }
 
-bool encoderAvailable(mplayer::MpvHandle& handle, const char* name) {
-    mplayer::MpvApi& api = mplayer::MpvApi::instance();
-    mpv_node node{};
-    const int rc = api.functions().getProperty(handle.raw(), "encoder-list", MPV_FORMAT_NODE, &node);
-    if (rc < 0) return false;
-    // Copy into owned storage first, then walk the copy: the raw tree is
-    // mpv-owned and reclaimed on the next wait_event.
-    mplayer::NodeValue value;
-    mplayer::copyNode(&node, value);
-    api.functions().freeNodeContents(&node);
-    if (value.format != MPV_FORMAT_NODE_ARRAY) return false;
-    for (const mplayer::NodeValue& item : value.list) {
-        if (item.format != MPV_FORMAT_NODE_MAP) continue;
-        for (const auto& [key, field] : item.map) {
-            if (key == "driver" && field.format == MPV_FORMAT_STRING && field.text == name) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
 }  // namespace
 
 struct ClipExport::State {
@@ -302,16 +268,11 @@ void ClipExport::start(const ClipExportRequest& request) {
         tempPath = temporary.fileName();
         temporary.close();
         try {
-            std::string codec = "libx264";
-            {
-                mplayer::MpvHandle probe({{"config", "no"}, {"vo", "null"}, {"audio", "no"}});
-                if (!encoderAvailable(probe, "libx264")) {
-                    if (!encoderAvailable(probe, "mpeg4")) {
-                        throw std::runtime_error("The selected mpv runtime provides neither libx264 nor the MPEG-4 Part 2 encoder.");
-                    }
-                    codec = "mpeg4";
-                }
+            ClipEncodingProfile profile{};
+            if (!probeClipEncodingProfile(profile, failure)) {
+                throw std::runtime_error(failure.toStdString());
             }
+            const std::string codec(profile.codec);
 
             const bool audioOff = request.externalAudioPath.isEmpty() &&
                                   request.audioTrackId && *request.audioTrackId == 0;
@@ -324,9 +285,7 @@ void ClipExport::start(const ClipExportRequest& request) {
             options.emplace_back("of", "mp4");
             options.emplace_back("ovc", codec);
             // libavcodec global_quality uses FF_QP2LAMBDA units: quantizer 4 × 118.
-            options.emplace_back("ovcopts", codec == "libx264"
-                ? "preset=veryfast,crf=23,profile=high"
-                : "flags=+qscale,global_quality=472");
+            options.emplace_back("ovcopts", profile.videoOptions);
             options.emplace_back("oac", audioOff ? "no" : "aac");
             options.emplace_back("ofopts", "movflags=+faststart");
             options.emplace_back("vf", "scale=" + std::to_string(size.width()) + ":" +

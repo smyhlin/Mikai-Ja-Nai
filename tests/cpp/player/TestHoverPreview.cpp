@@ -108,7 +108,7 @@ void TestHoverPreview::sameUrlSourceEpochRecoversAfterUnavailableSource() {
     QVERIFY(unavailable.isValid());
 
     service.setSource(source, 41);
-    service.requestFrame(101, 2.0);
+    service.requestFrame(101, 2.0, mplayer::shell::FramePreviewService::CachePolicy::Reuse);
     QVERIFY2(settleUntil([&] { return !unavailable.isEmpty(); }, 20000),
              "the missing source did not report its real preview failure");
     QCOMPARE(unavailable.size(), 1);
@@ -119,7 +119,7 @@ void TestHoverPreview::sameUrlSourceEpochRecoversAfterUnavailableSource() {
     ready.clear();
     unavailable.clear();
     service.setSource(source, 42);
-    service.requestFrame(102, 2.0);
+    service.requestFrame(102, 2.0, mplayer::shell::FramePreviewService::CachePolicy::Reuse);
     QVERIFY2(settleUntil([&] { return !ready.isEmpty() || !unavailable.isEmpty(); }, 20000),
              "the replacement epoch did not settle a real preview request");
 

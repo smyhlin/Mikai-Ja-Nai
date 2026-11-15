@@ -1833,57 +1833,57 @@
         <translation>%1p</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/ClipView.qml" line="321"/>
+        <location filename="../src/player/quick/qml/ClipView.qml" line="330"/>
         <source>Cancel</source>
         <translation>Скасувати</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/ClipView.qml" line="331"/>
+        <location filename="../src/player/quick/qml/ClipView.qml" line="340"/>
         <source>Encoding… %1%</source>
         <translation>Кодування… %1%</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/ClipView.qml" line="332"/>
+        <location filename="../src/player/quick/qml/ClipView.qml" line="341"/>
         <source>Try again</source>
         <translation>Спробувати знову</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/ClipView.qml" line="333"/>
+        <location filename="../src/player/quick/qml/ClipView.qml" line="342"/>
         <source>Export another</source>
         <translation>Експортувати ще один</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/ClipView.qml" line="333"/>
+        <location filename="../src/player/quick/qml/ClipView.qml" line="342"/>
         <source>Export MP4</source>
         <translation>Експортувати MP4</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/ClipView.qml" line="409"/>
+        <location filename="../src/player/quick/qml/ClipView.qml" line="418"/>
         <source>Show in folder</source>
         <translation>Показати в теці</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/ClipView.qml" line="416"/>
+        <location filename="../src/player/quick/qml/ClipView.qml" line="425"/>
         <source>Copy path</source>
         <translation>Копіювати шлях</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/ClipView.qml" line="427"/>
+        <location filename="../src/player/quick/qml/ClipView.qml" line="436"/>
         <source>Save clip</source>
         <translation>Зберегти уривок</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/ClipView.qml" line="429"/>
+        <location filename="../src/player/quick/qml/ClipView.qml" line="438"/>
         <source>MP4 video (*.mp4)</source>
         <translation>Відео MP4 (*.mp4)</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/ClipView.qml" line="444"/>
+        <location filename="../src/player/quick/qml/ClipView.qml" line="453"/>
         <source>Replace existing file?</source>
         <translation>Замінити наявний файл?</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/qml/ClipView.qml" line="449"/>
+        <location filename="../src/player/quick/qml/ClipView.qml" line="458"/>
         <source>%1 already exists. Replace it after the new clip is complete?</source>
         <translation>%1 уже існує. Замінити його після завершення експорту?</translation>
     </message>
@@ -4026,97 +4026,97 @@
         <translation>Команда %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipExport.cpp" line="39"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="40"/>
         <source>The selected output quality is not supported.</source>
         <translation>Вибрана якість вихідного відео не підтримується.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipExport.cpp" line="43"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="44"/>
         <source>The source video dimensions are unavailable.</source>
         <translation>Розміри вихідного відео недоступні.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipExport.cpp" line="61"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="49"/>
         <source>The source video is too small to encode as MP4.</source>
         <translation>Вихідне відео має замалу роздільність для кодування в MP4.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipExport.cpp" line="69"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="57"/>
         <source>the media source</source>
         <translation>джерело медіа</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipExport.cpp" line="71"/>
-        <location filename="../src/player/shell/ClipExport.cpp" line="74"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="59"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="62"/>
         <source>[redacted]</source>
         <translation>[приховано]</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipExport.cpp" line="268"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="234"/>
         <source>The selected clip range is invalid (clips may be up to 60 seconds).</source>
         <translation>Вибраний діапазон уривка недійсний (тривалість уривка — до 60 секунд).</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipExport.cpp" line="273"/>
-        <location filename="../src/player/shell/ClipExport.cpp" line="378"/>
-        <location filename="../src/player/shell/ClipExport.cpp" line="429"/>
-        <location filename="../src/player/shell/ClipExport.cpp" line="438"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="239"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="337"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="388"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="397"/>
         <source>Export cancelled.</source>
         <translation>Експорт скасовано.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipExport.cpp" line="278"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="244"/>
         <source>The destination is a symbolic link and cannot be replaced.</source>
         <translation>Цільове посилання на символічне посилання замінити неможливо.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipExport.cpp" line="282"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="248"/>
         <source>The destination already exists.</source>
         <translation>Цільовий файл уже існує.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipExport.cpp" line="285"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="251"/>
         <source>Only an existing regular file may be replaced.</source>
         <translation>Замінити можна лише наявний звичайний файл.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipExport.cpp" line="289"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="255"/>
         <source>The destination folder does not exist.</source>
         <translation>Цільова папка не існує.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipExport.cpp" line="296"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="262"/>
         <source>Could not create a temporary MP4 beside the destination: %1</source>
         <translation>Не вдалося створити тимчасовий файл MP4 поруч із цільовим файлом: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipExport.cpp" line="369"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="328"/>
         <source>H.264</source>
         <translation>H.264</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipExport.cpp" line="369"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="328"/>
         <source>MPEG-4 Part 2</source>
         <translation>MPEG-4 Part 2</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipExport.cpp" line="407"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="366"/>
         <source>mpv ended the encode before normal end-of-file (reason %1).</source>
         <translation>mpv завершив кодування до штатного завершення файлу (причина: %1).</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipExport.cpp" line="420"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="379"/>
         <source>The selected audio track could not be loaded.</source>
         <translation>Не вдалося завантажити вибрану звукову доріжку.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipExport.cpp" line="434"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="393"/>
         <source>The encoder completed without producing the requested MP4 video and audio streams.</source>
         <translation>Кодування завершилося, але потрібні відео- та аудіопотоки MP4 не створено.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ClipExport.cpp" line="444"/>
-        <location filename="../src/player/shell/ClipExport.cpp" line="451"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="403"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="410"/>
         <source>Could not atomically publish the exported clip: %1</source>
         <translation>Не вдалося атомарно опублікувати експортований уривок: %1</translation>
     </message>
@@ -6409,181 +6409,181 @@ Continue?</source>
 <context>
     <name>mikai::app::MainWindow</name>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="221"/>
-        <location filename="../src/app/pages/MainWindow.cpp" line="305"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="222"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="306"/>
         <source>Cancel</source>
         <translation>Скасувати</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="216"/>
-        <location filename="../src/app/pages/MainWindow.cpp" line="304"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="217"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="305"/>
         <source>Components</source>
         <translation>Компоненти</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="738"/>
-        <location filename="../src/app/pages/MainWindow.cpp" line="976"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="739"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="981"/>
         <source>Download</source>
         <translation>Завантажити</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="731"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="732"/>
         <source>GPU components missing</source>
         <translation>Відсутні компоненти GPU</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="310"/>
         <location filename="../src/app/pages/MainWindow.cpp" line="311"/>
         <location filename="../src/app/pages/MainWindow.cpp" line="312"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="313"/>
         <source>Check for updates</source>
         <translation>Перевірити оновлення</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="322"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="323"/>
         <source>The engine is ready.</source>
         <translation>Рушій готовий.</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="323"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="324"/>
         <source>The build stopped; the Processing tab names the reason.</source>
         <translation>Збирання зупинено; причину вказано на вкладці «Обробка».</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="419"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="420"/>
         <source>Cannot open video</source>
         <translation>Не вдалося відкрити відео</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="430"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="431"/>
         <source>Choose a video file or enter a stream URL.</source>
         <translation>Виберіть відеофайл або введіть URL-адресу потоку.</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="440"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="441"/>
         <source>The selected path is not a video file.</source>
         <translation>Вибраний шлях не вказує на відеофайл.</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="461"/>
-        <location filename="../src/app/pages/MainWindow.cpp" line="472"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="462"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="473"/>
         <source>The video file does not exist or cannot be read.</source>
         <translation>Відеофайл не існує або його неможливо прочитати.</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="467"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="468"/>
         <source>The video path or URL is not valid.</source>
         <translation>Шлях до відео або URL-адреса недійсні.</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="478"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="479"/>
         <source>Only local files and HTTP or HTTPS stream URLs are supported.</source>
         <translation>Підтримуються лише локальні файли та URL-адреси потоків HTTP або HTTPS.</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="856"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="861"/>
         <source>Update available</source>
         <translation>Доступне оновлення</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="857"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="862"/>
         <source>A newer version is available: %1 (current: %2).</source>
         <translation>Доступна новіша версія: %1 (поточна: %2).</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="860"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="865"/>
         <source>Don&apos;t remind me about version %1</source>
         <translation>Не нагадувати про версію %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="862"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="867"/>
         <source>Open release</source>
         <translation>Відкрити сторінку випуску</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="878"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="883"/>
         <source>You&apos;re up to date</source>
         <translation>У вас найновіша версія</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="879"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="884"/>
         <source>You are using the latest available version (%1).</source>
         <translation>Ви користуєтеся найновішою доступною версією (%1).</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="882"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="887"/>
         <source>Update check failed</source>
         <translation>Не вдалося перевірити оновлення</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="883"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="888"/>
         <source>Could not check for updates. Please try again later.</source>
         <translation>Не вдалося перевірити оновлення. Спробуйте пізніше.</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="885"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="890"/>
         <source>Dismiss</source>
         <translation>Закрити</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="960"/>
-        <location filename="../src/app/pages/MainWindow.cpp" line="964"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="965"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="969"/>
         <source>Optional AI upscaling</source>
         <translation>ШІ-масштабування (за бажанням)</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="1096"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="1101"/>
         <source>%1 (%2%)</source>
         <translation>%1 (%2%)</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="1227"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="1232"/>
         <source>No playback core has an active source to prepare from.</source>
         <translation>Жодне ядро відтворення не має активного джерела для підготовки.</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="1257"/>
-        <location filename="../src/app/pages/MainWindow.cpp" line="1310"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="1262"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="1315"/>
         <source>No playback core owns the current source any more.</source>
         <translation>Поточне джерело більше не належить жодному ядру відтворення.</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="979"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="984"/>
         <source>Not now</source>
         <translation>Не зараз</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="408"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="409"/>
         <source>Open video by URL</source>
         <translation>Відкрити відео за URL</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="397"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="398"/>
         <source>Open video file</source>
         <translation>Відкрити відеофайл</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="745"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="746"/>
         <source>Skip and never ask</source>
         <translation>Пропустити й більше не питати</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="743"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="744"/>
         <source>Skip for now</source>
         <translation>Пропустити зараз</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="155"/>
-        <location filename="../src/app/pages/MainWindow.cpp" line="301"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="156"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="302"/>
         <source>Mikai Ja Nai</source>
         <translation>Mikai Ja Nai</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="318"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="319"/>
         <source>Preparing enhancement</source>
         <translation>Підготовка покращення</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="732"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="733"/>
         <source>The TensorRT packs this GPU needs are not installed:
 %1
 
@@ -6594,32 +6594,32 @@ Without them, preparing a TensorRT engine fails.</source>
 Без них підготовка рушія TensorRT неможлива.</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="1347"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="1352"/>
         <source>The core returned the same observation twice for an interpolation stage&apos;s second frame.</source>
         <translation>Ядро двічі повернуло однаковий кадр для другого кадру етапу інтерполяції.</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="1282"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="1287"/>
         <source>The playback core did not report its source and device in time.</source>
         <translation>Ядро відтворення не повідомило параметри джерела та пристрою вчасно.</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="1340"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="1345"/>
         <source>The source changed between an interpolation stage&apos;s two frames, so they are not a pair.</source>
         <translation>Джерело змінилося між двома кадрами етапу інтерполяції, тому вони не утворюють пару.</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="484"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="485"/>
         <source>Video</source>
         <translation>Відео</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="408"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="409"/>
         <source>Video or stream URL:</source>
         <translation>URL відео або потоку:</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/MainWindow.cpp" line="398"/>
+        <location filename="../src/app/pages/MainWindow.cpp" line="399"/>
         <source>Videos (*.mkv *.mp4 *.webm *.avi *.mov *.m4v *.ts *.m2ts *.mpeg *.mpg);;All files (*)</source>
         <translation>Відео (*.mkv *.mp4 *.webm *.avi *.mov *.m4v *.ts *.m2ts *.mpeg *.mpg);;Усі файли (*)</translation>
     </message>
@@ -10514,152 +10514,152 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 <context>
     <name>mplayer::VideoSession</name>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="831"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="839"/>
         <source>Could not play the video (mpv: %1)</source>
         <translation>Не вдалося відтворити відео (mpv: %1)</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="846"/>
-        <location filename="../src/player/core/VideoSession.cpp" line="1376"/>
-        <location filename="../src/player/core/VideoSession.cpp" line="1402"/>
-        <location filename="../src/player/core/VideoSession.cpp" line="1451"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="854"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="1384"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="1410"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="1459"/>
         <source>Anime4K skipped: source transfer metadata is unknown or HDR</source>
         <translation>Anime4K пропущено: передавальна функція джерела невідома або відповідає HDR</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="868"/>
-        <location filename="../src/player/core/VideoSession.cpp" line="2483"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="876"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="2491"/>
         <source>The source changed during engine preparation.</source>
         <translation>Джерело змінилося під час підготовки рушія.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="1086"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="1094"/>
         <source>Playback closed during engine preparation.</source>
         <translation>Відтворення закрито під час підготовки рушія.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="1217"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="1225"/>
         <source>pause: %1</source>
         <translation>Пауза: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="1227"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="1235"/>
         <source>pause: the mpv transport did not accept the command</source>
         <translation>Пауза: транспорт mpv не прийняв команду</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="1294"/>
-        <location filename="../src/player/core/VideoSession.cpp" line="2237"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="1302"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="2245"/>
         <source>%1: %2</source>
         <translation>%1: %2</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="1319"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="1327"/>
         <source>%1: the mpv transport did not accept the command</source>
         <translation>%1: транспорт mpv не прийняв команду</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="1512"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="1520"/>
         <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="305"/>
         <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="1228"/>
         <source>Skipped on HDR: native stages force 8-bit NV12</source>
         <translation>Пропущено на HDR: нативні етапи примусово перетворюють у 8-бітний NV12</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="1513"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="1521"/>
         <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="306"/>
         <location filename="../src/player/core/VideoSurfaceAnimeJanai.cpp" line="1229"/>
         <source>Skipped: source transfer metadata is unknown</source>
         <translation>Пропущено: метадані передавальної функції джерела невідомі</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="1526"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="1534"/>
         <source>Enhancement engine build stopped for this source.</source>
         <translation>Збирання рушія покращення для цього джерела зупинено.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="1711"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="1719"/>
         <source>the video filter chain could not be read</source>
         <translation>не вдалося прочитати ланцюжок відеофільтрів</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="1746"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="1754"/>
         <source>the video filter chain could not be removed</source>
         <translation>не вдалося видалити ланцюжок відеофільтрів</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="1768"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="1776"/>
         <source>the decoder produced no frame</source>
         <translation>декодер не сформував кадр</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="1783"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="1791"/>
         <source>the source changed during capture</source>
         <translation>джерело змінилося під час захоплення кадру</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="1814"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="1822"/>
         <source>the frame could not be captured</source>
         <translation>не вдалося захопити кадр</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="1832"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="1840"/>
         <source>the frame capture did not report its pixels</source>
         <translation>захоплений кадр не містить даних пікселів</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="1844"/>
-        <location filename="../src/player/core/VideoSession.cpp" line="1854"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="1852"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="1862"/>
         <source>the captured frame could not be read</source>
         <translation>не вдалося прочитати захоплений кадр</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="1860"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="1868"/>
         <source>the player would not take the capture request</source>
         <translation>програвач не прийняв запит на захоплення кадру</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="2079"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="2087"/>
         <source>Cannot read audio/subtitle tracks: %1</source>
         <translation>Не вдалося прочитати аудіодоріжки та доріжки субтитрів: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="2093"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="2101"/>
         <source>The playback core did not accept the track discovery request.</source>
         <translation>Модуль відтворення не прийняв запит на визначення доріжок.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="2104"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="2112"/>
         <source>The media changed. Reopen the track menu.</source>
         <translation>Медіафайл змінився. Відкрийте меню доріжок знову.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="2113"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="2121"/>
         <source>The selected track is no longer available.</source>
         <translation>Вибрана доріжка більше не доступна.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="2126"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="2134"/>
         <source>Cannot select %1: %2</source>
         <translation>Не вдалося вибрати %1: %2</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="2127"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="2135"/>
         <source>audio track</source>
         <translation>аудіодоріжку</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="2128"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="2136"/>
         <source>subtitle track</source>
         <translation>доріжку субтитрів</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="2140"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="2148"/>
         <source>The playback core did not accept the track selection request.</source>
         <translation>Модуль відтворення не прийняв запит на вибір доріжки.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSession.cpp" line="2211"/>
+        <location filename="../src/player/core/VideoSession.cpp" line="2219"/>
         <source>dscale: the core&apos;s default downscaler could not be read (%1). The previous downscaler stays in effect; choose one explicitly or reopen the player.</source>
         <translation>dscale: не вдалося прочитати типовий даунскейлер ядра (%1). Попередній даунскейлер залишається чинним; виберіть його явно або перевідкрийте плеєр.</translation>
     </message>
@@ -10980,86 +10980,156 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 <context>
     <name>mplayer::quick::ClipController</name>
     <message>
-        <location filename="../src/player/quick/ClipController.cpp" line="155"/>
-        <location filename="../src/player/quick/ClipController.cpp" line="437"/>
+        <location filename="../src/player/quick/ClipController.cpp" line="151"/>
+        <location filename="../src/player/quick/ClipController.cpp" line="448"/>
         <source>Preview unavailable: %1</source>
         <translation>Попередній перегляд недоступний: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/ClipController.cpp" line="161"/>
+        <location filename="../src/player/quick/ClipController.cpp" line="157"/>
         <source>Encoding MP4 with %1…</source>
         <translation>Кодування MP4 за допомогою %1…</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/ClipController.cpp" line="177"/>
+        <location filename="../src/player/quick/ClipController.cpp" line="173"/>
         <source>Saved %1</source>
         <translation>Збережено %1</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/ClipController.cpp" line="180"/>
+        <location filename="../src/player/quick/ClipController.cpp" line="176"/>
         <source>Export cancelled.</source>
         <translation>Експорт скасовано.</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/ClipController.cpp" line="183"/>
+        <location filename="../src/player/quick/ClipController.cpp" line="179"/>
         <source>Export failed.</source>
         <translation>Не вдалося експортувати уривок.</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/ClipController.cpp" line="189"/>
+        <location filename="../src/player/quick/ClipController.cpp" line="185"/>
         <source>The current video source is unavailable.</source>
         <translation>Поточне джерело відео недоступне.</translation>
     </message>
     <message>
+        <location filename="../src/player/quick/ClipController.cpp" line="195"/>
         <location filename="../src/player/quick/ClipController.cpp" line="198"/>
-        <location filename="../src/player/quick/ClipController.cpp" line="201"/>
         <source>The video changed. Close this window and open Cut moment again.</source>
         <translation>Відео змінилося. Закрийте це вікно та знову відкрийте вирізання уривка.</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/ClipController.cpp" line="204"/>
+        <location filename="../src/player/quick/ClipController.cpp" line="201"/>
         <source>The video player was closed.</source>
         <translation>Відеопрогравач закрито.</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/ClipController.cpp" line="251"/>
-        <source>≈ %1</source>
-        <translation>≈ %1</translation>
-    </message>
-    <message>
-        <location filename="../src/player/quick/ClipController.cpp" line="288"/>
+        <location filename="../src/player/quick/ClipController.cpp" line="290"/>
         <source>Drag the handles to trim. Drag between them to move the selection.</source>
         <translation>Перетягніть краї, щоб обрізати, або середину, щоб пересунути уривок.</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/ClipController.cpp" line="522"/>
+        <location filename="../src/player/quick/ClipController.cpp" line="534"/>
         <source>clip</source>
         <translation>уривок</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/ClipController.cpp" line="538"/>
+        <location filename="../src/player/quick/ClipController.cpp" line="550"/>
         <source>The selection changed. Choose the output file again.</source>
         <translation>Вибраний уривок змінився. Знову виберіть файл для збереження.</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/ClipController.cpp" line="543"/>
+        <location filename="../src/player/quick/ClipController.cpp" line="555"/>
         <source>Choose a local MP4 output file.</source>
         <translation>Виберіть локальний файл MP4 для збереження.</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/ClipController.cpp" line="575"/>
+        <location filename="../src/player/quick/ClipController.cpp" line="587"/>
         <source>Preparing export…</source>
         <translation>Підготовка експорту…</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/ClipController.cpp" line="581"/>
+        <location filename="../src/player/quick/ClipController.cpp" line="593"/>
         <source>Canceling export…</source>
         <translation>Скасування експорту…</translation>
     </message>
     <message>
-        <location filename="../src/player/quick/ClipController.cpp" line="587"/>
+        <location filename="../src/player/quick/ClipController.cpp" line="599"/>
         <source>Could not open the containing folder.</source>
         <translation>Не вдалося відкрити теку з файлом.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/quick/ClipControllerEstimate.cpp" line="35"/>
+        <source>Size estimate unavailable</source>
+        <translation>Оцінка розміру недоступна</translation>
+    </message>
+    <message>
+        <location filename="../src/player/quick/ClipControllerEstimate.cpp" line="35"/>
+        <source>Analysing size…</source>
+        <translation>Оцінювання розміру…</translation>
+    </message>
+    <message>
+        <location filename="../src/player/quick/ClipControllerEstimate.cpp" line="38"/>
+        <source>≈ %1 (%2–%3)</source>
+        <translation>≈ %1 (%2–%3)</translation>
+    </message>
+    <message>
+        <location filename="../src/player/quick/ClipControllerEstimate.cpp" line="44"/>
+        <source>The source is no longer available for estimation.</source>
+        <translation>Джерело більше недоступне для оцінювання.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/quick/ClipControllerEstimate.cpp" line="45"/>
+        <source>Size estimate unavailable: %1</source>
+        <translation>Оцінка розміру недоступна: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/quick/ClipControllerEstimate.cpp" line="48"/>
+        <source>A size estimate needs known source dimensions and frame rate.</source>
+        <translation>Для оцінки розміру потрібні відомі роздільна здатність і частота кадрів джерела.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/quick/ClipControllerEstimate.cpp" line="51"/>
+        <source>No usable source frames could be analysed.</source>
+        <translation>Не вдалося проаналізувати жодного придатного кадру джерела.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/quick/ClipControllerEstimate.cpp" line="52"/>
+        <source>Decoding a few frames from the selected clip; no trial encoding.</source>
+        <translation>Декодування кількох кадрів вибраного фрагмента без пробного кодування.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/quick/ClipControllerEstimate.cpp" line="55"/>
+        <source>H.264, CRF 23, veryfast</source>
+        <translation>H.264, CRF 23, veryfast</translation>
+    </message>
+    <message>
+        <location filename="../src/player/quick/ClipControllerEstimate.cpp" line="55"/>
+        <source>MPEG-4 Part 2, QP 4</source>
+        <translation>MPEG-4 Part 2, QP 4</translation>
+    </message>
+    <message>
+        <location filename="../src/player/quick/ClipControllerEstimate.cpp" line="56"/>
+        <source>Uncalibrated %1 estimate including MP4 overhead. The range is approximate, not a guaranteed file size.</source>
+        <translation>Некалібрована оцінка %1 зі службовими даними MP4. Діапазон приблизний і не гарантує розміру файлу.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/quick/ClipControllerEstimate.cpp" line="59"/>
+        <source>Motion uses a prior; sampled frames are not consecutive.</source>
+        <translation>Для руху використано початкове припущення: вибрані кадри не є послідовними.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/quick/ClipControllerEstimate.cpp" line="63"/>
+        <source>AAC assumes 192 kb/s, with a rough 64–320 kb/s allowance. The encoder default may differ.</source>
+        <translation>Для AAC прийнято 192 кбіт/с із приблизним діапазоном 64–320 кбіт/с. Типовий бітрейт кодера може відрізнятися.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/quick/ClipControllerEstimate.cpp" line="64"/>
+        <source>No exported audio track.</source>
+        <translation>Без експортованої аудіодоріжки.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/quick/ClipControllerEstimate.cpp" line="65"/>
+        <source>Decoded source samples: %1.</source>
+        <translation>Декодованих кадрів джерела: %1.</translation>
     </message>
 </context>
 <context>
@@ -12029,7 +12099,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 <context>
     <name>mplayer::shell::ClipExport</name>
     <message>
-        <location filename="../src/player/shell/ClipExport.cpp" line="246"/>
+        <location filename="../src/player/shell/ClipExport.cpp" line="212"/>
         <source>An export is already in progress.</source>
         <translation>Експорт уже триває.</translation>
     </message>
@@ -12719,7 +12789,7 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 <context>
     <name>mplayer::shell::FramePreviewService</name>
     <message>
-        <location filename="../src/player/shell/FramePreviewService.cpp" line="920"/>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="922"/>
         <source>No media is loaded, so there is no frame to preview.</source>
         <translation>Медіа не завантажено, тому кадр для перегляду відсутній.</translation>
     </message>
@@ -12752,108 +12822,108 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 <context>
     <name>mplayer::shell::FramePreviewWorker</name>
     <message>
-        <location filename="../src/player/shell/FramePreviewService.cpp" line="390"/>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="392"/>
         <source>No media is loaded, so there is no frame to preview.</source>
         <translation>Медіа не завантажено, тому кадр для перегляду відсутній.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/FramePreviewService.cpp" line="397"/>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="399"/>
         <source>The frame preview is not available for this source.</source>
         <translation>Попередній перегляд кадру для цього джерела недоступний.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/FramePreviewService.cpp" line="470"/>
-        <location filename="../src/player/shell/FramePreviewService.cpp" line="689"/>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="472"/>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="691"/>
         <source>The source could not be opened: %1</source>
         <translation>Не вдалося відкрити джерело: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/FramePreviewService.cpp" line="474"/>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="476"/>
         <source>The source did not open in time, so there is no frame to preview.</source>
         <translation>Джерело не відкрилося вчасно, тому кадр для перегляду відсутній.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/FramePreviewService.cpp" line="497"/>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="499"/>
         <source>This source cannot be seeked, so no frame preview is available.</source>
         <translation>Це джерело не підтримує перемотування, тому попередній перегляд кадру недоступний.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/FramePreviewService.cpp" line="507"/>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="509"/>
         <source>The player would not report whether this source can be seeked.</source>
         <translation>Плеєр не повідомив, чи можна перемотувати це джерело.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/FramePreviewService.cpp" line="517"/>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="519"/>
         <source>The source stopped before the hovered position could be decoded: %1</source>
         <translation>Джерело зупинилося до того, як вибрану позицію вдалося декодувати: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/FramePreviewService.cpp" line="522"/>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="524"/>
         <source>The seek did not finish in time, so there is no frame to preview.</source>
         <translation>Перемотування не завершилося вчасно, тому кадр для перегляду відсутній.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/FramePreviewService.cpp" line="543"/>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="545"/>
         <source>The player could not report the position of the requested frame.</source>
         <translation>Плеєр не зміг повідомити позицію запитаного кадру.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/FramePreviewService.cpp" line="574"/>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="576"/>
         <source>The source would not settle on the hovered position.</source>
         <translation>Джерело не зупинилося на вибраній позиції.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/FramePreviewService.cpp" line="581"/>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="583"/>
         <source>The player would not take the position read.</source>
         <translation>Плеєр не прийняв запит позиції.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/FramePreviewService.cpp" line="593"/>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="595"/>
         <source>The frame could not be captured in time.</source>
         <translation>Не вдалося захопити кадр вчасно.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/FramePreviewService.cpp" line="777"/>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="779"/>
         <source>The player would not take the capture request.</source>
         <translation>Плеєр не прийняв запит на захоплення кадру.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/FramePreviewService.cpp" line="637"/>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="639"/>
         <source>The video engine is not available, so the frame cannot be decoded.</source>
         <translation>Відеодвигун недоступний, тому кадр неможливо декодувати.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/FramePreviewService.cpp" line="651"/>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="653"/>
         <source>The preview decoder could not be created: %1</source>
         <translation>Не вдалося створити декодер попереднього перегляду: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/FramePreviewService.cpp" line="717"/>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="719"/>
         <source>The source refused the seek: %1</source>
         <translation>Джерело відхилило перемотування: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/FramePreviewService.cpp" line="724"/>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="726"/>
         <source>The player would not take the seek request.</source>
         <translation>Плеєр не прийняв запит на перемотування.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/FramePreviewService.cpp" line="745"/>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="747"/>
         <source>The frame could not be captured: %1</source>
         <translation>Не вдалося захопити кадр: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/FramePreviewService.cpp" line="750"/>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="752"/>
         <source>The frame capture did not report its pixels.</source>
         <translation>Захоплення кадру не повідомило його пікселі.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/FramePreviewService.cpp" line="760"/>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="762"/>
         <source>The frame capture is missing a declared member.</source>
         <translation>У захопленні кадру бракує заявленого члена.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/FramePreviewService.cpp" line="770"/>
+        <location filename="../src/player/shell/FramePreviewService.cpp" line="772"/>
         <source>The captured frame could not be read.</source>
         <translation>Не вдалося прочитати захоплений кадр.</translation>
     </message>

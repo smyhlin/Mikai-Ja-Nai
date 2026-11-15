@@ -402,6 +402,7 @@ public:
     double duration() const;
     int videoWidth() const;
     int videoHeight() const;
+    double sourceFramesPerSecond() const { return observedContainerFps_; }
     bool hasVideo() const;
     bool isOpening() const { return opening_; }
     /// Current mpv source epoch; changes whenever the loaded source is replaced.

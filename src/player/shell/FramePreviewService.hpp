@@ -126,6 +126,11 @@ class FramePreviewService : public QObject {
     Q_OBJECT
 
 public:
+    enum class CachePolicy {
+        Reuse,
+        Bypass,
+    };
+
     explicit FramePreviewService(QObject* parent = nullptr);
     ~FramePreviewService() override;
 
@@ -144,7 +149,7 @@ public:
     /// caller that hovers faster than the decoder shows only its last request.
     /// `token` 0 is not a request. An instant already in the store answers from
     /// it, without touching the worker.
-    void requestFrame(quint64 token, double seconds);
+    void requestFrame(quint64 token, double seconds, CachePolicy cachePolicy);
 
     /// Warms the decoder for `seconds` without a card waiting on it: the frame
     /// lands in the store and is never published as a reply. Low priority by

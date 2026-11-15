@@ -39,6 +39,7 @@
 #include "TestCompareGif.hpp"
 #include "TestCompareClip.hpp"
 #include "TestClipExport.hpp"
+#include "TestClipSizeEstimate.hpp"
 #include "TestCompareLoading.hpp"
 #include "TestComparePipeline.hpp"
 #include "TestNativeAssets.hpp"
@@ -121,7 +122,7 @@ constexpr const char* kSuites[] = {
     "TestQuickMenuModel", "TestQuickIconProvider",
     "TestNativePrefs",
     "TestNativeMenu", "TestNativeUserRecipes", "TestNativeAssets", "TestMpvAsync", "TestCompareGif",
-    "TestCompareClip", "TestClipExport", "TestCompareLoading", "TestComparePipeline",
+    "TestCompareClip", "TestClipExport", "TestClipSizeEstimate", "TestCompareLoading", "TestComparePipeline",
 #ifdef MIKAI_WITH_MODEL_INSPECTION
     "TestNativeCatalog",
 #endif
@@ -299,6 +300,7 @@ int main(int argc, char** argv) {
   TestCompareGif compareGif;
   TestCompareClip compareClip;
   TestClipExport clipExport;
+  TestClipSizeEstimate clipSizeEstimate;
   TestCompareLoading compareLoading;
   TestComparePipeline comparePipeline;
 #ifdef MIKAI_WITH_MODEL_INSPECTION
@@ -448,6 +450,7 @@ int main(int argc, char** argv) {
   run("TestCompareGif", &compareGif, true);
   run("TestCompareClip", &compareClip, true);
   run("TestClipExport", &clipExport, true);
+  run("TestClipSizeEstimate", &clipSizeEstimate, true);
   run("TestCompareLoading", &compareLoading, true);
   run("TestComparePipeline", &comparePipeline, true);
   // TestCrashLog runs before the wrapper suites: its pre-install slots need

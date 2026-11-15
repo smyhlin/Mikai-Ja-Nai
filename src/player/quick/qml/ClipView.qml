@@ -307,13 +307,34 @@ Item {
                     }
                 }
                 Text {
+                    id: estimatedSizeLabel
+                    objectName: "clipEstimatedSize"
                     Layout.fillWidth: true
+                    Layout.minimumWidth: 100
+                    wrapMode: Text.Wrap
                     text: root.editor.estimatedSize
                     color: root.textColor
-                    opacity: 0.6
+                    opacity: 0.78
                     font.pixelSize: 12
                     font.features: { "tnum": 1 }
                     textFormat: Text.PlainText
+                    Accessible.description: root.editor.estimatedSizeDetails
+                    HoverHandler { id: estimateHover }
+                    ToolTip {
+                        id: estimateDetailsTip
+                        objectName: "clipEstimateDetailsTip"
+                        parent: estimatedSizeLabel
+                        visible: estimateHover.hovered
+                        text: root.editor.estimatedSizeDetails
+                        delay: 400
+                        width: Math.min(420, contentItem.implicitWidth + leftPadding + rightPadding)
+                        contentItem: Text {
+                            text: estimateDetailsTip.text
+                            color: root.textColor
+                            font.pixelSize: 12
+                            wrapMode: Text.WordWrap
+                        }
+                    }
                 }
                 PlayerButton {
                     objectName: "clipCancelExport"

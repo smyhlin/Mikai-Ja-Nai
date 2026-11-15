@@ -258,6 +258,7 @@ set(PLAYER_SOURCES
   src/player/shell/OpenSubtitlesClient.cpp
   src/player/shell/OpenSubtitlesClient.hpp
   src/player/shell/ClipExport.cpp
+  src/player/shell/ClipSizeEstimate.cpp
   src/player/shell/MediaInformationDialog.cpp
   src/player/shell/MediaInformationPresentation.cpp
   src/player/shell/MediaInformationTree.cpp
@@ -301,6 +302,7 @@ set(PLAYER_HEADERS
   src/player/shell/FramePreviewService.hpp
   src/player/shell/HoverPreview.hpp
   src/player/shell/ClipExport.hpp
+  src/player/shell/ClipSizeEstimate.hpp
   src/player/shell/MediaInformationDialog.hpp
   src/player/shell/MediaInformationPresentation.hpp
   src/player/shell/MediaInformationTree.hpp
@@ -440,6 +442,7 @@ block()
       src/player/quick/ClipSelection.cpp
       src/player/quick/ClipController.hpp
       src/player/quick/ClipController.cpp
+      src/player/quick/ClipControllerEstimate.cpp
       src/player/quick/ClipWindow.hpp
       src/player/quick/ClipWindow.cpp
     QML_FILES ${MIKAI_PLAYER_QML_FILES}

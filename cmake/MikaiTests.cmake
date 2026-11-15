@@ -227,6 +227,8 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/player/TestCompareClip.cpp
     tests/cpp/player/TestClipExport.hpp
     tests/cpp/player/TestClipExport.cpp
+    tests/cpp/player/TestClipSizeEstimate.hpp
+    tests/cpp/player/TestClipSizeEstimate.cpp
     tests/cpp/player/TestCompareLoading.hpp
     tests/cpp/player/TestCompareLoading.cpp
     tests/cpp/player/TestComparePipeline.hpp
@@ -508,6 +510,7 @@ if(MIKAI_BUILD_PROBES)
     TestCompareGif
     TestCompareClip
     TestClipExport
+    TestClipSizeEstimate
     TestCompareLoading
     TestComparePipeline
     TestJson
@@ -553,6 +556,7 @@ if(MIKAI_BUILD_PROBES)
     TestSkipSegments
     TestTimelineMarks
     TestHoverPreview
+    TestClipExport
     TestCompareLoading
     TestComparePipeline
     TestPublicApiUi

@@ -20,7 +20,7 @@ This release introduces the player-only Qt Quick/QML frontend while retaining th
   - Rebuilt as a token-driven filmstrip sheet bounded to ±2 minutes around the current playback anchor.
   - Preview playhead moves independently of selection boundaries and can be scrubbed before, on top of, and after the clip; preview playback loops within the selection.
   - Preview audio is enabled by default with a dedicated mute button (`M`).
-  - Size estimate dynamically derives from the observed stream bitrate, scaled by target quality height and capped at the encode target.
+  - Estimate MP4 size in C++ from decoded clip samples, source frame rate, exact output geometry and the actual H.264/MPEG-4 export profile. Show an uncalibrated range with MP4/audio overhead instead of scaling the source bitrate; no Python, ffprobe or trial encoding.
   - Transport discs follow the global corner radius, preset chips share a uniform 52 px width with tabular numerals (`tnum`), and preset chips hide responsively below 700 px width.
 - Overhaul Compare quality workstation for native AnimeJaNai models:
   - Replay models from the real source through an isolated core using the player's decoder (`nvdec`/`d3d11`) and filter string verbatim without format normalisers or loop filters.

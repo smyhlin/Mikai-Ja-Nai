@@ -8,7 +8,6 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QGuiApplication>
-#include <QLocale>
 #include <QMutex>
 #include <QQuickImageProvider>
 #include <QStandardPaths>
@@ -27,9 +26,6 @@ QString clipTime(double seconds) {
     return whole >= 3600 ? QStringLiteral("%1:%2").arg(whole / 3600).arg(tail) : tail;
 }
 
-double bitrateForHeight(int height) {
-    return height >= 1080 ? 6.2e6 : height >= 720 ? 3.1e6 : 1.5e6;
-}
 }
 
 struct ClipFrameStore {
@@ -193,6 +189,7 @@ ClipController::ClipController(VideoSession* source, QString caption, QObject* p
     sourceEpoch_ = source->sourceEpoch();
     anchor_ = std::isfinite(source->position()) ? source->position() : 0.0;
     sourceSize_ = QSize(source->videoWidth(), source->videoHeight());
+    initializeSizeEstimator();
     frames_.setSource(sourceUrl_, sourceEpoch_);
     connect(source, &VideoSession::mediaInformationInvalidated, this, [this] {
         invalidate(QT_TR_NOOP("The video changed. Close this window and open Cut moment again."));
@@ -207,14 +204,24 @@ ClipController::ClipController(VideoSession* source, QString caption, QObject* p
     connect(source, &VideoSession::videoSizeChanged, this, [this](int width, int height) {
         if (invalidated_ || stopped_ || width <= 0 || height <= 0) return;
         sourceSize_ = QSize(width, height);
+        if (!estimateFeatures_ && !estimateAnalyzing_ && estimatePendingFrames_ == 0)
+            scheduleSizeEstimate();
+        else
+            refreshSizeEstimate();
         emit selectionChanged();
         emit stateChanged();
     });
     connect(source, &VideoSession::streamStatsChanged, this,
-            [this](double bytes, double, StreamFpsSource) {
-        if (!std::isfinite(bytes) || bytes <= 0.0) return;
-        streamBytesPerSecond_ = bytes;
-        emit selectionChanged();
+            [this](double, double, StreamFpsSource) {
+        if (invalidated_ || stopped_ || !source_) return;
+        const double fps = source_->sourceFramesPerSecond();
+        if (!std::isfinite(fps) || fps <= 0.0 ||
+            qFuzzyCompare(sourceFps_ + 1.0, fps + 1.0)) return;
+        sourceFps_ = fps;
+        if (!estimateFeatures_ && !estimateAnalyzing_ && estimatePendingFrames_ == 0)
+            scheduleSizeEstimate();
+        else
+            refreshSizeEstimate();
     });
     connect(source, &VideoSession::mediaTracksChanged, this, &ClipController::captureTracks);
     captureTracks();
@@ -243,13 +250,6 @@ bool ClipController::editingEnabled() const {
 }
 bool ClipController::canExport() const { return editingEnabled() && sourceSize_.isValid(); }
 QString ClipController::overwriteFileName() const { return QFileInfo(outputPath_).fileName(); }
-QString ClipController::estimatedSize() const {
-    const double ceiling = bitrateForHeight(qualityHeight_);
-    const double source = streamBytesPerSecond_ * 8.0;
-    const double bitrate = source > 0.0
-        ? std::min(ceiling, source * std::min(1.0, ceiling / bitrateForHeight(1080))) : ceiling;
-    return tr("≈ %1").arg(QLocale().formattedDataSize(qRound64(bitrate * selectionDuration() / 8.0)));
-}
 QString ClipController::statusText() const {
     if (!externalError_.isEmpty()) return externalError_;
     QString text = statusSource_.isEmpty() ? QString() : tr(statusSource_.constData());
@@ -269,6 +269,7 @@ void ClipController::setExternalError(const QString& message) {
     emit stateChanged();
 }
 void ClipController::retranslate() {
+    emit estimateChanged();
     emit selectionChanged();
     emit positionChanged();
     emit stateChanged();
@@ -285,11 +286,14 @@ void ClipController::initializeSelection(double duration) {
     stillRequestedTime_ = position_;
     stillTimer_.start(0);
     thumbnailTimer_.start(100);
+    scheduleSizeEstimate();
     setStatus(QT_TR_NOOP("Drag the handles to trim. Drag between them to move the selection."));
 }
 void ClipController::applySelection(const ClipSelection& selection) {
-    if (!selection.valid()) return;
+    if (!selection.valid() ||
+        (selection.start == selection_.start && selection.end == selection_.end)) return;
     selection_ = selection;
+    scheduleSizeEstimate();
     emit selectionChanged();
     emit stateChanged();
 }
@@ -314,6 +318,7 @@ void ClipController::setQualityHeight(int height) {
     if (!editingEnabled() || (height != 480 && height != 720 && height != 1080) ||
         height == qualityHeight_) return;
     qualityHeight_ = height;
+    refreshSizeEstimate();
     emit selectionChanged();
     emit stateChanged();
 }
@@ -410,20 +415,26 @@ void ClipController::rebuildThumbnails() {
 void ClipController::queueStill() {
     if (invalidated_ || stopped_ || previewOpened_) return;
     tileQueue_.erase(std::remove_if(tileQueue_.begin(), tileQueue_.end(),
-                                   [](const TileRequest& tile) { return tile.row < 0; }), tileQueue_.end());
+                                   [](const TileRequest& tile) { return tile.row == -1; }), tileQueue_.end());
     tileQueue_.prepend({-1, stillRequestedTime_, tileGeneration_});
     pumpThumbnails();
 }
 void ClipController::pumpThumbnails() {
     if (activeTile_ || tileQueue_.isEmpty() || invalidated_ || stopped_) return;
     activeTile_ = ActiveTile{tileQueue_.takeFirst(), ++tileToken_};
-    frames_.requestFrame(activeTile_->token, activeTile_->request.seconds);
+    frames_.requestFrame(
+        activeTile_->token, activeTile_->request.seconds,
+        activeTile_->request.row == -2
+            ? shell::FramePreviewService::CachePolicy::Bypass
+            : shell::FramePreviewService::CachePolicy::Reuse);
 }
-void ClipController::finishThumbnail(quint64 token, double, const QImage& frame, const QString& reason) {
+void ClipController::finishThumbnail(quint64 token, double decodedSeconds, const QImage& frame, const QString& reason) {
     if (!activeTile_ || token != activeTile_->token || invalidated_ || stopped_) return;
     const TileRequest request = activeTile_->request;
     activeTile_.reset();
-    if (request.row < 0 && !previewOpened_ &&
+    if (request.row == -2) {
+        consumeEstimateFrame(request.generation, decodedSeconds, frame, reason);
+    } else if (request.row == -1 && !previewOpened_ &&
         std::abs(request.seconds - stillRequestedTime_) < 0.001) {
         previewLoading_ = false;
         if (!frame.isNull()) {
@@ -461,6 +472,7 @@ void ClipController::captureTracks() {
         }
     }
     syncPreviewAudio();
+    refreshSizeEstimate();
 }
 void ClipController::syncPreviewAudio() {
     if (!previewLoaded_ || invalidated_ || stopped_ || !preview_->mediaTracks().ready) return;
@@ -592,6 +604,7 @@ void ClipController::copyOutputPath() {
 void ClipController::invalidate(const char* message) {
     if (invalidated_) return;
     invalidated_ = true;
+    stopSizeEstimator();
     exportState_ = ExportState::Editing;
     previewLoading_ = false;
     playing_ = false;
@@ -608,6 +621,7 @@ void ClipController::requestClose() { emit closeRequested(); }
 void ClipController::shutdown() {
     if (stopped_) return;
     stopped_ = true;
+    stopSizeEstimator();
     playing_ = false;
     exporter_.cancel();
     frames_.shutdown();
