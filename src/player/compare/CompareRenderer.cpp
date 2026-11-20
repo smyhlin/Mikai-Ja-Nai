@@ -230,8 +230,9 @@ struct CompareRenderer::State {
         while (!write->done.load(std::memory_order_acquire)) {
             QCoreApplication::processEvents();
             if (generation != startedIn || (cancelled && cancelled())) {
+                // Signal cancellation to the self-contained FrameWrite worker;
+                // never block the GUI thread on QThreadPool::globalInstance()->waitForDone().
                 write->cancelled.store(true, std::memory_order_release);
-                QThreadPool::globalInstance()->waitForDone();
                 return false;
             }
             QThread::msleep(1);
@@ -557,10 +558,12 @@ struct CompareRenderer::State {
 
     bool waitForCommand(const std::shared_ptr<CommandResult>& result,
                         const Cancelled& cancelled) {
+        const quint64 startedIn = generation;
         QElapsedTimer timer;
         timer.start();
         while (!result->finished && error.isEmpty() && !cancelled() &&
                timer.elapsed() < kSourceTimeoutMs) {
+            if (!core) return false;
             core->drainEvents();
             if (result->finished || !error.isEmpty() || cancelled()) break;
             {
@@ -570,6 +573,7 @@ struct CompareRenderer::State {
                 }
             }
             QCoreApplication::processEvents();
+            if (generation != startedIn) return false;
             QThread::msleep(5);
         }
         if (cancelled()) return false;
@@ -887,6 +891,7 @@ struct CompareRenderer::State {
     /// request; `hwdec-current` is the method that ran, which is what decides
     /// whether the stage receives device frames.
     bool waitForNativeDecoder(native::Backend backend, const Cancelled& cancelled) {
+        const quint64 startedIn = generation;
         QElapsedTimer timer;
         timer.start();
         while (timer.elapsed() < 4000 && !cancelled() && error.isEmpty()) {
@@ -900,6 +905,7 @@ struct CompareRenderer::State {
             if (!lastHwdec.isEmpty()) break;
             pumpFrame();
             QCoreApplication::processEvents();
+            if (generation != startedIn) return false;
             QThread::msleep(kFrameWaitMs);
         }
         if (cancelled()) return false;
@@ -970,14 +976,15 @@ struct CompareRenderer::State {
     }
 };
 
-CompareRenderer::CompareRenderer() : state_(std::make_unique<State>()) {}
+CompareRenderer::CompareRenderer() : state_(std::make_shared<State>()) {}
 CompareRenderer::~CompareRenderer() = default;
 
 bool CompareRenderer::capture(const QString& source, double timestamp, const QSize& outputSize,
                               const Cancelled& cancelled, const Progress& progress,
                               const std::function<QImage()>& fallbackProvider,
                               QImage* capturedSource) {
-    State& state = *state_;
+    const std::shared_ptr<State> keepAlive = state_;
+    State& state = *keepAlive;
     state.error.clear();
     state.sourceFrame = {};
     state.sourceUrl = source;
@@ -1091,7 +1098,8 @@ bool CompareRenderer::capture(const QString& source, double timestamp, const QSi
 
 QImage CompareRenderer::render(const QString& shaderId, const native::AnimeJanaiPlan& plan,
                                const Cancelled& cancelled, const Progress& progress) {
-    State& state = *state_;
+    const std::shared_ptr<State> keepAlive = state_;
+    State& state = *keepAlive;
     state.error.clear();
     state.buildDetail.clear();
     state.useUpscaleTarget = false;
@@ -1284,7 +1292,8 @@ void CompareRenderer::stop() {
     // terminates and joins a builder thread, and an anakin/TRT engine is torn
     // down while its own core still answers. The scoped context keeps that call
     // off the driver's deallocation path.
-    State& state = *state_;
+    const std::shared_ptr<State> keepAlive = state_;
+    State& state = *keepAlive;
     ++state.generation;
     if (!state.core) {
         if (state.stageBuildLease) state.stageBuildLease->release();
@@ -1372,11 +1381,13 @@ QImage CompareRenderer::State::queryVoFrame() {
         }).valid()) {
         return {};
     }
+    const quint64 startedIn = state.generation;
     QElapsedTimer timer;
     timer.start();
     while (!reply->finished && timer.elapsed() < 5000 && state.error.isEmpty()) {
         state.pumpFrame();
         QCoreApplication::processEvents();
+        if (state.generation != startedIn) return {};
         QThread::msleep(kFrameWaitMs);
     }
     return reply->image;

@@ -52,7 +52,7 @@ public:
 
 private:
     struct State;
-    std::unique_ptr<State> state_;
+    std::shared_ptr<State> state_;
 };
 
 }

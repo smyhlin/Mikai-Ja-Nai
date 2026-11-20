@@ -664,13 +664,16 @@ void VideoSurface::handleContextAboutToBeDestroyed() {
 }
 
 bool VideoSurface::waitForContext(int timeoutMs) {
+    const QPointer<VideoSurface> guard(this);
     QElapsedTimer clock;
     clock.start();
-    while (bridge_ != nullptr && !bridge_->contextReady() && clock.elapsed() < timeoutMs) {
+    while (guard && guard->bridge_ != nullptr && !guard->bridge_->contextReady() &&
+           clock.elapsed() < timeoutMs) {
         QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        if (!guard) return false;
         QThread::msleep(20);
     }
-    return bridge_ != nullptr && bridge_->contextReady();
+    return guard && guard->bridge_ != nullptr && guard->bridge_->contextReady();
 }
 
 bool VideoSurface::ensureContextCurrent(QOpenGLContext** previous) {

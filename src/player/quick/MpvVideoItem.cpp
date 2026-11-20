@@ -1264,9 +1264,10 @@ QImage MpvVideoItem::readVideoFrame(QString* reason) {
         // Bounded spin: the render thread never waits for the GUI thread, so the
         // completion can always arrive; a window that renders nothing times out
         // with a reason instead of hanging.
+        const QPointer<MpvVideoItem> guard(this);
         QElapsedTimer timer;
         timer.start();
-        while (!result->done && timer.elapsed() < kSyncReadbackBudgetMs)
+        while (guard && !result->done && timer.elapsed() < kSyncReadbackBudgetMs)
             QCoreApplication::processEvents(QEventLoop::AllEvents, kContextPollSliceMs);
         if (!result->done) {
             *reason = QStringLiteral("timed out waiting for the video frame readback");
@@ -1370,12 +1371,14 @@ bool MpvVideoItem::waitForContext(int timeoutMs) {
     if (!bridge_) return false;
     if (bridge_->contextReady()) return true;
     if (QThread::currentThread() != thread()) return false;
+    const QPointer<MpvVideoItem> guard(this);
+    const std::shared_ptr<VideoRenderBridge> bridge = bridge_;
     QElapsedTimer timer;
     timer.start();
     const int budget = qMax(timeoutMs, 0);
-    while (!bridge_->contextReady() && timer.elapsed() < budget)
+    while (guard && !bridge->contextReady() && timer.elapsed() < budget)
         QCoreApplication::processEvents(QEventLoop::AllEvents, kContextPollSliceMs);
-    return bridge_->contextReady();
+    return guard && bridge->contextReady();
 }
 
 quint64 MpvVideoItem::renderContextGeneration() const {

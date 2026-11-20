@@ -1603,11 +1603,13 @@ QImage VideoSession::grabUnfilteredFrame(QString* reason) {
     const double target = position();
     // Restore is unconditional: a capture that fails must not leave playback
     // without its processing chain.
+    const QPointer<VideoSession> guard(this);
     struct Restore {
-        VideoSession* session;
+        QPointer<VideoSession> session;
         const QString filter;
         const QString shaders;
         ~Restore() {
+            if (!session) return;
             // The core can be gone between the capture and this restore; the new
             // core has no filter to restore anyway.
             if (session->mpv_) {
@@ -1619,7 +1621,7 @@ QImage VideoSession::grabUnfilteredFrame(QString* reason) {
             }
             session->refreshRenderState();
         }
-    } restore{this, filter, shaders};
+    } restore{guard, filter, shaders};
 
     try {
         // Toggling a filter that is not there is pure risk: a core with nothing
@@ -1632,22 +1634,24 @@ QImage VideoSession::grabUnfilteredFrame(QString* reason) {
     }
     // A paused core does not decode on its own: a small seek back and forward is
     // what makes mpv produce a frame through the now-empty filter chain.
-    const auto waitForFrame = [this](double seconds) {
-        seek(seconds);
+    const auto waitForFrame = [guard](double seconds) {
+        if (!guard) return false;
+        guard->seek(seconds);
         QElapsedTimer clock;
         clock.start();
-        while (clock.elapsed() < 2500) {
+        while (guard && clock.elapsed() < 2500) {
             QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
-            if (hasVisibleOutputFrame()) return true;
+            if (!guard) return false;
+            if (guard->hasVisibleOutputFrame()) return true;
             QThread::msleep(10);
         }
-        return hasVisibleOutputFrame();
+        return guard && guard->hasVisibleOutputFrame();
     };
-    if (!waitForFrame(target > 0.1 ? target - 0.1 : 0.0) || !waitForFrame(target)) {
+    if (!waitForFrame(target > 0.1 ? target - 0.1 : 0.0) || !waitForFrame(target) || !guard) {
         if (reason != nullptr) *reason = QStringLiteral("the decoder produced no frame");
         return {};
     }
-    const QImage image = grabVideoFramebuffer();
+    const QImage image = guard->grabVideoFramebuffer();
     if (image.isNull() && reason != nullptr) *reason = QStringLiteral("the framebuffer was empty");
     return image;
 }
