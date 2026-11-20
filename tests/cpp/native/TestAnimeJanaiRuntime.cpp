@@ -513,6 +513,18 @@ void TestAnimeJanaiRuntime::shellSafeLibDirAvoidsASplitLibraryPath() {
     QCOMPARE(link.symLinkTarget(), library);
     // A path a shell cannot split is passed through untouched.
     QCOMPARE(detail::shellSafeLibDir(root.path()), root.path());
+
+    // Shell metacharacters (;, $, &, |) must also be mirrored into a safe dir.
+    const QString metaDir = QDir(root.path()).filePath(QStringLiteral("dir;echo$(id)/closure"));
+    QVERIFY(QDir().mkpath(metaDir));
+    const QString metaLib = QDir(metaDir).filePath(QStringLiteral("libnvinfer.so.11"));
+    QVERIFY(writeFile(metaLib, QByteArrayLiteral("not a real library")));
+    const QString metaMirror = detail::shellSafeLibDir(metaDir);
+    QVERIFY(!metaMirror.isEmpty());
+    QVERIFY(!metaMirror.contains(QLatin1Char(';')));
+    QVERIFY(!metaMirror.contains(QLatin1Char('$')));
+    QCOMPARE(QFileInfo(QDir(metaMirror).filePath(QStringLiteral("libnvinfer.so.11"))).symLinkTarget(),
+             metaLib);
 #else
     QSKIP("The split library path is a /bin/sh concern on Unix only.");
 #endif

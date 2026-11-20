@@ -28,7 +28,11 @@
 #include <QtCore/QMap>
 
 #ifndef Q_OS_WIN
+#include <cerrno>
 #include <dlfcn.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <QtCore/QStandardPaths>
 #endif
 
 namespace mplayer::native {
@@ -55,44 +59,103 @@ QString shellSafeLibDir(const QString& libDir) {
     // No shell is involved on Windows: CreateProcess gets the path as one argument.
     return libDir;
 #else
-    const auto splittable = [](const QString& path) {
-        return path.contains(QLatin1Char(' ')) || path.contains(QLatin1Char('\t')) ||
-               path.contains(QLatin1Char('\'')) || path.contains(QLatin1Char('"'));
+    // Strict POSIX shell-safe allowlist: reject whitespace, quotes, and all
+    // shell metacharacters (;, &, |, $, `, (), <>, \, *, ?, [], newline, etc.).
+    const auto isShellSafe = [](const QString& path) {
+        if (path.isEmpty()) return false;
+        for (const QChar ch : path) {
+            const ushort u = ch.unicode();
+            const bool ok = (u >= 'A' && u <= 'Z') || (u >= 'a' && u <= 'z') ||
+                            (u >= '0' && u <= '9') || u == '/' || u == '.' ||
+                            u == '_' || u == '-' || u == '+' || u == '@' || u == ':';
+            if (!ok) return false;
+        }
+        return true;
     };
-    if (!splittable(libDir)) return libDir;
-    const QString stem = QStringLiteral("mikai-aji-libs-") +
-        QString::fromLatin1(QCryptographicHash::hash(libDir.toUtf8(),
-                                                     QCryptographicHash::Sha1).toHex().left(12));
-    const QStringList roots{QDir::tempPath(), QStringLiteral("/var/tmp"), QStringLiteral("/tmp")};
-    for (const QString& root : roots) {
-        if (root.isEmpty() || splittable(root)) continue;
-        const QString mirror = QDir(root).filePath(stem);
-        if (!QDir().mkpath(mirror)) continue;
-        const QFileInfoList libs = QDir(libDir).entryInfoList(
-            {QStringLiteral("*.so"), QStringLiteral("*.so.*")}, QDir::Files, QDir::Name);
-        bool complete = true;
+    if (isShellSafe(libDir)) return libDir;
+
+    const QFileInfoList libs = QDir(libDir).entryInfoList(
+        {QStringLiteral("*.so"), QStringLiteral("*.so.*")}, QDir::Files, QDir::Name);
+    if (libs.isEmpty()) return {};
+
+    QSet<QString> expectedNames;
+    for (const QFileInfo& lib : libs) expectedNames.insert(lib.fileName());
+
+    const uid_t myUid = ::geteuid();
+    const QString stem = QStringLiteral("mikai-aji-libs-%1-%2")
+                             .arg(static_cast<qulonglong>(myUid))
+                             .arg(QString::fromLatin1(
+                                 QCryptographicHash::hash(libDir.toUtf8(),
+                                                          QCryptographicHash::Sha1)
+                                     .toHex()
+                                     .left(12)));
+
+    QStringList roots;
+    const QString runtimeDir = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
+    if (!runtimeDir.isEmpty()) roots.append(runtimeDir);
+    roots << QDir::tempPath() << QStringLiteral("/var/tmp") << QStringLiteral("/tmp");
+
+    auto ensurePrivateDir = [&](const QString& candidate) -> bool {
+        const QByteArray native = QFile::encodeName(candidate);
+        if (::mkdir(native.constData(), 0700) != 0 && errno != EEXIST) {
+            return false;
+        }
+        struct stat st{};
+        if (::lstat(native.constData(), &st) != 0) return false;
+        if (!S_ISDIR(st.st_mode) || st.st_uid != myUid) return false;
+        if ((st.st_mode & 0777) != 0700) {
+            if (::chmod(native.constData(), 0700) != 0) return false;
+            if (::lstat(native.constData(), &st) != 0 || !S_ISDIR(st.st_mode) ||
+                st.st_uid != myUid || (st.st_mode & 0777) != 0700) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    auto populateAndVerifyMirror = [&](const QString& mirror) -> bool {
+        const QStringList existing =
+            QDir(mirror).entryList(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System);
+        for (const QString& name : existing) {
+            if (!expectedNames.contains(name)) return false;
+        }
         for (const QFileInfo& lib : libs) {
             const QString link = QDir(mirror).filePath(lib.fileName());
-            if (QFileInfo(link).isSymLink()) {
-                // X-H2: the mirror name is deterministic, so an existing
-                // link is ours only while it still points at the verified
-                // closure member; a pre-planted link to an attacker's
-                // library must fail safe instead of being adopted.
+            const QByteArray linkNative = QFile::encodeName(link);
+            struct stat lst{};
+            if (::lstat(linkNative.constData(), &lst) == 0) {
+                if (!S_ISLNK(lst.st_mode)) return false;
                 if (QDir::cleanPath(QFileInfo(link).symLinkTarget()) !=
                     QDir::cleanPath(lib.absoluteFilePath())) {
-                    complete = false;
-                    break;
+                    return false;
                 }
                 continue;
             }
             if (!QFile::link(lib.absoluteFilePath(), link)) {
-                complete = false;
-                break;
+                return false;
             }
         }
-        if (complete && !libs.isEmpty()) return mirror;
+        return true;
+    };
+
+    for (const QString& root : roots) {
+        if (!isShellSafe(root)) continue;
+        const QString mirror = QDir(root).filePath(stem);
+        if (ensurePrivateDir(mirror) && populateAndVerifyMirror(mirror)) {
+            return mirror;
+        }
+        // Fallback to a fresh unpredictable 0700 directory if the deterministic
+        // slot is occupied or tampered with.
+        QByteArray tmpl = QFile::encodeName(QDir(root).filePath(QStringLiteral("mikai-aji-libs-XXXXXX")));
+        if (char* created = ::mkdtemp(tmpl.data())) {
+            const QString freshMirror = QFile::decodeName(created);
+            if (isShellSafe(freshMirror) && ensurePrivateDir(freshMirror) &&
+                populateAndVerifyMirror(freshMirror)) {
+                return freshMirror;
+            }
+        }
     }
-    return libDir;
+    return {};
 #endif
 }
 
