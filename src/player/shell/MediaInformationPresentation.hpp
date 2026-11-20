@@ -75,17 +75,24 @@ void updateTextEditPreservingSelection(Edit* edit, const QString& value) {
         previous[oldEndUnclamped].isLowSurrogate()) {
         --suffix;
     }
+    const int startPos = static_cast<int>(prefix);
     const int oldEnd = static_cast<int>(previous.size() - suffix);
     const QString replacement = normalized.mid(prefix, normalized.size() - prefix - suffix);
-    QTextCursor editCursor(edit->document());
-    editCursor.setPosition(static_cast<int>(prefix));
-    editCursor.setPosition(oldEnd, QTextCursor::KeepAnchor);
-    if (replacement.isEmpty()) {
-        editCursor.removeSelectedText();
+    const int docMax = qMax(0, edit->document()->characterCount() - 1);
+    int newEnd = startPos + static_cast<int>(replacement.size());
+    if (startPos < 0 || oldEnd < startPos || oldEnd > docMax) {
+        edit->setPlainText(normalized);
     } else {
-        editCursor.insertText(replacement);
+        QTextCursor editCursor(edit->document());
+        editCursor.setPosition(startPos);
+        editCursor.setPosition(oldEnd, QTextCursor::KeepAnchor);
+        if (replacement.isEmpty()) {
+            editCursor.removeSelectedText();
+        } else {
+            editCursor.insertText(replacement);
+        }
+        newEnd = editCursor.position();
     }
-    const int newEnd = editCursor.position();
     const auto updatedPosition = [prefix, oldEnd, newEnd](int cursorPosition) {
         if (cursorPosition <= prefix) return cursorPosition;
         if (cursorPosition >= oldEnd) return cursorPosition + newEnd - oldEnd;
