@@ -18,8 +18,11 @@
 #include <QJsonValue>
 #include <QMutexLocker>
 #include <QHash>
+#include <QEventLoop>
 #include <QNetworkAccessManager>
+#include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QTimer>
 #include <QSaveFile>
 #include <QUrl>
 #include <QUrlQuery>
@@ -793,6 +796,105 @@ QJsonObject MikaiClient::apiGet(const QString& url, const QMap<QString, QString>
     }
 }
 
+QJsonObject MikaiClient::apiPost(const QString& url, const QJsonObject& body,
+                                 int timeoutMs) const {
+    if (WorkCancellationScope::cancellationRequested()) {
+        throw MikaiApiError(QStringLiteral("cancelled"),
+                            QStringLiteral("the request was cancelled"), 0);
+    }
+    const QByteArray encoded = QJsonDocument(body).toJson(QJsonDocument::Compact);
+    for (int attempt = 0;; ++attempt) {
+        limiter_.acquireSlot();
+        QNetworkRequest request{QUrl(url)};
+        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                             QNetworkRequest::SameOriginRedirectPolicy);
+        request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+        request.setRawHeader("Accept", "application/json");
+        request.setRawHeader("User-Agent", apiUserAgent().toUtf8());
+        const CredentialSlot slot = credentialSlot();
+        if (!slot.key.isEmpty()) {
+            request.setRawHeader(kApiHeader, slot.key.toUtf8());
+        }
+
+        QNetworkReply* reply = managerForThread()->post(request, encoded);
+        QByteArray responseBody;
+        bool timedOut = false;
+        bool cancelled = false;
+        QEventLoop loop;
+        QTimer timer;
+        timer.setSingleShot(true);
+        QTimer cancelPoll;
+        cancelPoll.setInterval(100);
+        QObject::connect(&timer, &QTimer::timeout, &loop, [&] {
+            timedOut = true;
+            if (reply->isRunning()) reply->abort();
+            loop.quit();
+        });
+        QObject::connect(&cancelPoll, &QTimer::timeout, &loop, [&] {
+            if (WorkCancellationScope::cancellationRequested()) {
+                cancelled = true;
+                if (reply->isRunning()) reply->abort();
+                loop.quit();
+            }
+        });
+        QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+        timer.start(timeoutMs);
+        cancelPoll.start();
+        loop.exec();
+        timer.stop();
+        cancelPoll.stop();
+
+        if (reply->isRunning()) {
+            reply->abort();
+        }
+        HttpFetchResult result;
+        result.status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        result.body = reply->readAll();
+        result.cancelled = cancelled;
+        result.timedOut = timedOut;
+        if (reply->error() != QNetworkReply::NoError && result.status == 0) {
+            result.networkError = reply->errorString();
+        }
+        for (const auto& pair : reply->rawHeaderPairs()) {
+            const QuotaHeader kind = classifyQuotaHeader(pair.first);
+            if (kind == QuotaHeader::kNone) continue;
+            const auto value = quotaHeaderValue(QString::fromLatin1(pair.second));
+            switch (kind) {
+                case QuotaHeader::kLimit: result.quota.limit = value; break;
+                case QuotaHeader::kRemaining: result.quota.remaining = value; break;
+                case QuotaHeader::kReset: result.quota.reset = value; break;
+                case QuotaHeader::kRetryAfter: result.quota.retryAfter = value; break;
+                case QuotaHeader::kNone: break;
+            }
+        }
+        reply->deleteLater();
+
+        const QString transportError = apiTransportError(result, timeoutMs);
+        limiter_.applyQuota(result.quota.limit, result.quota.remaining, result.quota.reset,
+                            result.quota.retryAfter, slot.generation, result.status);
+        if (result.cancelled) {
+            throw MikaiApiError(QStringLiteral("cancelled"),
+                                QStringLiteral("the request was cancelled"), 0);
+        }
+        if (result.status == 429 && attempt < kMaxRateLimitRetries) {
+            continue;
+        }
+        if (!transportError.isEmpty() && !isHttpStatusError(result.status)) {
+            throw MikaiApiError(QStringLiteral("network_error"), transportError, 0);
+        }
+        if (isHttpStatusError(result.status)) {
+            throw apiErrorFromHttp(result, transportError);
+        }
+        QJsonParseError parseError{};
+        const QJsonDocument document = QJsonDocument::fromJson(result.body, &parseError);
+        if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+            throw MikaiApiError(QStringLiteral("http_error"), reasonFor(result.status),
+                                result.status);
+        }
+        return document.object();
+    }
+}
+
 QJsonObject MikaiClient::get(const QString& path, const QMap<QString, QString>& params) const {
     const QJsonObject payload = apiGet(baseUrl_ + path, params);
     if (!payload.value(QStringLiteral("ok")).toBool()) {
@@ -801,9 +903,20 @@ QJsonObject MikaiClient::get(const QString& path, const QMap<QString, QString>& 
         const QJsonValue message = error.value(QStringLiteral("message"));
         throw MikaiApiError(code.isString() ? code.toString() : QStringLiteral("unknown"),
                             message.isString() ? message.toString() : QStringLiteral("request failed"),
-                            payload.value(QStringLiteral("error")).toObject()
-                                .value(QStringLiteral("errorCode"))
-                                .toInt(0));
+                            error.value(QStringLiteral("errorCode")).toInt(0));
+    }
+    return payload;
+}
+
+QJsonObject MikaiClient::post(const QString& path, const QJsonObject& body) const {
+    const QJsonObject payload = apiPost(baseUrl_ + path, body);
+    if (!payload.value(QStringLiteral("ok")).toBool()) {
+        const QJsonObject error = payload.value(QStringLiteral("error")).toObject();
+        const QJsonValue code = error.value(QStringLiteral("code"));
+        const QJsonValue message = error.value(QStringLiteral("message"));
+        throw MikaiApiError(code.isString() ? code.toString() : QStringLiteral("unknown"),
+                            message.isString() ? message.toString() : QStringLiteral("request failed"),
+                            error.value(QStringLiteral("errorCode")).toInt(0));
     }
     return payload;
 }
@@ -1022,6 +1135,191 @@ PlayerResult MikaiClient::getPlayer(const QString& ref) const {
     return parsePlayer(get(QStringLiteral("/anime/") + ref + QStringLiteral("/player"))
                            .value(QStringLiteral("result"))
                            .toObject());
+}
+
+QJsonObject MikaiClient::getHealth() const {
+    return get(QStringLiteral("/health")).value(QStringLiteral("result")).toObject();
+}
+
+AnimeDetail MikaiClient::getRandomAnime(const QStringList& genres,
+                                        const QStringList& formats) const {
+    QMap<QString, QString> params;
+    if (!genres.isEmpty()) params.insert(QStringLiteral("genres"), genres.join(QLatin1Char(',')));
+    if (!formats.isEmpty()) params.insert(QStringLiteral("formats"), formats.join(QLatin1Char(',')));
+    return parseDetail(
+        get(QStringLiteral("/anime/random"), params).value(QStringLiteral("result")).toObject());
+}
+
+QVector<AnimeDetail> MikaiClient::getAnimeBatch(const QStringList& refs,
+                                                const QStringList& include) const {
+    QVector<AnimeDetail> out;
+    if (refs.isEmpty()) return out;
+    QJsonArray ids;
+    for (const QString& ref : refs) ids.append(ref);
+    QJsonObject body;
+    body.insert(QStringLiteral("ids"), ids);
+    if (!include.isEmpty()) {
+        QJsonArray inc;
+        for (const QString& block : include) inc.append(block);
+        body.insert(QStringLiteral("include"), inc);
+    }
+    const QJsonArray items =
+        post(QStringLiteral("/anime/batch"), body).value(QStringLiteral("result")).toArray();
+    out.reserve(items.size());
+    for (const QJsonValue& item : items) {
+        if (item.isObject()) out.append(parseDetail(item.toObject()));
+    }
+    return out;
+}
+
+QJsonObject MikaiClient::resolveAnime(const QStringList& refs) const {
+    QJsonArray list;
+    for (const QString& ref : refs) list.append(ref);
+    QJsonObject body;
+    body.insert(QStringLiteral("refs"), list);
+    return post(QStringLiteral("/resolve"), body);
+}
+
+QJsonObject MikaiClient::getLicenses(int page, int limit, const QString& since,
+                                     const QString& holder, const QString& platform) const {
+    QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
+                                  {QStringLiteral("limit"), QString::number(limit)}};
+    if (!since.isEmpty()) params.insert(QStringLiteral("since"), since);
+    if (!holder.trimmed().isEmpty()) params.insert(QStringLiteral("holder"), holder.trimmed());
+    if (!platform.trimmed().isEmpty()) params.insert(QStringLiteral("platform"), platform.trimmed());
+    return get(QStringLiteral("/licenses"), params);
+}
+
+QJsonArray MikaiClient::getLicenseHolders() const {
+    return get(QStringLiteral("/licenses/holders")).value(QStringLiteral("result")).toArray();
+}
+
+QVector<UaPoster> MikaiClient::getAnimePosters(const QString& ref) const {
+    QVector<UaPoster> out;
+    const QJsonArray items =
+        get(QStringLiteral("/anime/") + ref + QStringLiteral("/posters"))
+            .value(QStringLiteral("result"))
+            .toArray();
+    out.reserve(items.size());
+    for (const QJsonValue& value : items) {
+        const QJsonObject raw = value.toObject();
+        UaPoster poster;
+        poster.id = raw.value(QStringLiteral("id")).toVariant().toLongLong();
+        poster.is_selected = raw.value(QStringLiteral("isSelected")).toBool(false);
+        poster.author = raw.value(QStringLiteral("author")).toString();
+        if (raw.value(QStringLiteral("team")).isObject()) {
+            poster.team = parseTeam(raw.value(QStringLiteral("team")).toObject());
+        }
+        poster.images = parsePosterSet(raw.value(QStringLiteral("images")).toObject());
+        out.append(poster);
+    }
+    return out;
+}
+
+QJsonObject MikaiClient::getUaPosters(int page, int limit, const QString& author,
+                                      std::optional<qint64> teamId) const {
+    QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
+                                  {QStringLiteral("limit"), QString::number(limit)}};
+    if (!author.trimmed().isEmpty()) params.insert(QStringLiteral("author"), author.trimmed());
+    if (teamId.has_value()) params.insert(QStringLiteral("team"), QString::number(*teamId));
+    return get(QStringLiteral("/posters/ua"), params);
+}
+
+QJsonObject MikaiClient::getCharacters(const QString& search, int page, int limit) const {
+    QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
+                                  {QStringLiteral("limit"), QString::number(limit)}};
+    if (!search.trimmed().isEmpty()) params.insert(QStringLiteral("search"), search.trimmed());
+    return get(QStringLiteral("/characters"), params);
+}
+
+QJsonObject MikaiClient::getCharacter(const QString& ref) const {
+    return get(QStringLiteral("/characters/") + ref).value(QStringLiteral("result")).toObject();
+}
+
+QJsonObject MikaiClient::getCharacterAnime(const QString& ref, int page, int limit) const {
+    QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
+                                  {QStringLiteral("limit"), QString::number(limit)}};
+    return get(QStringLiteral("/characters/") + ref + QStringLiteral("/anime"), params);
+}
+
+QJsonObject MikaiClient::getPeople(const QString& search, int page, int limit) const {
+    QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
+                                  {QStringLiteral("limit"), QString::number(limit)}};
+    if (!search.trimmed().isEmpty()) params.insert(QStringLiteral("search"), search.trimmed());
+    return get(QStringLiteral("/people"), params);
+}
+
+QJsonObject MikaiClient::getPerson(const QString& ref) const {
+    return get(QStringLiteral("/people/") + ref).value(QStringLiteral("result")).toObject();
+}
+
+QJsonObject MikaiClient::getPersonAnime(const QString& ref, int page, int limit) const {
+    QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
+                                  {QStringLiteral("limit"), QString::number(limit)}};
+    return get(QStringLiteral("/people/") + ref + QStringLiteral("/anime"), params);
+}
+
+QJsonObject MikaiClient::getAnimeCharacters(const QString& ref, int page, int limit) const {
+    QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
+                                  {QStringLiteral("limit"), QString::number(limit)}};
+    return get(QStringLiteral("/anime/") + ref + QStringLiteral("/characters"), params);
+}
+
+QJsonObject MikaiClient::getAnimeStaff(const QString& ref, int page, int limit) const {
+    QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
+                                  {QStringLiteral("limit"), QString::number(limit)}};
+    return get(QStringLiteral("/anime/") + ref + QStringLiteral("/staff"), params);
+}
+
+QJsonObject MikaiClient::getCollections(const QString& search, int page, int limit,
+                                        const QString& sort, const QString& order) const {
+    QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
+                                  {QStringLiteral("limit"), QString::number(limit)}};
+    if (!search.trimmed().isEmpty()) params.insert(QStringLiteral("search"), search.trimmed());
+    if (!sort.trimmed().isEmpty()) params.insert(QStringLiteral("sort"), sort.trimmed());
+    if (!order.trimmed().isEmpty()) params.insert(QStringLiteral("order"), order.trimmed());
+    return get(QStringLiteral("/collections"), params);
+}
+
+QJsonObject MikaiClient::getCollection(const QString& ref) const {
+    return get(QStringLiteral("/collections/") + ref).value(QStringLiteral("result")).toObject();
+}
+
+QJsonObject MikaiClient::getUserCollections(const QString& username, int page, int limit) const {
+    QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
+                                  {QStringLiteral("limit"), QString::number(limit)}};
+    return get(QStringLiteral("/users/") + username + QStringLiteral("/collections"), params);
+}
+
+QJsonObject MikaiClient::getComments(const QString& targetType, const QString& targetRef,
+                                     int page, int limit) const {
+    QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
+                                  {QStringLiteral("limit"), QString::number(limit)}};
+    if (!targetType.trimmed().isEmpty()) params.insert(QStringLiteral("type"), targetType.trimmed());
+    if (!targetRef.trimmed().isEmpty()) params.insert(QStringLiteral("ref"), targetRef.trimmed());
+    return get(QStringLiteral("/comments"), params);
+}
+
+QJsonObject MikaiClient::getBlogPosts(int page, int limit, const QString& tag) const {
+    QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
+                                  {QStringLiteral("limit"), QString::number(limit)}};
+    if (!tag.trimmed().isEmpty()) params.insert(QStringLiteral("tag"), tag.trimmed());
+    return get(QStringLiteral("/blog/posts"), params);
+}
+
+QJsonObject MikaiClient::getBlogPost(const QString& slug) const {
+    return get(QStringLiteral("/blog/posts/") + slug).value(QStringLiteral("result")).toObject();
+}
+
+QJsonObject MikaiClient::transliterate(const QString& text, const QString& system) const {
+    QJsonObject body;
+    body.insert(QStringLiteral("text"), text);
+    if (!system.trimmed().isEmpty()) body.insert(QStringLiteral("system"), system.trimmed());
+    return post(QStringLiteral("/translit"), body).value(QStringLiteral("result")).toObject();
+}
+
+QJsonArray MikaiClient::getTranslitSystems() const {
+    return get(QStringLiteral("/translit/systems")).value(QStringLiteral("result")).toArray();
 }
 
 QByteArray MikaiClient::fetchBytes(

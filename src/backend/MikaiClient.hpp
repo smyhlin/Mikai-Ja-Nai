@@ -1,6 +1,8 @@
 #pragma once
 
 #include <QByteArray>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QMap>
 #include <QMutex>
 #include <QString>
@@ -143,6 +145,40 @@ public:
     AnimeDetail getAnime(const QString& ref, const QStringList& include = {}) const;
     PlayerResult getPlayer(const QString& ref) const;
 
+    // API v1.5 Tier 1 read-only endpoints.
+    QJsonObject getHealth() const;
+    AnimeDetail getRandomAnime(const QStringList& genres = {},
+                               const QStringList& formats = {}) const;
+    QVector<AnimeDetail> getAnimeBatch(const QStringList& refs,
+                                       const QStringList& include = {}) const;
+    QJsonObject resolveAnime(const QStringList& refs) const;
+    QJsonObject getLicenses(int page = 1, int limit = 20, const QString& since = {},
+                            const QString& holder = {}, const QString& platform = {}) const;
+    QJsonArray getLicenseHolders() const;
+    QVector<UaPoster> getAnimePosters(const QString& ref) const;
+    QJsonObject getUaPosters(int page = 1, int limit = 20, const QString& author = {},
+                             std::optional<qint64> teamId = std::nullopt) const;
+
+    // API v1.5 Tier 3 read-only endpoints (characters, people, collections, comments, blog, translit).
+    QJsonObject getCharacters(const QString& search = {}, int page = 1, int limit = 20) const;
+    QJsonObject getCharacter(const QString& ref) const;
+    QJsonObject getCharacterAnime(const QString& ref, int page = 1, int limit = 20) const;
+    QJsonObject getPeople(const QString& search = {}, int page = 1, int limit = 20) const;
+    QJsonObject getPerson(const QString& ref) const;
+    QJsonObject getPersonAnime(const QString& ref, int page = 1, int limit = 20) const;
+    QJsonObject getAnimeCharacters(const QString& ref, int page = 1, int limit = 20) const;
+    QJsonObject getAnimeStaff(const QString& ref, int page = 1, int limit = 20) const;
+    QJsonObject getCollections(const QString& search = {}, int page = 1, int limit = 20,
+                               const QString& sort = {}, const QString& order = {}) const;
+    QJsonObject getCollection(const QString& ref) const;
+    QJsonObject getUserCollections(const QString& username, int page = 1, int limit = 20) const;
+    QJsonObject getComments(const QString& targetType, const QString& targetRef,
+                            int page = 1, int limit = 20) const;
+    QJsonObject getBlogPosts(int page = 1, int limit = 20, const QString& tag = {}) const;
+    QJsonObject getBlogPost(const QString& slug) const;
+    QJsonObject transliterate(const QString& text, const QString& system = {}) const;
+    QJsonArray getTranslitSystems() const;
+
     // Artwork download: bypasses the rate limiter, 20s timeout by default. This
     // is the one transport callers use for large non-artwork payloads (a model
     // graph, for instance, needs far more than the artwork budget); a negative
@@ -176,8 +212,11 @@ public:
 private:
     QNetworkAccessManager* managerForThread() const;
     QJsonObject get(const QString& path, const QMap<QString, QString>& params = {}) const;
+    QJsonObject post(const QString& path, const QJsonObject& body) const;
     QJsonObject apiGet(const QString& url, const QMap<QString, QString>& params = {},
                        const QString& overrideKey = {}, int timeoutMs = 15000) const;
+    QJsonObject apiPost(const QString& url, const QJsonObject& body,
+                        int timeoutMs = 15000) const;
 
     // The credential snapshot and the limiter generation it was captured for,
     // read as one unit so a key change cannot hand a request the new epoch with
