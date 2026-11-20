@@ -264,6 +264,7 @@ AnimeSummary parseSummary(const QJsonObject& entry) {
 
 AnimeUpdate parseUpdate(const QJsonObject& entry) {
     AnimeUpdate update;
+    update.release_id = text(entry.value(QStringLiteral("releaseId")));
     update.anime = parseSummary(objectOrEmpty(entry.value(QStringLiteral("anime"))));
     const QJsonArray teams = arrayOrEmpty(entry.value(QStringLiteral("teams")));
     update.teams.reserve(teams.size());
@@ -308,6 +309,7 @@ AnimeDetail parseDetail(const QJsonObject& data) {
 
     AnimeDetail detail;
     detail.ref = text(ids.value(QStringLiteral("mikai")));
+    detail.url = text(data.value(QStringLiteral("url")));
     for (auto it = ids.begin(); it != ids.end(); ++it) {
         detail.ids.insert(it.key(), it.value().toVariant());
     }
@@ -320,6 +322,13 @@ AnimeDetail parseDetail(const QJsonObject& data) {
     detail.studio = text(data.value(QStringLiteral("studio")));
     detail.country = text(data.value(QStringLiteral("country")));
     detail.age_rating = text(data.value(QStringLiteral("ageRating")));
+    detail.views = optInt64(data.value(QStringLiteral("views"))).value_or(0);
+    const QJsonObject listsObj = objectOrEmpty(data.value(QStringLiteral("lists")));
+    for (auto it = listsObj.begin(); it != listsObj.end(); ++it) {
+        if (const auto count = optInt(it.value())) {
+            detail.lists.insert(it.key(), *count);
+        }
+    }
 
     detail.episodes.total = optInt(episodes.value(QStringLiteral("total")));
     detail.episodes.aired = optInt(episodes.value(QStringLiteral("aired"))).value_or(0);
@@ -330,6 +339,8 @@ AnimeDetail parseDetail(const QJsonObject& data) {
     detail.scores.mikai_count = optInt(scores.value(QStringLiteral("mikaiCount"))).value_or(0);
     detail.scores.mal = optDouble(scores.value(QStringLiteral("mal")));
     detail.scores.mal_count = optInt(scores.value(QStringLiteral("malCount"))).value_or(0);
+    detail.scores.hikka = optDouble(scores.value(QStringLiteral("hikka")));
+    detail.scores.hikka_count = optInt(scores.value(QStringLiteral("hikkaCount"))).value_or(0);
 
     const auto readTags = [](const QJsonArray& source, QVector<GenreTag>& target) {
         target.reserve(source.size());
@@ -354,8 +365,8 @@ AnimeDetail parseDetail(const QJsonObject& data) {
         const QJsonValue isSelectedValue = raw.value(QStringLiteral("isSelected"));
         if (isSelectedValue.isBool()) {
             poster.is_selected = isSelectedValue.toBool();
-        } else {
-            qWarning("Models: parseDetail: 'isSelected' missing or wrong type; using default");
+        } else if (!isSelectedValue.isUndefined() && !isSelectedValue.isNull()) {
+            qWarning("Models: parseDetail: 'isSelected' has unexpected type; using default");
         }
         poster.author = text(raw.value(QStringLiteral("author")));
         if (raw.value(QStringLiteral("team")).isObject()) {

@@ -48,9 +48,9 @@ struct ApiKeySaveResult {
 };
 
 inline const QString kApiApplicationName = QStringLiteral("Mikai Wrapper");
-inline const QString kApiApplicationVersion = QStringLiteral("0.2.1");
-inline constexpr int kApiAnonymousRequestsPerMinute = 299;
-inline constexpr int kApiKeyedRequestsPerMinute = 599;
+inline const QString kApiApplicationVersion = QStringLiteral("0.2.3");
+inline constexpr int kApiAnonymousRequestsPerMinute = 300;
+inline constexpr int kApiKeyedRequestsPerMinute = 600;
 
 QString apiUserAgent();
 
@@ -129,14 +129,18 @@ public:
     QVector<GenreTag> getGenres() const;
     QVector<GenreTag> getTags() const;
     QStringList getStudios() const;
-    TeamsResult getTeams(const QString& search = {}, int page = 1, int limit = 50) const;
+    TeamsResult getTeams(const QString& search = {}, int page = 1, int limit = 50,
+                         std::optional<bool> haveVoice = std::nullopt,
+                         std::optional<bool> haveSubs = std::nullopt,
+                         const QString& sort = {}, const QString& order = {}) const;
     TeamProfile getTeam(const QString& ref) const;
     SearchResult getTeamAnime(const QString& ref, int page = 1, int limit = 20) const;
     SearchResult browseOngoing(int page = 1, int limit = 24) const;
     SearchResult browsePopular(int page = 1, int limit = 18) const;
-    UpdatesResult getUpdates(int page = 1, int limit = 12, const QString& since = {}) const;
+    UpdatesResult getUpdates(int page = 1, int limit = 12, const QString& since = {},
+                             const QString& order = {}) const;
     ScheduleResult getSchedule() const;
-    AnimeDetail getAnime(const QString& ref) const;
+    AnimeDetail getAnime(const QString& ref, const QStringList& include = {}) const;
     PlayerResult getPlayer(const QString& ref) const;
 
     // Artwork download: bypasses the rate limiter, 20s timeout by default. This

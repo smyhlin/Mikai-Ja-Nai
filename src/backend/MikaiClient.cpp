@@ -84,7 +84,11 @@ QByteArray cacheKey(const QUrl& url, const CredentialSlot& slot) {
 bool cacheableEndpoint(const QUrl& url, const QString& overrideKey) {
     if (!overrideKey.isEmpty()) return false;
     const QString path = url.path();
-    return !path.endsWith(QStringLiteral("/health")) && !path.endsWith(QStringLiteral("/me")) &&
+    return !path.endsWith(QStringLiteral("/health")) &&
+           !path.endsWith(QStringLiteral("/me")) &&
+           !path.contains(QStringLiteral("/me/")) &&
+           !path.contains(QStringLiteral("/auth/device")) &&
+           !path.contains(QStringLiteral("/translit")) &&
            !path.endsWith(QStringLiteral("/anime/random"));
 }
 
@@ -286,7 +290,7 @@ QString apiUserAgent() {
     name.replace(QLatin1Char(' '), QLatin1Char('-'));
     const QString declaredVersion = QCoreApplication::applicationVersion();
     const QString version = declaredVersion.isEmpty() ? kApiApplicationVersion : declaredVersion;
-    return QStringLiteral("%1/%2").arg(name, version);
+    return QStringLiteral("%1/%2 (+https://github.com/smyhlin/Mikai-Ja-Nai)").arg(name, version);
 }
 
 namespace {
@@ -830,6 +834,12 @@ SearchResult MikaiClient::search(const AnimeQuery& query) const {
     if (query.year_from) params.insert(QStringLiteral("yearFrom"), QString::number(*query.year_from));
     if (query.year_to) params.insert(QStringLiteral("yearTo"), QString::number(*query.year_to));
     if (!query.teams.isEmpty()) params.insert(QStringLiteral("teams"), csv(query.teams));
+    if (query.licensed.has_value()) {
+        params.insert(QStringLiteral("licensed"),
+                      *query.licensed ? QStringLiteral("true") : QStringLiteral("false"));
+    }
+    addList(QStringLiteral("licenseHolders"), query.license_holders);
+    addList(QStringLiteral("licensePlatforms"), query.license_platforms);
     params.insert(QStringLiteral("genresMatch"), query.genres_match);
     params.insert(QStringLiteral("tagsMatch"), query.tags_match);
     params.insert(QStringLiteral("sort"), query.sort);
@@ -857,6 +867,12 @@ ApiMeta MikaiClient::getMeta() const {
     meta.anime_sort_fields = strings(result.value(QStringLiteral("animeSortFields")));
     meta.sort_orders = strings(result.value(QStringLiteral("sortOrders")));
     meta.match_modes = strings(result.value(QStringLiteral("matchModes")));
+    meta.release_kinds = strings(result.value(QStringLiteral("releaseKinds")));
+    meta.providers = strings(result.value(QStringLiteral("providers")));
+    meta.age_ratings = strings(result.value(QStringLiteral("ageRatings")));
+    meta.character_roles = strings(result.value(QStringLiteral("characterRoles")));
+    meta.list_statuses = strings(result.value(QStringLiteral("listStatuses")));
+    meta.api_key_levels = strings(result.value(QStringLiteral("apiKeyLevels")));
     return meta;
 }
 
@@ -895,10 +911,22 @@ QStringList MikaiClient::getStudios() const {
     return values;
 }
 
-TeamsResult MikaiClient::getTeams(const QString& search, int page, int limit) const {
+TeamsResult MikaiClient::getTeams(const QString& search, int page, int limit,
+                                  std::optional<bool> haveVoice, std::optional<bool> haveSubs,
+                                  const QString& sort, const QString& order) const {
     QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
                                   {QStringLiteral("limit"), QString::number(limit)}};
     if (!search.trimmed().isEmpty()) params.insert(QStringLiteral("search"), search.trimmed());
+    if (haveVoice.has_value()) {
+        params.insert(QStringLiteral("haveVoice"),
+                      *haveVoice ? QStringLiteral("true") : QStringLiteral("false"));
+    }
+    if (haveSubs.has_value()) {
+        params.insert(QStringLiteral("haveSubs"),
+                      *haveSubs ? QStringLiteral("true") : QStringLiteral("false"));
+    }
+    if (!sort.trimmed().isEmpty()) params.insert(QStringLiteral("sort"), sort.trimmed());
+    if (!order.trimmed().isEmpty()) params.insert(QStringLiteral("order"), order.trimmed());
     const QJsonObject payload = get(QStringLiteral("/teams"), params);
     TeamsResult result;
     // P1-07: checked numbers — out-of-range doubles fall back with a
@@ -943,11 +971,13 @@ SearchResult MikaiClient::browsePopular(int page, int limit) const {
     return search(query);
 }
 
-UpdatesResult MikaiClient::getUpdates(int page, int limit, const QString& since) const {
+UpdatesResult MikaiClient::getUpdates(int page, int limit, const QString& since,
+                                      const QString& order) const {
     QMap<QString, QString> params;
     params.insert(QStringLiteral("page"), QString::number(page));
     params.insert(QStringLiteral("limit"), QString::number(limit));
     if (!since.isEmpty()) params.insert(QStringLiteral("since"), since);
+    if (!order.trimmed().isEmpty()) params.insert(QStringLiteral("order"), order.trimmed());
     const QJsonObject payload = get(QStringLiteral("/updates"), params);
     UpdatesResult result;
     // P1-07: checked number (plan ground truth missed this second `total`
@@ -979,8 +1009,13 @@ ScheduleResult MikaiClient::getSchedule() const {
     return schedule;
 }
 
-AnimeDetail MikaiClient::getAnime(const QString& ref) const {
-    return parseDetail(get(QStringLiteral("/anime/") + ref).value(QStringLiteral("result")).toObject());
+AnimeDetail MikaiClient::getAnime(const QString& ref, const QStringList& include) const {
+    QMap<QString, QString> params;
+    if (!include.isEmpty()) {
+        params.insert(QStringLiteral("include"), include.join(QLatin1Char(',')));
+    }
+    return parseDetail(
+        get(QStringLiteral("/anime/") + ref, params).value(QStringLiteral("result")).toObject());
 }
 
 PlayerResult MikaiClient::getPlayer(const QString& ref) const {
@@ -1113,6 +1148,13 @@ QMap<QString, QVariant> MikaiClient::validateApiKey(const QString& candidateKey)
                            .toInt(authenticated ? kApiKeyedRequestsPerMinute
                                                 : kApiAnonymousRequestsPerMinute));
             out.insert(QStringLiteral("name"), payload.value(QStringLiteral("name")).toString());
+            if (payload.contains(QStringLiteral("level"))) {
+                out.insert(QStringLiteral("level"), payload.value(QStringLiteral("level")).toString());
+            }
+            if (payload.value(QStringLiteral("user")).isObject()) {
+                out.insert(QStringLiteral("user"),
+                           payload.value(QStringLiteral("user")).toObject().toVariantMap());
+            }
         } else {
             const QJsonObject error = data.value(QStringLiteral("error")).toObject();
             out.insert(QStringLiteral("valid"), false);

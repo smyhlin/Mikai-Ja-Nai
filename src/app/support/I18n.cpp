@@ -229,6 +229,39 @@ QString localizedApiError(const QString& code) {
     if (code == QStringLiteral("api_key_disabled")) {
         return QCoreApplication::translate("ApiErrors", "This API key has been disabled.");
     }
+    if (code == QStringLiteral("api_key_expired")) {
+        return QCoreApplication::translate("ApiErrors", "This API key has expired.");
+    }
+    if (code == QStringLiteral("api_key_required")) {
+        return QCoreApplication::translate("ApiErrors", "An API key is required for this request.");
+    }
+    if (code == QStringLiteral("insufficient_scope")) {
+        return QCoreApplication::translate("ApiErrors", "This API key does not have permission for this action.");
+    }
+    if (code == QStringLiteral("limit_reached")) {
+        return QCoreApplication::translate("ApiErrors", "The allowed item limit has been reached.");
+    }
+    if (code == QStringLiteral("not_in_list")) {
+        return QCoreApplication::translate("ApiErrors", "This title is not in your list.");
+    }
+    if (code == QStringLiteral("not_completed")) {
+        return QCoreApplication::translate("ApiErrors", "This action requires the title to be completed.");
+    }
+    if (code == QStringLiteral("invalid_client")) {
+        return QCoreApplication::translate("ApiErrors", "The application client identifier is invalid.");
+    }
+    if (code == QStringLiteral("authorization_pending")) {
+        return QCoreApplication::translate("ApiErrors", "Waiting for sign-in confirmation.");
+    }
+    if (code == QStringLiteral("slow_down")) {
+        return QCoreApplication::translate("ApiErrors", "Polling too fast; slowing down.");
+    }
+    if (code == QStringLiteral("expired_token")) {
+        return QCoreApplication::translate("ApiErrors", "The sign-in session has expired.");
+    }
+    if (code == QStringLiteral("access_denied")) {
+        return QCoreApplication::translate("ApiErrors", "Access was denied.");
+    }
     if (code == QStringLiteral("rate_limited")) {
         return QCoreApplication::translate("ApiErrors", "The request limit has been reached.");
     }

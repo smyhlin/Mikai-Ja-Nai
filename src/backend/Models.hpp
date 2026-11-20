@@ -98,6 +98,8 @@ struct Scores {
     int mikai_count = 0;
     std::optional<double> mal;
     int mal_count = 0;
+    std::optional<double> hikka;
+    int hikka_count = 0;
 };
 
 struct AnimeSummary {
@@ -120,6 +122,7 @@ struct SearchResult {
 // The feed entries let an episode arrive as a number or as a free-form string
 // ("OVA", "12.5"), so they keep the QVariant the JSON carried.
 struct AnimeUpdate {
+    QString release_id;
     AnimeSummary anime;
     QVector<Team> teams;
     QString team_name;
@@ -156,6 +159,7 @@ struct AnimeRelation {
 
 struct AnimeDetail {
     QString ref;
+    QString url;
     QMap<QString, QVariant> ids;
     Titles titles;
     QString description;
@@ -166,6 +170,8 @@ struct AnimeDetail {
     QString studio;
     QString country;
     QString age_rating;
+    qint64 views = 0;
+    QMap<QString, int> lists;
     EpisodeStats episodes;
     Scores scores;
     QVector<GenreTag> genres;
@@ -202,6 +208,9 @@ struct AnimeQuery {
     QStringList statuses;
     QStringList studios;
     QVector<qint64> teams;
+    std::optional<bool> licensed;
+    QStringList license_holders;
+    QStringList license_platforms;
     QString sort = QStringLiteral("name");
     QString order;
     int page = 1;
@@ -218,6 +227,12 @@ struct ApiMeta {
     QStringList anime_sort_fields;
     QStringList sort_orders;
     QStringList match_modes;
+    QStringList release_kinds;
+    QStringList providers;
+    QStringList age_ratings;
+    QStringList character_roles;
+    QStringList list_statuses;
+    QStringList api_key_levels;
 };
 
 struct TeamProfile {

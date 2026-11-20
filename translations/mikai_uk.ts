@@ -1707,6 +1707,50 @@
         <source>Too many title IDs were requested.</source>
         <translation>Запитано забагато ідентифікаторів тайтлів.</translation>
     </message>
+    <message>
+        <source>This API key has expired.</source>
+        <translation>Термін дії цього ключа API минув.</translation>
+    </message>
+    <message>
+        <source>An API key is required for this request.</source>
+        <translation>Для цього запиту потрібен ключ API.</translation>
+    </message>
+    <message>
+        <source>This API key does not have permission for this action.</source>
+        <translation>Цей ключ API не має дозволу на цю дію.</translation>
+    </message>
+    <message>
+        <source>The allowed item limit has been reached.</source>
+        <translation>Досягнуто дозволеного ліміту елементів.</translation>
+    </message>
+    <message>
+        <source>This title is not in your list.</source>
+        <translation>Цього тайтла немає у вашому списку.</translation>
+    </message>
+    <message>
+        <source>This action requires the title to be completed.</source>
+        <translation>Для цієї дії тайтл має бути завершений.</translation>
+    </message>
+    <message>
+        <source>The application client identifier is invalid.</source>
+        <translation>Недійсний ідентифікатор клієнта застосунку.</translation>
+    </message>
+    <message>
+        <source>Waiting for sign-in confirmation.</source>
+        <translation>Очікування підтвердження входу.</translation>
+    </message>
+    <message>
+        <source>Polling too fast; slowing down.</source>
+        <translation>Занадто часті запити; сповільнення опитування.</translation>
+    </message>
+    <message>
+        <source>The sign-in session has expired.</source>
+        <translation>Термін дії сесії входу минув.</translation>
+    </message>
+    <message>
+        <source>Access was denied.</source>
+        <translation>У доступі відмовлено.</translation>
+    </message>
 </context>
 <context>
     <name>CascadingMenu</name>
