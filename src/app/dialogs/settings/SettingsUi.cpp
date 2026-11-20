@@ -79,7 +79,7 @@ QString settingsStylesheet(const theme::Appearance& appearance) {
         QPushButton#radiusChip:hover { background-color: %{surfaceControlHover}; color: %{textStrong}; }
         QPushButton#radiusChip:checked {
             background-color: %{accentSolid};
-            color: %{textOnAccent};
+            color: %{accentInk};
             border-color: %{accentSolid};
             font-weight: 600;
         }
@@ -247,7 +247,7 @@ QString settingsStylesheet(const theme::Appearance& appearance) {
             border-radius: %{radiusSmall}px;
             padding: 5px 11px;
             selection-background-color: %{accentDeep};
-            selection-color: %{textOnAccent};
+            selection-color: %{accentInk};
         }
         QLineEdit:hover,
         QComboBox:hover,
@@ -276,7 +276,7 @@ QString settingsStylesheet(const theme::Appearance& appearance) {
             border-radius: %{radiusSmall}px;
             padding: 4px;
             selection-background-color: rgba(%{accentSolidRgb}, 0.28);
-            selection-color: %{textOnAccent};
+            selection-color: %{textStrong};
             outline: 0;
         }
 
@@ -301,7 +301,7 @@ QString settingsStylesheet(const theme::Appearance& appearance) {
         QPushButton:hover {
             background-color: rgba(%{accentRgb}, 0.12);
             border-color: rgba(%{accentRgb}, 0.38);
-            color: %{textOnAccent};
+            color: %{textStrong};
         }
         QPushButton:pressed {
             background-color: %{surfaceControlPressed};
@@ -310,7 +310,7 @@ QString settingsStylesheet(const theme::Appearance& appearance) {
         QPushButton:checked {
             background-color: rgba(%{accentRgb}, 0.14);
             border-color: %{accentSolid};
-            color: %{textOnAccent};
+            color: %{textStrong};
         }
         QPushButton:focus {
             border-color: %{accentFocus};
@@ -505,7 +505,7 @@ QString settingsStylesheet(const theme::Appearance& appearance) {
             border: 1px solid rgba(%{hairlineRgb}, 0.14);
             border-radius: %{radiusMedium}px;
             selection-background-color: rgba(%{accentSolidRgb}, 0.24);
-            selection-color: %{textOnAccent};
+            selection-color: %{textStrong};
             outline: 0;
         }
         QTableWidget#benchmarkResults QHeaderView::section {

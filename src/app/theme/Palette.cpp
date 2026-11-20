@@ -178,6 +178,8 @@ Palette paletteFor(const Appearance& appearance) {
     p.accent = hexOf(accent);
     p.accentHover = hexOf(hoverOf(accent, p.light));
     p.accentInk = hexOf(contrastText(accent));
+    p.textOnAccent = p.accentInk;
+
     p.accentSolid = p.accent;
     p.accentDeep = hexOf(p.light ? accent.darker(115) : accent.darker(112));
     p.accentDeepest = hexOf(p.light ? accent.darker(130) : accent.darker(122));

@@ -46,7 +46,7 @@ void ToggleSwitch::paintEvent(QPaintEvent*) {
 
     const double knob = height - 6.0;
     const double left = isChecked() ? track.right() - knob - 2.0 : track.left() + 2.0;
-    painter.setBrush(isChecked() ? QColor(Qt::white) : QColor(palette.muted));
+    painter.setBrush(isChecked() ? QColor(palette.accentInk) : QColor(palette.muted));
     painter.drawEllipse(QRectF(left, track.top() + 2.0, knob, knob));
 
     if (hasFocus()) {
