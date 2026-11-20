@@ -1,6 +1,23 @@
 # Release status
 
 Published packages, release-specific changes and checksums are available on the [GitHub releases page](https://github.com/smyhlin/Mikai-Ja-Nai/releases). The original [v0.1.0](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0) was followed by the [player and usability update](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0-update-20261101). Local rebuilds produce their own `SHA256SUMS`; a rebuild alone does not require a documentation update.
+
+### v0.2.3.1 hotfix published — 2026-11-21
+
+[Release v0.2.3.1](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.2.3.1) was tagged at `1cae547`, the Linux artifact revision. The Linux AppImage and tarball were rebuilt from `1cae547`; the Windows application payload identifies `21bd1c9`. The Windows packaging commits `80409dc` and `1cae547` updated the system-DLL import allowlist and installer file-version handling without changing the application payload. All six release assets were downloaded and the five product files matched the published `SHA256SUMS`.
+
+The release is unsigned, contains no Debian or Arch package, and was published at the user's direction while `publicReleaseReady` remains false. This publication does not clear third-party license, corresponding-source or redistribution obligations. Linux packages passed version, offscreen startup/runtime selection, shader-count and TLS-dependency checks; the Windows portable archive passed integrity checks and the installer passed an isolated Wine install/version/uninstall smoke. No full-suite, live playback/inference or native Windows clean-machine installation pass is claimed.
+
+| Artifact | Bytes | Built from | SHA-256 |
+|---|---:|---|---|
+| `mikai-0.2.3.1-windows-x64-setup.exe` | 62,953,873 | `21bd1c9` | `9edd8a1474dc9ad241f6b9e918fe102fc0b2639b3bf7460f2a1d9884e1f2d245` |
+| `mikai-0.2.3.1-windows-x64-portable.zip` | 84,806,254 | `21bd1c9` | `4ae1f2e52c10a7a61f16c93aa97b63b45deb8a41c3092dc6d6c8f6d1fad038ef` |
+| `mikai-0.2.3.1-windows-x64-release.json` | 86,238 | `21bd1c9` | `cfc62beb09b5ac68c8867c010311f73c91ff67d33d73c0ad9a0d77ad0ecf6b7b` |
+| `mikai-0.2.3.1-x86_64.AppImage` | 93,342,200 | `1cae547` | `074199c0140307af6997d0c6a7c2a00860c730982d9377fd1226da2e2d83f6c1` |
+| `mikai-0.2.3.1-linux-x86_64.tar.gz` | 48,310,834 | `1cae547` | `12f814e0cdc9bb6acf30b4c31482660139e6f6f5c2e7c849323dbbbd98fd1ead` |
+
+The 508-byte `SHA256SUMS` covers the five product files above; downloaded verification included the checksum file itself.
+
 The v0.2.3 release was published on 2026-11-20 at
 [GitHub](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.2.3), tagged at the newest
 Linux artifact revision, `d9e7522`. The Linux AppImage and tarball report that revision;
