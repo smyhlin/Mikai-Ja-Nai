@@ -70,7 +70,7 @@ if(EXISTS "${OUTPUT_DIR}" OR IS_SYMLINK "${OUTPUT_DIR}")
   message(FATAL_ERROR "Output already exists; choose a fresh directory: ${OUTPUT_DIR}")
 endif()
 
-include("${CMAKE_CURRENT_LIST_DIR}/../cmake/MikaiPatchelf.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/MikaiPatchelf.cmake")
 
 mikai_find_patchelf(
   "patchelf is required to give the copied Qt plugins a RUNPATH; install it and "
