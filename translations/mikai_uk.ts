@@ -6601,6 +6601,10 @@ Continue?</source>
         <translation>Відкрити відео за URL</translation>
     </message>
     <message>
+        <source>Clear history</source>
+        <translation>Очистити історію</translation>
+    </message>
+    <message>
         <location filename="../src/app/pages/MainWindow.cpp" line="398"/>
         <source>Open video file</source>
         <translation>Відкрити відеофайл</translation>

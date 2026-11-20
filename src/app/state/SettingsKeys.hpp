@@ -50,6 +50,10 @@ inline constexpr std::string_view kHomeRecentTitles = "home/recentTitles";
 // Watch history (WatchHistory.cpp).
 inline constexpr std::string_view kWatchHistoryKey = "title/watchHistory";
 
+// Open video by URL history (MainWindow.cpp).
+inline constexpr std::string_view kMediaOpenUrlHistory = "media/openUrlHistory";
+
+
 // Quality cache backing key (QualityCache.cpp).
 inline constexpr std::string_view kQualityUrls = "quality/urls";
 

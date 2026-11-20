@@ -45,6 +45,7 @@
 #include <QCheckBox>
 #include <QDesktopServices>
 #include <QCloseEvent>
+#include <QComboBox>
 #include <QKeyEvent>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -404,12 +405,87 @@ void MainWindow::chooseMediaFile() {
 }
 
 void MainWindow::chooseMediaUrl() {
-    bool accepted = false;
-    const QString source = QInputDialog::getText(
-        this, tr("Open video by URL"), tr("Video or stream URL:"), QLineEdit::Normal, {},
-        &accepted).trimmed();
-    if (accepted && !source.isEmpty()) {
-        openMedia(source);
+    constexpr int kMaxUrlHistory = 20;
+    const QString historyKey = QString::fromUtf8(kMediaOpenUrlHistory);
+
+    QSettings settings;
+    QStringList history = settings.value(historyKey).toStringList();
+    history.removeAll(QString());
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("Open video by URL"));
+    dialog.setMinimumWidth(480);
+
+    auto* layout = new QVBoxLayout(&dialog);
+    layout->setContentsMargins(16, 16, 16, 16);
+    layout->setSpacing(10);
+
+    auto* promptLabel = new QLabel(tr("Video or stream URL:"), &dialog);
+    layout->addWidget(promptLabel);
+
+    auto* combo = new QComboBox(&dialog);
+    combo->setEditable(true);
+    combo->setInsertPolicy(QComboBox::NoInsert);
+    combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    combo->setMaxVisibleItems(10);
+    combo->addItems(history);
+    combo->setCurrentIndex(-1);
+    combo->clearEditText();
+    if (QLineEdit* edit = combo->lineEdit()) {
+        edit->setPlaceholderText(QStringLiteral("https://…"));
+        edit->setClearButtonEnabled(true);
+    }
+    promptLabel->setBuddy(combo);
+    layout->addWidget(combo);
+
+    auto* footer = new QHBoxLayout();
+    auto* clearButton = new QPushButton(tr("Clear history"), &dialog);
+    clearButton->setEnabled(!history.isEmpty());
+    footer->addWidget(clearButton);
+    footer->addStretch(1);
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    QPushButton* okButton = buttons->button(QDialogButtonBox::Ok);
+    if (okButton != nullptr) {
+        okButton->setEnabled(false);
+    }
+    footer->addWidget(buttons);
+    layout->addLayout(footer);
+
+    connect(combo, &QComboBox::editTextChanged, &dialog, [okButton](const QString& text) {
+        if (okButton != nullptr) {
+            okButton->setEnabled(!text.trimmed().isEmpty());
+        }
+    });
+    connect(clearButton, &QPushButton::clicked, &dialog, [&history, combo, clearButton, historyKey] {
+        const QString current = combo->currentText();
+        history.clear();
+        combo->clear();
+        combo->setEditText(current);
+        clearButton->setEnabled(false);
+        QSettings store;
+        store.remove(historyKey);
+    });
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    combo->setFocus();
+    if (dialog.exec() != QDialog::Accepted) {
+        return;
+    }
+
+    const QString source = combo->currentText().trimmed();
+    if (source.isEmpty()) {
+        return;
+    }
+    if (openMedia(source)) {
+        history.removeAll(source);
+        history.prepend(source);
+        while (history.size() > kMaxUrlHistory) {
+            history.removeLast();
+        }
+        QSettings store;
+        store.setValue(historyKey, history);
     }
 }
 
