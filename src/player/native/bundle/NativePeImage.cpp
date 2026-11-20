@@ -117,7 +117,10 @@ PeImageInfo inspectPeImage(const QByteArray& bytes) {
         return refuse(QStringLiteral("optional header runs past the end of the file"));
     if (u16(bytes, optional) != kOptionalMagicPe32Plus)
         return refuse(QStringLiteral("optional header is not PE32+ (64-bit)"));
-    if (optionalSize < 112) return refuse(QStringLiteral("optional header has no data directories"));
+    constexpr qsizetype kMinOptionalSize =
+        kDataDirectoryStartOffset + qsizetype(kDirectoryEntryDelayImport + 1) * 8;
+    if (qsizetype(optionalSize) < kMinOptionalSize)
+        return refuse(QStringLiteral("optional header is too small to contain required data directories"));
 
     const qsizetype directories = optional + kDataDirectoryStartOffset;
     const quint64 imageBase = u64(bytes, optional + kImageBaseOffset);
