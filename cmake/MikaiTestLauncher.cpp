@@ -870,6 +870,13 @@ int stageAndRun(const QStringList& arguments, const QString& directory,
                      qPrintable(directory));
         return 2;
     }
+#ifdef Q_OS_LINUX
+    if (!QFile::setPermissions(executable, QFileInfo(arguments.at(1)).permissions())) {
+        std::fprintf(stderr, "[mikai_test_launcher] cannot preserve test executable permissions in %s\n",
+                     qPrintable(directory));
+        return 2;
+    }
+#endif
 #ifdef Q_OS_WIN
     if (!stageToolchainRuntime(toolchainBinDir, directory)) {
         std::fprintf(stderr, "[mikai_test_launcher] cannot stage the toolchain MinGW runtime in %s\n",
