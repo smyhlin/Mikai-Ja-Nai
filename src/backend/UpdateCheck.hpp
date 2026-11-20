@@ -12,6 +12,11 @@ namespace mikai::backend {
 
 enum class UpdateCheckStatus { UpdateAvailable, UpToDate, Failed };
 
+enum class UpdateChannel { Stable, Nightly };
+
+UpdateChannel parseUpdateChannel(const QString& value);
+QString updateChannelName(UpdateChannel channel);
+
 enum class InstallKind {
     WindowsInstaller,
     WindowsPortable,
@@ -33,6 +38,8 @@ struct UpdateCheckResult {
     QUrl releaseUrl;
     QString tagName;
     QVector<UpdateAsset> assets;
+    bool isPrerelease = false;
+    QString commitSha;
 };
 
 struct StagedUpdate {
@@ -44,11 +51,17 @@ struct StagedUpdate {
 };
 
 // Blocking network access: call only from a worker thread.
-UpdateCheckResult checkForUpdates(const QString& currentVersion);
+UpdateCheckResult checkForUpdates(const QString& currentVersion,
+                                  UpdateChannel channel = UpdateChannel::Stable,
+                                  const QString& currentBuildRevision = {},
+                                  bool allowChannelSwitch = false);
 
-// Deterministic parser used by tests and the network implementation.
+// Deterministic parsers used by tests and the network implementation.
 UpdateCheckResult parseLatestReleaseResponse(const QByteArray& response,
                                             const QString& currentVersion);
+UpdateCheckResult parseNightlyReleaseResponse(const QByteArray& response,
+                                              const QString& currentBuildRevision,
+                                              bool allowChannelSwitch = false);
 
 // Detect how the current binary was installed so we only self-update writable
 // installs and refuse to overwrite system-managed packages (/usr, /opt, etc.).

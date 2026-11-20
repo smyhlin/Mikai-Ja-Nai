@@ -379,6 +379,22 @@ QWidget* SettingsDialog::buildGeneralTab() {
         QSettings().value(QString::fromLatin1(kUpdateAutoDownloadEnabled), false).toBool());
     hdrLayout->addWidget(updateAutoDownload_);
 
+    auto* channelRow = new QHBoxLayout();
+    channelRow->setSpacing(theme::kSpacingSmall);
+    updateChannelLabel_ = new QLabel(tr("Release channel"), hdrCard);
+    updateChannel_ = new QComboBox(hdrCard);
+    updateChannel_->setObjectName(QStringLiteral("updateChannelCombo"));
+    polishInteractiveControl(updateChannel_, theme::kSettingsControlSize);
+    updateChannel_->addItem(tr("Stable"), QStringLiteral("stable"));
+    updateChannel_->addItem(tr("Nightly (experimental)"), QStringLiteral("nightly"));
+    const QString storedChannel =
+        QSettings().value(QString::fromLatin1(kUpdateChannel), QStringLiteral("stable")).toString();
+    const int channelIdx = updateChannel_->findData(storedChannel);
+    updateChannel_->setCurrentIndex(channelIdx >= 0 ? channelIdx : 0);
+    channelRow->addWidget(updateChannelLabel_);
+    channelRow->addWidget(updateChannel_, 1);
+    hdrLayout->addLayout(channelRow);
+
     updateNotificationsHint_ = new QLabel(
         tr("Checks for newer releases on GitHub and verifies SHA-256 checksums before applying any update."),
         hdrCard);
@@ -799,6 +815,16 @@ void SettingsDialog::retranslateGeneralTab() {
     if (updateAutoDownload_ != nullptr) {
         updateAutoDownload_->setText(tr("Download verified updates automatically"));
     }
+    if (updateChannelLabel_ != nullptr) {
+        updateChannelLabel_->setText(tr("Release channel"));
+    }
+    if (updateChannel_ != nullptr) {
+        const int stableIdx = updateChannel_->findData(QStringLiteral("stable"));
+        if (stableIdx >= 0) updateChannel_->setItemText(stableIdx, tr("Stable"));
+        const int nightlyIdx = updateChannel_->findData(QStringLiteral("nightly"));
+        if (nightlyIdx >= 0) updateChannel_->setItemText(nightlyIdx, tr("Nightly (experimental)"));
+    }
+
     updateNotificationsHint_->setText(
         tr("Checks for newer releases on GitHub and verifies SHA-256 checksums before applying any update."));
     playbackTitle_->setText(tr("HDR playback"));

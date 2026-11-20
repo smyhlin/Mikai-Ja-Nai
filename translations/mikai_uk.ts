@@ -8736,6 +8736,30 @@ Active: %1 · queued: %2</source>
         <translation>Автоматично завантажувати перевірені оновлення</translation>
     </message>
     <message>
+        <source>Release channel</source>
+        <translation>Канал оновлень</translation>
+    </message>
+    <message>
+        <source>Stable</source>
+        <translation>Стабільний</translation>
+    </message>
+    <message>
+        <source>Nightly (experimental)</source>
+        <translation>Нічний (експериментальний)</translation>
+    </message>
+    <message>
+        <source>Change release channel</source>
+        <translation>Змінити канал оновлень</translation>
+    </message>
+    <message>
+        <source>Nightly builds contain the latest unreleased changes and may be less stable than stable releases. Switch to Nightly and check for an immediate update?</source>
+        <translation>Нічні збірки містять найновіші невипущені зміни та можуть бути менш стабільними за стабільні релізи. Перемкнутися на «Нічний» канал і негайно перевірити оновлення?</translation>
+    </message>
+    <message>
+        <source>Switching back to the Stable channel will check for the latest stable release and install it (downgrading if needed). Continue?</source>
+        <translation>Повернення на «Стабільний» канал перевірить останній стабільний реліз і встановить його (зі зниженням версії за потреби). Продовжити?</translation>
+    </message>
+    <message>
         <source>Checks for newer releases on GitHub and verifies SHA-256 checksums before applying any update.</source>
         <translation>Перевіряє нові релізи на GitHub і перевіряє контрольні суми SHA-256 перед встановленням оновлення.</translation>
     </message>

@@ -1,0 +1,110 @@
+name: Build and publish nightly prerelease
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Publish even if main has not moved since the last nightly
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-build
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check if main has new commits
+    runs-on: ubuntu-24.04
+    outputs:
+      should_build: ${{ steps.diff.outputs.should_build }}
+      commit: ${{ steps.diff.outputs.commit }}
+      short_sha: ${{ steps.diff.outputs.short_sha }}
+      stamp: ${{ steps.diff.outputs.stamp }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Compare HEAD with existing nightly tag
+        id: diff
+        env:
+          FORCE_BUILD: ${{ inputs.force || 'false' }}
+        run: |
+          HEAD_SHA="$(git rev-parse HEAD)"
+          SHORT_SHA="$(git rev-parse --short=7 HEAD)"
+          STAMP="$(date -u +%Y%m%d)"
+          LAST_NIGHTLY="$(git rev-list -n 1 nightly 2>/dev/null || true)"
+          echo "commit=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+          echo "stamp=$STAMP" >> "$GITHUB_OUTPUT"
+          if [ "$FORCE_BUILD" = "true" ] || [ -z "$LAST_NIGHTLY" ] || [ "$HEAD_SHA" != "$LAST_NIGHTLY" ]; then
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: check
+    if: needs.check.outputs.should_build == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      source-ref: ${{ needs.check.outputs.commit }}
+
+  publish:
+    name: Publish rolling nightly prerelease
+    needs: [check, build]
+    if: needs.check.outputs.should_build == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          ref: ${{ needs.check.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: mikai-*
+          path: collected
+      - name: Collect nightly packages and generate SHA256SUMS
+        id: stage
+        run: |
+          mkdir -p nightly-artifacts
+          find collected -type f \( -name '*.AppImage' -o -name '*.tar.gz' -o -name '*.exe' -o -name '*.zip' \) -exec cp -f {} nightly-artifacts/ \;
+          (cd nightly-artifacts && sha256sum * > SHA256SUMS)
+          ls -la nightly-artifacts
+      - name: Publish or update rolling nightly prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          COMMIT_SHA: ${{ needs.check.outputs.commit }}
+          SHORT_SHA: ${{ needs.check.outputs.short_sha }}
+          STAMP: ${{ needs.check.outputs.stamp }}
+        run: |
+          NOTES="Automated nightly build from \`main\` commit \`${SHORT_SHA}\` (${STAMP} UTC).
+
+          > **Experimental channel:** Nightly builds include the latest unreleased changes and may be less stable than stable releases."
+          if gh release view nightly >/dev/null 2>&1; then
+            gh release edit nightly \
+              --target "$COMMIT_SHA" \
+              --title "Nightly ${STAMP}-${SHORT_SHA}" \
+              --notes "$NOTES" \
+              --prerelease
+            gh release upload nightly nightly-artifacts/* --clobber
+          else
+            gh release create nightly nightly-artifacts/* \
+              --target "$COMMIT_SHA" \
+              --title "Nightly ${STAMP}-${SHORT_SHA}" \
+              --notes "$NOTES" \
+              --prerelease
+          fi

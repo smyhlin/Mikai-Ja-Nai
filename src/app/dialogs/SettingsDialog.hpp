@@ -179,6 +179,8 @@ public:
 signals:
     /// The viewer navigated to the Components tab.
     void componentsTabOpened(SettingsDialog* dialog);
+    /// The viewer changed the release channel (stable <-> nightly) and confirmed.
+    void updateChannelChanged(const QString& channel);
 
     /// The engine build the Processing tab started, forwarded so a surface that
     /// outlives this dialog - the player's preparation window - can follow it.
@@ -533,6 +535,8 @@ private:
     QLabel* languageHint_ = nullptr;
     QCheckBox* updateNotifications_ = nullptr;
     QCheckBox* updateAutoDownload_ = nullptr;
+    QLabel* updateChannelLabel_ = nullptr;
+    QComboBox* updateChannel_ = nullptr;
     QLabel* updateNotificationsHint_ = nullptr;
     QLabel* presetsHeading_ = nullptr;
     QLabel* presetsDescription_ = nullptr;

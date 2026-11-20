@@ -22,7 +22,13 @@ namespace mikai::backend {
 namespace {
 
 constexpr auto kLatestReleaseEndpoint = "https://api.github.com/repos/smyhlin/Mikai-Ja-Nai/releases/latest";
+constexpr auto kNightlyReleaseEndpoint = "https://api.github.com/repos/smyhlin/Mikai-Ja-Nai/releases/tags/nightly";
 constexpr int kTimeoutMs = 10000;
+
+bool isSafeAssetName(const QString& name) {
+    static const QRegularExpression pattern(QStringLiteral("^[A-Za-z0-9][A-Za-z0-9._+-]*$"));
+    return pattern.match(name).hasMatch();
+}
 
 bool parseVersion(QString value, int (&parts)[3], QString* canonical = nullptr, bool requireV = false) {
     if (value.startsWith(QLatin1Char('v'))) {
@@ -104,10 +110,99 @@ UpdateCheckResult parseLatestReleaseResponse(const QByteArray& response, const Q
     return out;
 }
 
-UpdateCheckResult checkForUpdates(const QString& currentVersion) {
-    int parsed[3]{};
-    if (!parseVersion(currentVersion, parsed)) return {};
-    QNetworkRequest request{QUrl(QString::fromLatin1(kLatestReleaseEndpoint))};
+UpdateChannel parseUpdateChannel(const QString& value) {
+    return value.trimmed().compare(QLatin1String("nightly"), Qt::CaseInsensitive) == 0
+               ? UpdateChannel::Nightly
+               : UpdateChannel::Stable;
+}
+
+QString updateChannelName(UpdateChannel channel) {
+    return channel == UpdateChannel::Nightly ? QStringLiteral("nightly")
+                                             : QStringLiteral("stable");
+}
+
+UpdateCheckResult parseNightlyReleaseResponse(const QByteArray& response,
+                                              const QString& currentBuildRevision,
+                                              bool allowChannelSwitch) {
+    QJsonParseError error;
+    const QJsonDocument document = QJsonDocument::fromJson(response, &error);
+    if (error.error != QJsonParseError::NoError || !document.isObject()) return {};
+    const QJsonObject release = document.object();
+    if (!release.value(QStringLiteral("draft")).isBool() ||
+        !release.value(QStringLiteral("prerelease")).isBool() ||
+        !release.value(QStringLiteral("tag_name")).isString() ||
+        !release.value(QStringLiteral("html_url")).isString()) {
+        return {};
+    }
+    if (release.value(QStringLiteral("draft")).toBool() ||
+        !release.value(QStringLiteral("prerelease")).toBool()) {
+        return {};
+    }
+    const QString tag = release.value(QStringLiteral("tag_name")).toString().trimmed();
+    if (tag != QLatin1String("nightly")) return {};
+
+    const QUrl releaseUrl(release.value(QStringLiteral("html_url")).toString(), QUrl::StrictMode);
+    if (!releaseUrl.isValid() || releaseUrl.scheme() != QLatin1String("https") ||
+        releaseUrl.host() != QLatin1String("github.com") || releaseUrl.port() != -1 ||
+        !releaseUrl.userName().isEmpty() || !releaseUrl.password().isEmpty() ||
+        !releaseUrl.query().isEmpty() || !releaseUrl.fragment().isEmpty() ||
+        releaseUrl.path() != QLatin1String("/smyhlin/Mikai-Ja-Nai/releases/tag/nightly")) {
+        return {};
+    }
+
+    QVector<UpdateAsset> assets;
+    const QJsonArray rawAssets = release.value(QStringLiteral("assets")).toArray();
+    for (const QJsonValue& item : rawAssets) {
+        const QJsonObject obj = item.toObject();
+        const QString name = obj.value(QStringLiteral("name")).toString().trimmed();
+        const QUrl downloadUrl(
+            obj.value(QStringLiteral("browser_download_url")).toString().trimmed(),
+            QUrl::StrictMode);
+        const qint64 size = obj.value(QStringLiteral("size")).toVariant().toLongLong();
+        if (name.isEmpty() || !downloadUrl.isValid() ||
+            downloadUrl.scheme() != QLatin1String("https") ||
+            downloadUrl.host() != QLatin1String("github.com") ||
+            !downloadUrl.path().startsWith(QStringLiteral("/smyhlin/Mikai-Ja-Nai/releases/download/nightly/"))) {
+            continue;
+        }
+        assets.append(UpdateAsset{name, downloadUrl, size});
+    }
+
+    QString commitSha = release.value(QStringLiteral("target_commitish")).toString().trimmed();
+    const QString title = release.value(QStringLiteral("name")).toString().trimmed();
+    static const QRegularExpression shaPattern(QStringLiteral("([0-9a-fA-F]{7,40})"));
+    if (commitSha.isEmpty() || commitSha == QLatin1String("main")) {
+        const auto match = shaPattern.match(title);
+        if (match.hasMatch()) commitSha = match.captured(1);
+    }
+    const QString shortRemote = commitSha.left(7).toLower();
+    const QString shortLocal = currentBuildRevision.trimmed().left(7).toLower();
+    const bool sameCommit = !shortRemote.isEmpty() && !shortLocal.isEmpty() && shortRemote == shortLocal;
+
+    UpdateCheckResult out;
+    out.status = (allowChannelSwitch || !sameCommit) ? UpdateCheckStatus::UpdateAvailable
+                                                     : UpdateCheckStatus::UpToDate;
+    out.version = title.isEmpty()
+                      ? (shortRemote.isEmpty() ? QStringLiteral("nightly")
+                                               : QStringLiteral("nightly-%1").arg(shortRemote))
+                      : title;
+    out.releaseUrl = releaseUrl;
+    out.tagName = tag;
+    out.assets = std::move(assets);
+    out.isPrerelease = true;
+    out.commitSha = shortRemote;
+    return out;
+}
+
+UpdateCheckResult checkForUpdates(const QString& currentVersion, UpdateChannel channel,
+                                  const QString& currentBuildRevision, bool allowChannelSwitch) {
+    if (channel == UpdateChannel::Stable) {
+        int parsed[3]{};
+        if (!parseVersion(currentVersion, parsed)) return {};
+    }
+    const char* endpoint = channel == UpdateChannel::Nightly ? kNightlyReleaseEndpoint
+                                                             : kLatestReleaseEndpoint;
+    QNetworkRequest request{QUrl(QString::fromLatin1(endpoint))};
     request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("Mikai-Ja-Nai update checker"));
     request.setRawHeader("Accept", "application/vnd.github+json");
     request.setTransferTimeout(kTimeoutMs);
@@ -116,7 +211,14 @@ UpdateCheckResult checkForUpdates(const QString& currentVersion) {
     options.maxResponseBytes = 256 * 1024;
     const HttpFetchResult response = runBlockingFetch(transportManagerForThread(), request, options);
     if (response.cancelled || response.timedOut || response.responseTooLarge || response.status != 200) return {};
-    return parseLatestReleaseResponse(response.body, currentVersion);
+    if (channel == UpdateChannel::Nightly) {
+        return parseNightlyReleaseResponse(response.body, currentBuildRevision, allowChannelSwitch);
+    }
+    UpdateCheckResult stable = parseLatestReleaseResponse(response.body, currentVersion);
+    if (allowChannelSwitch && stable.status == UpdateCheckStatus::UpToDate) {
+        stable.status = UpdateCheckStatus::UpdateAvailable;
+    }
+    return stable;
 }
 
 InstallKind detectInstallKind(const QString& applicationFilePath, const QString& appImageEnv) {
@@ -170,6 +272,7 @@ bool isSelfUpdatable(InstallKind kind) {
 
 std::optional<UpdateAsset> selectUpdateAsset(const QVector<UpdateAsset>& assets, InstallKind kind) {
     for (const UpdateAsset& asset : assets) {
+        if (!isSafeAssetName(asset.name)) continue;
         const QString lower = asset.name.toLower();
         switch (kind) {
             case InstallKind::LinuxAppImage:

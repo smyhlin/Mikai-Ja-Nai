@@ -872,22 +872,26 @@ void MainWindow::ensureNativeComponents() {
     resumePlaybackAfterComponentAsk();
 }
 
-void MainWindow::checkForUpdates(bool manual) {
+void MainWindow::checkForUpdates(bool manual, bool forceChannelSwitch) {
     if (updateCheckInFlight_) {
         updateCheckManualRequested_ = updateCheckManualRequested_ || manual;
         return;
     }
     updateCheckInFlight_ = true;
     updateCheckManualRequested_ = manual;
+    const backend::UpdateChannel channel = backend::parseUpdateChannel(
+        QSettings().value(QString::fromLatin1(kUpdateChannel), QStringLiteral("stable")).toString());
     const auto alive = updateCheckAlive_;
     runner_->run(
-        [] {
-            const backend::UpdateCheckResult checked =
-                backend::checkForUpdates(QStringLiteral(MIKAI_PROJECT_VERSION));
+        [channel, forceChannelSwitch] {
+            const backend::UpdateCheckResult checked = backend::checkForUpdates(
+                QStringLiteral(MIKAI_PROJECT_VERSION), channel,
+                QStringLiteral(MIKAI_BUILD_REVISION), forceChannelSwitch);
             QVariantMap value;
             value.insert(QStringLiteral("status"), static_cast<int>(checked.status));
             value.insert(QStringLiteral("version"), checked.version);
             value.insert(QStringLiteral("url"), checked.releaseUrl);
+            value.insert(QStringLiteral("forceSwitch"), forceChannelSwitch);
             return value;
         },
         [this, alive](const QVariant& value) {
@@ -907,10 +911,12 @@ void MainWindow::checkForUpdates(bool manual) {
                     if (manual || settings.value(
                             QString::fromLatin1(kUpdateNotificationsDismissedVersion))
                                       .toString() != version) {
-                        if (!manual &&
-                            settings.value(QString::fromLatin1(kUpdateAutoDownloadEnabled), false).toBool() &&
+                        const bool forceSwitch = value.toMap().value(QStringLiteral("forceSwitch")).toBool();
+                        if ((forceSwitch ||
+                             (!manual &&
+                              settings.value(QString::fromLatin1(kUpdateAutoDownloadEnabled), false).toBool())) &&
                             backend::isSelfUpdatable(backend::detectInstallKind())) {
-                            startUpdateDownload(version, url);
+                            startUpdateDownload(version, url, forceSwitch);
                         } else {
                             showUpdateResult(QStringLiteral("available"), version, url, manual);
                         }
@@ -982,7 +988,10 @@ void MainWindow::showUpdateResult(const QString& status, const QString& version,
     dialog->show();
 }
 
-void MainWindow::startUpdateDownload(const QString& version, const QUrl& releaseUrl) {
+void MainWindow::startUpdateDownload(const QString& version, const QUrl& releaseUrl,
+                                     bool forceChannelSwitch) {
+    const backend::UpdateChannel channel = backend::parseUpdateChannel(
+        QSettings().value(QString::fromLatin1(kUpdateChannel), QStringLiteral("stable")).toString());
     const auto kind = backend::detectInstallKind();
     if (!backend::isSelfUpdatable(kind)) {
         QMessageBox::information(
@@ -1001,9 +1010,10 @@ void MainWindow::startUpdateDownload(const QString& version, const QUrl& release
     const auto alive = updateCheckAlive_;
     QPointer<QProgressDialog> progressGuard(progress);
     runner_->run(
-        [kind, progressGuard] {
-            const backend::UpdateCheckResult latest =
-                backend::checkForUpdates(QStringLiteral(MIKAI_PROJECT_VERSION));
+        [kind, progressGuard, channel, forceChannelSwitch] {
+            const backend::UpdateCheckResult latest = backend::checkForUpdates(
+                QStringLiteral(MIKAI_PROJECT_VERSION), channel,
+                QStringLiteral(MIKAI_BUILD_REVISION), forceChannelSwitch);
             backend::StagedUpdate staged;
             QString error;
             const bool ok = backend::downloadAndVerifyUpdate(
@@ -1342,6 +1352,8 @@ void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettin
     SettingsDialog dialog(client_, *runner_, this, componentsTab_);
     settingsDialog_ = &dialog;
     dialog.setComponentProvisioner(componentProvisioner_);
+    connect(&dialog, &SettingsDialog::updateChannelChanged, this,
+            [this](const QString&) { checkForUpdates(/*manual=*/true, /*forceChannelSwitch=*/true); });
     connect(&dialog, &SettingsDialog::componentsTabOpened, this,
             [this](SettingsDialog* settings) {
                 if (componentsTab_ == nullptr) return;

@@ -9,6 +9,8 @@ private slots:
     void rejectsMalformedAndUnsafeResponses();
     void ignoresPrereleaseAndDrafts();
   void parsesReleaseAssetsAndSha256Sums();
+  void parsesNightlyPrereleaseAndChannelSwitch();
+
 
 };
 

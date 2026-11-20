@@ -94,10 +94,11 @@ private:
     /// keeps its own dismiss timer.
     void restateEnginePreparation();
 
-    void checkForUpdates(bool manual);
+    void checkForUpdates(bool manual, bool forceChannelSwitch = false);
     void showUpdateResult(const QString& status, const QString& version,
                           const QUrl& releaseUrl, bool manual);
-    void startUpdateDownload(const QString& version, const QUrl& releaseUrl);
+    void startUpdateDownload(const QString& version, const QUrl& releaseUrl,
+                             bool forceChannelSwitch = false);
     void openSettings();
     /// Opens Settings on the Components tab, landing on the element the startup
     /// prompt warned about. Plain dialog, no intent: nothing is armed.

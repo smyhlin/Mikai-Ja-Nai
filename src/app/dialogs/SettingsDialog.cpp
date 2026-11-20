@@ -40,6 +40,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QLocale>
 #include <QPushButton>
 #include <QScrollArea>
@@ -624,6 +625,26 @@ void SettingsDialog::save() {
     if (updateAutoDownload_ != nullptr) {
         settings.setValue(QString::fromLatin1(kUpdateAutoDownloadEnabled),
                           updateAutoDownload_->isChecked());
+    }
+    QString switchedChannel;
+    if (updateChannel_ != nullptr) {
+        const QString previousChannel =
+            settings.value(QString::fromLatin1(kUpdateChannel), QStringLiteral("stable")).toString();
+        const QString selectedChannel = updateChannel_->currentData().toString();
+        if (!selectedChannel.isEmpty() && selectedChannel != previousChannel) {
+            const QString prompt =
+                selectedChannel == QLatin1String("nightly")
+                    ? tr("Nightly builds contain the latest unreleased changes and may be less stable than stable releases. Switch to Nightly and check for an immediate update?")
+                    : tr("Switching back to the Stable channel will check for the latest stable release and install it (downgrading if needed). Continue?");
+            const auto confirm = QMessageBox::question(
+                this, tr("Change release channel"), prompt,
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+            if (confirm == QMessageBox::Yes) {
+                settings.setValue(QString::fromLatin1(kUpdateChannel), selectedChannel);
+                switchedChannel = selectedChannel;
+                emit updateChannelChanged(switchedChannel);
+            }
+        }
     }
 
     using HdrPolicy = mplayer::VideoSession::HdrToneMappingPolicy;

@@ -63,6 +63,8 @@ inline constexpr std::string_view kUpdateNotificationsLastChecked = "updates/las
 inline constexpr std::string_view kUpdateNotificationsDismissedVersion =
     "updates/dismissedVersion";
 inline constexpr std::string_view kUpdateAutoDownloadEnabled = "updates/autoDownload";
+inline constexpr std::string_view kUpdateChannel = "updates/channel";
+
 
 
 // Interface language (I18n.hpp; kept name so existing users, including

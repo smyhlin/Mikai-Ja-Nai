@@ -62,6 +62,13 @@ void TestUpdateCheck::parsesReleaseAssetsAndSha256Sums() {
     const auto appImg = mikai::backend::selectUpdateAsset(parsed.assets, mikai::backend::InstallKind::LinuxAppImage);
     QVERIFY(appImg.has_value());
     QCOMPARE(appImg->name, QStringLiteral("Mikai-1.5.0-x86_64.AppImage"));
+    const QVector<mikai::backend::UpdateAsset> unsafeAssets{
+        {QStringLiteral("../../payload.AppImage"), QUrl(QStringLiteral("https://github.com/x")), 10},
+        {QStringLiteral("..\\\\payload.AppImage"), QUrl(QStringLiteral("https://github.com/x")), 10},
+    };
+    QVERIFY(!mikai::backend::selectUpdateAsset(
+                 unsafeAssets, mikai::backend::InstallKind::LinuxAppImage).has_value());
+
     const auto sums = mikai::backend::findChecksumsAsset(parsed.assets);
     QVERIFY(sums.has_value());
     const QByteArray sumText =
@@ -70,6 +77,27 @@ void TestUpdateCheck::parsesReleaseAssetsAndSha256Sums() {
              QStringLiteral("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"));
     QCOMPARE(mikai::backend::detectInstallKind(QStringLiteral("/usr/bin/mikai"), QString()),
              mikai::backend::InstallKind::SystemPackage);
+}
+
+void TestUpdateCheck::parsesNightlyPrereleaseAndChannelSwitch() {
+    const QByteArray json =
+        R"({"tag_name":"nightly","name":"Nightly 20261120-abcdef1","target_commitish":"abcdef1234567890","html_url":"https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/nightly","draft":false,"prerelease":true,"assets":[)"
+        R"({"name":"Mikai-nightly-x86_64.AppImage","size":2048,"browser_download_url":"https://github.com/smyhlin/Mikai-Ja-Nai/releases/download/nightly/Mikai-nightly-x86_64.AppImage"},)"
+        R"({"name":"SHA256SUMS","size":128,"browser_download_url":"https://github.com/smyhlin/Mikai-Ja-Nai/releases/download/nightly/SHA256SUMS"}]})";
+    const auto newerNightly =
+        mikai::backend::parseNightlyReleaseResponse(json, QStringLiteral("1111111"), false);
+    QCOMPARE(newerNightly.status, UpdateCheckStatus::UpdateAvailable);
+    QVERIFY(newerNightly.isPrerelease);
+    QCOMPARE(newerNightly.commitSha, QStringLiteral("abcdef1"));
+    QCOMPARE(newerNightly.assets.size(), 2);
+
+    const auto sameNightly =
+        mikai::backend::parseNightlyReleaseResponse(json, QStringLiteral("abcdef1"), false);
+    QCOMPARE(sameNightly.status, UpdateCheckStatus::UpToDate);
+
+    const auto forcedSwitch =
+        mikai::backend::parseNightlyReleaseResponse(json, QStringLiteral("abcdef1"), true);
+    QCOMPARE(forcedSwitch.status, UpdateCheckStatus::UpdateAvailable);
 }
 
 int runTestUpdateCheck(int argc, char** argv) {
