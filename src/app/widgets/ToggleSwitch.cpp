@@ -34,7 +34,9 @@ void ToggleSwitch::paintEvent(QPaintEvent*) {
 
     const int height = theme::kSettingsSwitchHeight;
     const int width = theme::kSettingsSwitchWidth;
-    const QRectF track(0.5, 0.5, width - 1.0, height - 1.0);
+    // Inset by 2 px so the 1.5 px focus ring drawn outside the track never clips
+    // against the widget's bounding rect.
+    const QRectF track(2.0, 2.0, width - 4.0, height - 4.0);
     const QColor off = QColor(palette.surfaceActive);
     const QColor on = palette.accentValue;
     QColor fill = isChecked() ? on : off;
@@ -44,7 +46,7 @@ void ToggleSwitch::paintEvent(QPaintEvent*) {
     painter.setBrush(fill);
     painter.drawRoundedRect(track, track.height() / 2.0, track.height() / 2.0);
 
-    const double knob = height - 6.0;
+    const double knob = track.height() - 4.0;
     const double left = isChecked() ? track.right() - knob - 2.0 : track.left() + 2.0;
     painter.setBrush(isChecked() ? QColor(palette.accentInk) : QColor(palette.muted));
     painter.drawEllipse(QRectF(left, track.top() + 2.0, knob, knob));

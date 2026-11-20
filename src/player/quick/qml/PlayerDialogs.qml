@@ -625,50 +625,93 @@ Item {
         }
     }
 
-    PlayerPanel {
-        id: remedyPanel
+    FocusScope {
+        id: remedyLayer
+        anchors.fill: parent
         visible: root.remediesVisible
         enabled: visible
         z: 10
-        controller: root.controller
-        title: qsTr("Processing stopped")
-        padding: 16
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: Math.max(24, Math.min(root.height * 0.16, 140))
-        width: Math.min(Math.max(0, root.width - 32), 520)
+        focus: visible && !root.modalVisible
 
-        ColumnLayout {
-            width: parent.width
-            spacing: 10
+        Accessible.role: Accessible.Dialog
+        Accessible.name: qsTr("Processing stopped")
 
-            Label {
-                Layout.fillWidth: true
-                visible: text !== ""
-                text: root.remedyMessage
-                color: root.textColor
-                font.pixelSize: 13
-                wrapMode: Text.WordWrap
+        function focusFirstRemedy() {
+            for (let i = 0; i < remedyRepeater.count; ++i) {
+                const item = remedyRepeater.itemAt(i)
+                if (item && item.visible && item.enabled) {
+                    item.forceActiveFocus()
+                    return
+                }
             }
+            remedyLayer.forceActiveFocus()
+        }
 
-            Flow {
-                Layout.fillWidth: true
-                layoutDirection: Qt.RightToLeft
-                spacing: 8
+        function dismissToOriginal() {
+            for (let i = remedyRepeater.count - 1; i >= 0; --i) {
+                const item = remedyRepeater.itemAt(i)
+                if (item && item.visible && item.enabled) {
+                    root.controller.activateMenuRow("remedies", i)
+                    return true
+                }
+            }
+            return false
+        }
 
-                Repeater {
-                    model: root.controller.remedyMenu
+        onVisibleChanged: {
+            if (visible && !root.modalVisible) Qt.callLater(() => focusFirstRemedy())
+        }
 
-                    delegate: PlayerButton {
-                        id: remedyButton
-                        required property var model
-                        required property int index
-                        controller: root.controller
-                        visible: remedyButton.model.heading !== true
-                        text: remedyButton.model.label
-                        toolTip: remedyButton.model.tooltip
-                        enabled: visible && remedyButton.model.enabled !== false
-                        onClicked: root.controller.activateMenuRow("remedies", remedyButton.index)
+        Keys.onEscapePressed: event => {
+            if (dismissToOriginal()) {
+                event.accepted = true
+            }
+        }
+
+        PlayerPanel {
+            id: remedyPanel
+            visible: true
+            controller: root.controller
+            title: qsTr("Processing stopped")
+            padding: 16
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: Math.max(24, Math.min(root.height * 0.16, 140))
+            width: Math.min(Math.max(0, root.width - 32), 520)
+
+            ColumnLayout {
+                width: parent.width
+                spacing: 10
+
+                Label {
+                    Layout.fillWidth: true
+                    visible: text !== ""
+                    text: root.remedyMessage
+                    color: root.textColor
+                    font.pixelSize: 13
+                    wrapMode: Text.WordWrap
+                }
+
+                Flow {
+                    Layout.fillWidth: true
+                    layoutDirection: Qt.RightToLeft
+                    spacing: 8
+
+                    Repeater {
+                        id: remedyRepeater
+                        model: root.controller.remedyMenu
+
+                        delegate: PlayerButton {
+                            id: remedyButton
+                            required property var model
+                            required property int index
+                            controller: root.controller
+                            visible: remedyButton.model.heading !== true
+                            text: remedyButton.model.label
+                            toolTip: remedyButton.model.tooltip
+                            enabled: visible && remedyButton.model.enabled !== false
+                            onClicked: root.controller.activateMenuRow("remedies", remedyButton.index)
+                        }
                     }
                 }
             }
