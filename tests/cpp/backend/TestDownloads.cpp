@@ -768,6 +768,31 @@ int runTestDownloads(int argc, char** argv) {
   return rc;
 }
 
+#ifndef Q_OS_WIN
+void TestDownloads::hostToolEnvironmentStripsAppImageLoaderPaths() {
+  QProcessEnvironment env;
+  env.insert(QStringLiteral("MIKAI_APPIMAGE_ROOT"), QStringLiteral("/tmp/.mount_mikai-abc123"));
+  env.insert(QStringLiteral("MIKAI_ORIG_LD_LIBRARY_PATH"), QStringLiteral("/opt/host/lib"));
+  env.insert(QStringLiteral("LD_LIBRARY_PATH"),
+             QStringLiteral("/tmp/.mount_mikai-abc123/usr/lib:/tmp/.mount_mikai-abc123/usr/bin/mpv:/opt/host/lib"));
+  env.insert(QStringLiteral("QT_PLUGIN_PATH"),
+             QStringLiteral("/tmp/.mount_mikai-abc123/usr/lib/qt6/plugins"));
+
+  const QProcessEnvironment restored = mikai::backend::hostToolEnvironment(env);
+  QCOMPARE(restored.value(QStringLiteral("LD_LIBRARY_PATH")), QStringLiteral("/opt/host/lib"));
+  QVERIFY(!restored.contains(QStringLiteral("MIKAI_ORIG_LD_LIBRARY_PATH")));
+  QVERIFY(!restored.contains(QStringLiteral("MIKAI_APPIMAGE_ROOT")));
+  QVERIFY(!restored.contains(QStringLiteral("QT_PLUGIN_PATH")));
+
+  QProcessEnvironment noOrig;
+  noOrig.insert(QStringLiteral("MIKAI_APPIMAGE_ROOT"), QStringLiteral("/tmp/.mount_mikai-xyz"));
+  noOrig.insert(QStringLiteral("LD_LIBRARY_PATH"),
+                QStringLiteral("/tmp/.mount_mikai-xyz/usr/lib:/tmp/.mount_mikai-xyz/usr/bin/mpv"));
+  const QProcessEnvironment stripped = mikai::backend::hostToolEnvironment(noOrig);
+  QVERIFY(!stripped.contains(QStringLiteral("LD_LIBRARY_PATH")));
+}
+#endif
+
 void TestDownloads::aPinnedPayloadFollowsAMirrorRedirect() {
     // Opt-in: this is the only case here that needs the network. It records the
     // two mirror behaviours that made a HuggingFace download fail with a bare

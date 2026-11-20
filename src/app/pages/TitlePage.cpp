@@ -67,6 +67,8 @@
 #include <QPainter>
 #include <QPixmap>
 #include <QProcess>
+#include "backend/Downloads.hpp"
+
 #include <QPropertyAnimation>
 #include <QPushButton>
 #include <QResizeEvent>
@@ -4261,7 +4263,7 @@ void TitlePage::openExternalStream(EpisodeEntry* entry, const QMap<int, QString>
         name == QLatin1String("mpv")
             ? QStringList{streamUrl}
             : QStringList{QStringLiteral("--play-and-exit"), streamUrl};
-    if (QProcess::startDetached(program, arguments)) {
+    if (backend::startDetachedHostTool(program, arguments)) {
         flashStatus(tr("Opened in %1 · %2p").arg(name).arg(height));
     } else {
         flashStatus(tr("Failed to launch %1").arg(name), true);

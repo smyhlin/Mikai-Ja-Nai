@@ -3,6 +3,7 @@
 #include <QByteArray>
 #include <QMap>
 #include <QProcess>
+#include <QProcessEnvironment>
 #include <QString>
 #include <QUrl>
 
@@ -30,6 +31,16 @@ ProcessWaitResult waitForProcessStarted(QProcess& process, int startTimeoutMs);
 /// cancellation (`reapTimeoutMs` bounds the reap after the kill).
 ProcessWaitResult waitForProcessFinished(QProcess& process, int finishTimeoutMs,
                                          int reapTimeoutMs = 1000);
+
+/// Return a child-process environment sanitized for spawning host tools
+/// (tar, xz, 7z, mpv, vlc, xdg helpers) without inheriting AppImage-bundled
+/// LD_LIBRARY_PATH / QT_PLUGIN_PATH overrides.
+QProcessEnvironment hostToolEnvironment(
+    const QProcessEnvironment& base = QProcessEnvironment::systemEnvironment());
+
+/// Start a detached host tool using hostToolEnvironment().
+bool startDetachedHostTool(const QString& program, const QStringList& arguments);
+
 
 QByteArray fetchUrlBytes(const QUrl& url, const QMap<QString, QString>& headers, int timeoutMs);
 

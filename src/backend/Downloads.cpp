@@ -147,6 +147,72 @@ bool waitForBootstrapFinish(QProcess& process, int timeoutMs) {
 // the child on timeout or cancellation, so no caller blocks on a child that
 // never answers.
 
+QProcessEnvironment hostToolEnvironment(const QProcessEnvironment& base) {
+    QProcessEnvironment env = base;
+#ifdef Q_OS_LINUX
+    const QString appImageRoot = env.value(QStringLiteral("MIKAI_APPIMAGE_ROOT"));
+    const QString appDir = env.value(QStringLiteral("APPDIR"));
+    const bool inAppImage = !appImageRoot.isEmpty() || !appDir.isEmpty() ||
+                            env.contains(QStringLiteral("APPIMAGE"));
+
+    auto stripAppImagePaths = [&](const QString& value) -> QString {
+        QStringList kept;
+        for (const QString& rawPart : value.split(QLatin1Char(':'), Qt::SkipEmptyParts)) {
+            const QString part = QDir::cleanPath(rawPart);
+            if (!appImageRoot.isEmpty() &&
+                (part == QDir::cleanPath(appImageRoot) ||
+                 part.startsWith(QDir::cleanPath(appImageRoot) + QLatin1Char('/')))) {
+                continue;
+            }
+            if (!appDir.isEmpty() &&
+                (part == QDir::cleanPath(appDir) ||
+                 part.startsWith(QDir::cleanPath(appDir) + QLatin1Char('/')))) {
+                continue;
+            }
+            if (part.startsWith(QLatin1String("/tmp/.mount_"))) {
+                continue;
+            }
+            kept.append(rawPart);
+        }
+        return kept.join(QLatin1Char(':'));
+    };
+
+    auto restoreOrStrip = [&](const QString& varName, const QString& origVarName) {
+        if (env.contains(origVarName)) {
+            const QString original = env.value(origVarName);
+            if (original.isEmpty()) {
+                env.remove(varName);
+            } else {
+                env.insert(varName, original);
+            }
+            env.remove(origVarName);
+        } else if (inAppImage && env.contains(varName)) {
+            const QString cleaned = stripAppImagePaths(env.value(varName));
+            if (cleaned.isEmpty()) {
+                env.remove(varName);
+            } else {
+                env.insert(varName, cleaned);
+            }
+        }
+    };
+
+    restoreOrStrip(QStringLiteral("LD_LIBRARY_PATH"),
+                   QStringLiteral("MIKAI_ORIG_LD_LIBRARY_PATH"));
+    restoreOrStrip(QStringLiteral("QT_PLUGIN_PATH"),
+                   QStringLiteral("MIKAI_ORIG_QT_PLUGIN_PATH"));
+    env.remove(QStringLiteral("MIKAI_APPIMAGE_ROOT"));
+#endif
+    return env;
+}
+
+bool startDetachedHostTool(const QString& program, const QStringList& arguments) {
+    QProcess process;
+    process.setProgram(program);
+    process.setArguments(arguments);
+    process.setProcessEnvironment(hostToolEnvironment());
+    return process.startDetached();
+}
+
 ProcessWaitResult waitForProcessStarted(QProcess& process, int startTimeoutMs) {
     QElapsedTimer elapsed;
     elapsed.start();
@@ -576,6 +642,7 @@ QString ensureSevenZip(const QString& toolsDirectory) {
                 writeVerified(archive, sevenZipLinuxUrl(), linuxTarSha);
                 throwIfBootstrapCancelled();
                 QProcess extract;
+                extract.setProcessEnvironment(hostToolEnvironment());
                 extract.start(QStringLiteral("tar"),
                               {QStringLiteral("-xJf"), archive, QStringLiteral("-C"), staged});
                 if (!waitForBootstrapStart(extract, 5000) ||
@@ -692,6 +759,7 @@ struct ArchiveListing {
 bool runArchiveListing(const QString& program, const QStringList& args, QByteArray* output,
                        QString* reason) {
     QProcess process;
+    process.setProcessEnvironment(hostToolEnvironment());
     process.start(program, args);
     if (!process.waitForStarted(5000)) {
         if (reason) {
@@ -876,6 +944,7 @@ bool extractArchive(const QString& sevenZip, const QString& archive, const QStri
             return false;
         }
         QProcess tarProcess;
+        tarProcess.setProcessEnvironment(hostToolEnvironment());
         if (cancelled()) return false;
         tarProcess.start(QStringLiteral("tar"),
                          {QStringLiteral("--zstd"), QStringLiteral("-xf"), archive,
@@ -890,6 +959,7 @@ bool extractArchive(const QString& sevenZip, const QString& archive, const QStri
 #endif
     auto runSevenZip = [&](const QString& inputArchive, const QString& outDir) -> bool {
         QProcess process;
+        process.setProcessEnvironment(hostToolEnvironment());
         QStringList args{QStringLiteral("x"),
                          QStringLiteral("-o%1").arg(QDir(outDir).absolutePath())};
         args << QStringLiteral("-y") << inputArchive;

@@ -56,6 +56,7 @@ class TestDownloads : public QObject {
   // entry that escapes the destination, an absolute-path entry, or a symlink
   // entry refuses the whole archive with nothing extracted.
   void anArchiveEntryThatEscapesItsDestinationIsRefused();
+  void hostToolEnvironmentStripsAppImageLoaderPaths();
 #endif
     void aPinnedPayloadFollowsAMirrorRedirect();
 };

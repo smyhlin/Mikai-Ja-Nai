@@ -37,6 +37,7 @@ bool g_rifeRunning = false;
 bool validateRifeArchiveListing(const QString& sevenZip, const QString& archive,
                                 const QVector<RifeModelPin>& pins, QString* reason) {
     QProcess process;
+    process.setProcessEnvironment(mikai::backend::hostToolEnvironment());
     process.start(sevenZip, {QStringLiteral("l"), QStringLiteral("-slt"), archive});
     if (!process.waitForStarted()) {
         *reason = QStringLiteral("the RIFE archive listing could not be read");

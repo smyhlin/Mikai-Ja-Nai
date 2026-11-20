@@ -21,6 +21,7 @@ bool launchDefaultAppsSettings(const wchar_t* uri, unsigned long* errorCode) {
 }  // namespace mikai::gui::detail
 #elif defined(Q_OS_LINUX)
 #include <QProcess>
+#include "backend/Downloads.hpp"
 #include <QFileInfo>
 #include <QDir>
 #include <QStandardPaths>
@@ -53,7 +54,7 @@ bool launchDefaultAppsSettings() {
         return false;
     }
     const QString executable = QStandardPaths::findExecutable(programAndArguments.takeFirst());
-    return !executable.isEmpty() && QProcess::startDetached(executable, programAndArguments);
+    return !executable.isEmpty() && mikai::backend::startDetachedHostTool(executable, programAndArguments);
 }
 }  // namespace mikai::gui::detail
 #endif

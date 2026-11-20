@@ -6,6 +6,7 @@
 #include <QFileInfo>
 #include <QSaveFile>
 #include <QProcess>
+#include "backend/Downloads.hpp"
 #include <QStandardPaths>
 #ifdef Q_OS_LINUX
 #include <QTemporaryFile>
@@ -42,7 +43,7 @@ void refreshMimeCache(Entry entry, const QString& path) {
 #ifdef Q_OS_LINUX
     if (entry != Entry::VideoPlayer) return;
     const QString tool = QStandardPaths::findExecutable(QStringLiteral("update-desktop-database"));
-    if (!tool.isEmpty()) QProcess::startDetached(tool, {QFileInfo(path).absolutePath()});
+    if (!tool.isEmpty()) mikai::backend::startDetachedHostTool(tool, {QFileInfo(path).absolutePath()});
 #else
     Q_UNUSED(entry);
     Q_UNUSED(path);

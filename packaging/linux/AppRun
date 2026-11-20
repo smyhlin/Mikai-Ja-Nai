@@ -6,6 +6,17 @@
 # script only has to fix what a mounted AppImage changes: the Qt libraries and
 # plugins are inside the image rather than in the host's loader paths.
 HERE="$(dirname "$(readlink -f "$0")")"
+export MIKAI_APPIMAGE_ROOT="$HERE"
+if [ "${LD_LIBRARY_PATH+set}" = "set" ]; then
+  export MIKAI_ORIG_LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
+else
+  unset MIKAI_ORIG_LD_LIBRARY_PATH
+fi
+if [ "${QT_PLUGIN_PATH+set}" = "set" ]; then
+  export MIKAI_ORIG_QT_PLUGIN_PATH="$QT_PLUGIN_PATH"
+else
+  unset MIKAI_ORIG_QT_PLUGIN_PATH
+fi
 export LD_LIBRARY_PATH="$HERE/usr/lib:$HERE/usr/bin/mpv${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export QT_PLUGIN_PATH="$HERE/usr/lib/qt6/plugins"
 exec "$HERE/usr/bin/mikai" "$@"

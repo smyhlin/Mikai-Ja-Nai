@@ -554,6 +554,7 @@ bool validateSafeArchive(const QString& sevenZip, const QString& archive, QStrin
         }
         listingArchive = QDir(temporary.path()).filePath(QStringLiteral("members.tar"));
         QProcess decompress;
+        decompress.setProcessEnvironment(mikai::backend::hostToolEnvironment());
         decompress.setStandardOutputFile(listingArchive);
         decompress.start(sevenZip, {QStringLiteral("x"), QStringLiteral("-so"), archive});
         if (!finish(decompress)) {
@@ -564,6 +565,7 @@ bool validateSafeArchive(const QString& sevenZip, const QString& archive, QStrin
         }
     }
     QProcess process;
+    process.setProcessEnvironment(mikai::backend::hostToolEnvironment());
     process.start(sevenZip, {QStringLiteral("l"), QStringLiteral("-slt"), listingArchive});
     if (!finish(process)) {
         if (error->isEmpty())
