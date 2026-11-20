@@ -30,27 +30,41 @@ bool isSafeAssetName(const QString& name) {
     return pattern.match(name).hasMatch();
 }
 
-bool parseVersion(QString value, int (&parts)[3], QString* canonical = nullptr, bool requireV = false) {
+bool parseVersion(QString value, int (&parts)[4], QString* canonical = nullptr, bool requireV = false) {
     if (value.startsWith(QLatin1Char('v'))) {
         value.remove(0, 1);
     } else if (requireV) {
         return false;
     }
-    static const QRegularExpression pattern(QStringLiteral("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"));
+    static const QRegularExpression pattern(
+        QStringLiteral("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:\\.(0|[1-9][0-9]*))?$"));
     const auto match = pattern.match(value);
     if (!match.hasMatch()) return false;
+    const bool hasFourth = !match.captured(4).isEmpty();
     for (int i = 0; i < 3; ++i) {
         bool ok = false;
         const qulonglong number = match.captured(i + 1).toULongLong(&ok);
         if (!ok || number > static_cast<qulonglong>(std::numeric_limits<int>::max())) return false;
         parts[i] = static_cast<int>(number);
     }
-    if (canonical) *canonical = QStringLiteral("%1.%2.%3").arg(parts[0]).arg(parts[1]).arg(parts[2]);
+    if (hasFourth) {
+        bool ok = false;
+        const qulonglong number = match.captured(4).toULongLong(&ok);
+        if (!ok || number > static_cast<qulonglong>(std::numeric_limits<int>::max())) return false;
+        parts[3] = static_cast<int>(number);
+    } else {
+        parts[3] = 0;
+    }
+    if (canonical) {
+        *canonical = hasFourth
+                         ? QStringLiteral("%1.%2.%3.%4").arg(parts[0]).arg(parts[1]).arg(parts[2]).arg(parts[3])
+                         : QStringLiteral("%1.%2.%3").arg(parts[0]).arg(parts[1]).arg(parts[2]);
+    }
     return true;
 }
 
-bool newer(const int (&a)[3], const int (&b)[3]) {
-    for (int i = 0; i < 3; ++i) {
+bool newer(const int (&a)[4], const int (&b)[4]) {
+    for (int i = 0; i < 4; ++i) {
         if (a[i] != b[i]) return a[i] > b[i];
     }
     return false;
@@ -59,7 +73,7 @@ bool newer(const int (&a)[3], const int (&b)[3]) {
 }  // namespace
 
 UpdateCheckResult parseLatestReleaseResponse(const QByteArray& response, const QString& currentVersion) {
-    int current[3]{};
+    int current[4]{};
     if (!parseVersion(currentVersion, current)) return {};
     QJsonParseError error;
     const QJsonDocument document = QJsonDocument::fromJson(response, &error);
@@ -71,7 +85,7 @@ UpdateCheckResult parseLatestReleaseResponse(const QByteArray& response, const Q
         !release.value(QStringLiteral("html_url")).isString()) return {};
     if (release.value(QStringLiteral("draft")).toBool() || release.value(QStringLiteral("prerelease")).toBool()) return {};
 
-    int latest[3]{};
+    int latest[4]{};
     QString version;
     if (!parseVersion(release.value(QStringLiteral("tag_name")).toString(), latest, &version, true)) return {};
     const QUrl releaseUrl(release.value(QStringLiteral("html_url")).toString(), QUrl::StrictMode);
@@ -197,7 +211,7 @@ UpdateCheckResult parseNightlyReleaseResponse(const QByteArray& response,
 UpdateCheckResult checkForUpdates(const QString& currentVersion, UpdateChannel channel,
                                   const QString& currentBuildRevision, bool allowChannelSwitch) {
     if (channel == UpdateChannel::Stable) {
-        int parsed[3]{};
+        int parsed[4]{};
         if (!parseVersion(currentVersion, parsed)) return {};
     }
     const char* endpoint = channel == UpdateChannel::Nightly ? kNightlyReleaseEndpoint

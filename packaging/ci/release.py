@@ -18,7 +18,7 @@ def git(*args):
 
 def version():
     text = (ROOT / 'CMakeLists.txt').read_text(encoding='utf-8')
-    match = re.search(r'project\(mikai\s+VERSION\s+(\d+\.\d+\.\d+)', text, re.IGNORECASE)
+    match = re.search(r'project\(mikai\s+VERSION\s+(\d+\.\d+\.\d+(?:\.\d+)?)', text, re.IGNORECASE)
     if not match:
         raise RuntimeError('CMake project(mikai VERSION x.y.z ...) must declare the release version')
     return match.group(1)
@@ -30,8 +30,8 @@ def digest(path):
 
 
 def validate(tag):
-    if not re.fullmatch(r'v\d+\.\d+\.\d+', tag):
-        raise RuntimeError('Release tag must be an existing exact vMAJOR.MINOR.PATCH tag')
+    if not re.fullmatch(r'v\d+\.\d+\.\d+(?:\.\d+)?', tag):
+        raise RuntimeError('Release tag must be an existing exact vMAJOR.MINOR.PATCH[.TWEAK] tag')
     default = os.environ['DEFAULT_BRANCH']
     event = os.environ['GITHUB_EVENT_NAME']
     if event == 'workflow_dispatch' and os.environ['GITHUB_REF'] != f'refs/heads/{default}':
@@ -48,7 +48,7 @@ def validate(tag):
         raise RuntimeError(
             f'Release tag {tag} commit {commit} is not reachable from default branch {default}')
     cmake = git('show', f'{commit}:CMakeLists.txt')
-    match = re.search(r'project\(mikai\s+VERSION\s+(\d+\.\d+\.\d+)', cmake, re.IGNORECASE)
+    match = re.search(r'project\(mikai\s+VERSION\s+(\d+\.\d+\.\d+(?:\.\d+)?)', cmake, re.IGNORECASE)
     if not match or tag != 'v' + match.group(1):
         raise RuntimeError('Tag does not match the tagged CMake project version')
     if os.getenv('GITHUB_OUTPUT'):

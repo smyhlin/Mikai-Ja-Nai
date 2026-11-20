@@ -24,6 +24,11 @@ void TestUpdateCheck::comparesNumericVersionComponents() {
     QCOMPARE(result.status, UpdateCheckStatus::UpToDate);
     result = parseLatestReleaseResponse(payload("v1.2.3"), QStringLiteral("1.2.4"));
     QCOMPARE(result.status, UpdateCheckStatus::UpToDate);
+    result = parseLatestReleaseResponse(payload("v0.2.3.1"), QStringLiteral("0.2.3"));
+    QCOMPARE(result.status, UpdateCheckStatus::UpdateAvailable);
+    QCOMPARE(result.version, QStringLiteral("0.2.3.1"));
+    result = parseLatestReleaseResponse(payload("v0.2.3"), QStringLiteral("0.2.3.1"));
+    QCOMPARE(result.status, UpdateCheckStatus::UpToDate);
     QCOMPARE(parseLatestReleaseResponse(payload("v2.0.0"), QStringLiteral("invalid")).status,
              UpdateCheckStatus::Failed);
 }
