@@ -517,6 +517,9 @@ QString qualityUrl(const QVector<QualityVariant>& variants, int height) {
 QMap<int, QString> qualityStreams(const QString& pageUrl) {
     const QString site = detectSite(pageUrl);
     if (site == QLatin1String("direct")) {
+        if (!isSafeStreamUrl(pageUrl)) {
+            return {};
+        }
         return {{0, pageUrl}};
     }
     // T-403: the shared per-thread manager. One manager per worker thread

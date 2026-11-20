@@ -4258,11 +4258,15 @@ void TitlePage::openExternalStream(EpisodeEntry* entry, const QMap<int, QString>
         flashStatus(tr("External player not found — install mpv or VLC"), true);
         return;
     }
-    const QString streamUrl = qualities.value(height);
+    const QString streamUrl = qualities.value(height).trimmed();
+    if (!backend::isSafeStreamUrl(streamUrl)) {
+        flashStatus(tr("No available video quality found"), true);
+        return;
+    }
     const QStringList arguments =
         name == QLatin1String("mpv")
-            ? QStringList{streamUrl}
-            : QStringList{QStringLiteral("--play-and-exit"), streamUrl};
+            ? QStringList{QStringLiteral("--"), streamUrl}
+            : QStringList{QStringLiteral("--play-and-exit"), QStringLiteral("--"), streamUrl};
     if (backend::startDetachedHostTool(program, arguments)) {
         flashStatus(tr("Opened in %1 · %2p").arg(name).arg(height));
     } else {
