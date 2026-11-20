@@ -1,24 +1,29 @@
 # Release status
 
 Published packages, release-specific changes and checksums are available on the [GitHub releases page](https://github.com/smyhlin/Mikai-Ja-Nai/releases). The original [v0.1.0](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0) was followed by the [player and usability update](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0-update-20261101). Local rebuilds produce their own `SHA256SUMS`; a rebuild alone does not require a documentation update.
-As checked on 2026-11-13, the latest non-prerelease published on GitHub is
-[v0.2.1](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.2.1), built from `14c7059`.
-Its assets are the Windows installer, portable ZIP and receipt, the Linux AppImage and tarball,
-and a checksum manifest. The source tree now identifies as **0.2.3, unreleased**. The local
-Windows review packages described below are not the published v0.2.1 downloads and are not a
-public-release approval.
+The v0.2.3 release was published on 2026-11-20 at
+[GitHub](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.2.3), tagged at the newest
+Linux artifact revision, `d9e7522`. The Linux AppImage and tarball report that revision;
+the Windows receipt identifies `8b5cd5e`. The user-directed publication proceeded while
+`publicReleaseReady` remains false; it does not clear third-party licensing, corresponding-source
+or redistribution obligations.
 
-### Linux review artifacts rebuilt — 2026-11-20
+### v0.2.3 published — 2026-11-20
 
-The Linux portable archive and AppImage were rebuilt from `8b5cd5e` as version `0.2.3`.
-Both report that version and revision with `--version`; the portable archive contains all
-49 staged Anime4K shaders. Windows artifacts were left unchanged. This local rebuild is not
-a playback, clean-machine installation, redistribution-clearance or publication claim.
+The Linux artifacts were rebuilt from `d9e7522`; the existing Windows artifacts and receipt
+identify `8b5cd5e`. All six release assets were downloaded from GitHub, and the five product
+files matched the published `SHA256SUMS`. The release is unsigned, includes no Debian or Arch
+package, and was published at the user's instruction despite the repository's blocked
+redistribution-readiness status. No full-suite, playback or clean-machine installation pass is
+claimed.
 
-| Artifact | Bytes | SHA-256 |
-|---|---:|---|
-| `mikai-0.2.3-linux-x86_64.tar.gz` | 48,253,753 | `be384bfd950a502f5e46cba1c22e63b8fa032d483bc9dc1969b3cbfb0d2834bb` |
-| `mikai-0.2.3-x86_64.AppImage` | 93,297,144 | `ed9d669c44aa9aef8cc14df8567611d28df675ce15fa0832065ed74b5751ea48` |
+| Artifact | Bytes | Built from | SHA-256 |
+|---|---:|---|---|
+| `mikai-0.2.3-windows-x64-setup.exe` | 62,715,142 | `8b5cd5e` | `e96e097ff9c62325959510097a85058c6166980c7a6ee73ff52a7200c71b3510` |
+| `mikai-0.2.3-windows-x64-portable.zip` | 84,661,337 | `8b5cd5e` | `7e76259a53c978853d676838d4c51639699b5e52b1b411e4f8780ae9cbfcfb40` |
+| `mikai-0.2.3-windows-x64-release.json` | 88,985 | `8b5cd5e` | `7be13efbf3a65c85e292ffb108c69e52d7954bbfd39b76d217616e535cb2ec4d` |
+| `mikai-0.2.3-x86_64.AppImage` | 93,297,144 | `d9e7522` | `1ff6a98979ef19390a78e05d7b1b8d7942738b74812d9272849aef57434bb1f6` |
+| `mikai-0.2.3-linux-x86_64.tar.gz` | 48,253,778 | `d9e7522` | `cc1d1a8997342f579f0282a676c96b5ab8016bb0f852614132509295bf7c0010` |
 
 ## Application state — 2026-11-13
 
