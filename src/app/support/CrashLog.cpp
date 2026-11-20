@@ -12,8 +12,10 @@
 #include <QStandardPaths>
 #include <QStringList>
 
-#include <cstdio>
+#include <atomic>
 #include <cerrno>
+#include <cstdint>
+#include <cstdio>
 #include <cstring>
 
 #ifdef _WIN32
@@ -74,6 +76,7 @@ QMutex g_logMutex;
 /// which is why no log file has to be opened during a fault and why the tail
 /// can never carry a credential: it was redacted before it was stored.
 struct TailBuffer {
+    std::atomic<uint64_t> seq{0};
     char bytes[kTailCapacityBytes] = {};
     size_t length = 0;
     size_t lineCount = 0;
@@ -161,11 +164,13 @@ void tailAppend(const char* data, size_t length) {
     if (length == 0) {
         return;
     }
+    g_tail.seq.fetch_add(1, std::memory_order_acq_rel);
     if (length >= kTailCapacityBytes) {
         const size_t keep = kTailCapacityBytes - 1;
         std::memcpy(g_tail.bytes, data + (length - keep), keep);
         g_tail.length = keep;
         g_tail.lineCount = 1;
+        g_tail.seq.fetch_add(1, std::memory_order_release);
         return;
     }
     tailMakeRoom(length);
@@ -179,12 +184,15 @@ void tailAppend(const char* data, size_t length) {
             ++g_tail.lineCount;
         }
     }
+    g_tail.seq.fetch_add(1, std::memory_order_release);
 }
 
 void tailReset() {
+    g_tail.seq.fetch_add(1, std::memory_order_acq_rel);
     g_tail.length = 0;
     g_tail.lineCount = 0;
     std::memset(g_tail.bytes, 0, sizeof(g_tail.bytes));
+    g_tail.seq.fetch_add(1, std::memory_order_release);
 }
 
 // ---------------------------------------------------------------------------
@@ -671,18 +679,39 @@ void writeAll(int fd, const char* data, size_t length) {
     }
 }
 
+void epochSecondsToUtc(int64_t secs, struct tm* out) {
+    const int64_t days = secs >= 0 ? (secs / 86400) : ((secs - 86399) / 86400);
+    const int64_t rem = secs - days * 86400;
+    const int64_t z = days + 719468;
+    const int64_t era = (z >= 0 ? z : z - 146096) / 146097;
+    const uint64_t doe = static_cast<uint64_t>(z - era * 146097);
+    const uint64_t yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    int64_t y = static_cast<int64_t>(yoe) + era * 400;
+    const uint64_t doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    const uint64_t mp = (5 * doy + 2) / 153;
+    const unsigned d = static_cast<unsigned>(doy - (153 * mp + 2) / 5 + 1);
+    const unsigned m = static_cast<unsigned>(mp < 10 ? mp + 3 : mp - 9);
+    y += (m <= 2) ? 1 : 0;
+    std::memset(out, 0, sizeof(*out));
+    out->tm_year = static_cast<int>(y - 1900);
+    out->tm_mon = static_cast<int>(m - 1);
+    out->tm_mday = static_cast<int>(d);
+    out->tm_hour = static_cast<int>(rem / 3600);
+    out->tm_min = static_cast<int>((rem % 3600) / 60);
+    out->tm_sec = static_cast<int>(rem % 60);
+}
+
 void posixCrashHandler(int sig, siginfo_t* info, void*) {
     if (g_reportBlock != nullptr && g_fault.ready && g_fault.crashPrefixNarrowLength > 0) {
         ReportWriter writer{g_reportBlock, kReportCapacityBytes, 0, false};
         ReportWriter* out = &writer;
 
-        // T-301: a real UTC stamp instead of the previous hardcoded fake time;
-        // clock_gettime is async-signal-safe and the broken-down conversion is
-        // the same allocation-free compromise the rest of this handler makes.
+        // T-301: async-signal-safe UTC stamp using clock_gettime + pure-integer
+        // civil calendar conversion (no gmtime_r / TZ locks).
         struct timespec nowSpec{};
         ::clock_gettime(CLOCK_REALTIME, &nowSpec);
         struct tm utc{};
-        ::gmtime_r(&nowSpec.tv_sec, &utc);
+        epochSecondsToUtc(static_cast<int64_t>(nowSpec.tv_sec), &utc);
 
         writeLiteral(out, "mikai crash report\n");
         writeLiteral(out, "==================\n");
@@ -724,15 +753,29 @@ void posixCrashHandler(int sig, siginfo_t* info, void*) {
         }
         writeLiteral(out, "\n");
 
-        if (g_tail.length > 0) {
+        const uint64_t tailSeqBefore = g_tail.seq.load(std::memory_order_acquire);
+        const bool tailQuiescent = (tailSeqBefore & 1u) == 0u;
+        const size_t tailLen =
+            tailQuiescent && g_tail.length <= kTailCapacityBytes ? g_tail.length : 0;
+        const size_t tailLines = tailQuiescent ? g_tail.lineCount : 0;
+        if (tailQuiescent && tailLen > 0) {
+            const size_t startOffset = out->length;
             writeLiteral(out, "\nlast ");
-            writeDecimal(out, static_cast<uint64_t>(g_tail.lineCount));
+            writeDecimal(out, static_cast<uint64_t>(tailLines));
             writeLiteral(out, " log lines:\n----------------\n");
-            writeBytes(out, g_tail.bytes, g_tail.length);
-            if (g_tail.bytes[g_tail.length - 1] != '\n') {
+            writeBytes(out, g_tail.bytes, tailLen);
+            if (g_tail.bytes[tailLen - 1] != '\n') {
                 writeLiteral(out, "\n");
             }
             writeLiteral(out, "----------------\nend of report\n");
+            const uint64_t tailSeqAfter = g_tail.seq.load(std::memory_order_acquire);
+            if (tailSeqAfter != tailSeqBefore) {
+                out->length = startOffset;
+                out->overflow = false;
+                writeLiteral(out, "\nlast log lines:\n----------------\n(log tail unavailable during concurrent write)\n----------------\nend of report\n");
+            }
+        } else if (!tailQuiescent) {
+            writeLiteral(out, "\nlast log lines:\n----------------\n(log tail unavailable during concurrent write)\n----------------\nend of report\n");
         } else {
             writeLiteral(out, "\nlast log lines:\n----------------\n(no log tail available)\n----------------\nend of report\n");
         }
@@ -750,7 +793,7 @@ void posixCrashHandler(int sig, siginfo_t* info, void*) {
         char* reportPath = g_reportPathNarrow;
         std::memset(reportPath, 0, sizeof(g_reportPathNarrow));
         size_t used = g_fault.crashPrefixNarrowLength;
-        if (used + 24 < sizeof(reportPath)) {
+        if (used + 24 < sizeof(g_reportPathNarrow)) {
             std::memcpy(reportPath, g_fault.crashPrefixNarrow, used);
             // T-301: the filename derives from the same stamp as the header
             // time, so concurrent or successive crashes never overwrite each
