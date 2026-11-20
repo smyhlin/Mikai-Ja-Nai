@@ -24,13 +24,13 @@ import sys
 
 SYSTEM = {
     "kernel32.dll", "user32.dll", "gdi32.dll", "advapi32.dll", "shell32.dll", "ole32.dll",
-    "oleaut32.dll", "comdlg32.dll", "comctl32.dll", "ws2_32.dll", "wsock32.dll", "winmm.dll",
+    "oleaut32.dll", "comdlg32.dll", "comctl32.dll", "ws2_32.dll", "wsock32.dll", "winmm.dll", "avicap32.dll",
     "imm32.dll", "mpr.dll", "netapi32.dll", "userenv.dll", "version.dll", "uxtheme.dll",
-    "shlwapi.dll", "crypt32.dll", "bcrypt.dll", "ncrypt.dll", "dnsapi.dll", "iphlpapi.dll",
+    "shlwapi.dll", "crypt32.dll", "bcrypt.dll", "bcryptprimitives.dll", "ncrypt.dll", "dnsapi.dll", "iphlpapi.dll",
     "secur32.dll", "wldap32.dll", "dbghelp.dll", "psapi.dll", "powrprof.dll", "setupapi.dll",
-    "cfgmgr32.dll", "dwmapi.dll", "dwrite.dll", "d3d11.dll", "d3d9.dll", "dxgi.dll", "d2d1.dll",
-    "d3dcompiler_47.dll", "opengl32.dll", "glu32.dll", "msvcrt.dll", "ucrtbase.dll", "msimg32.dll",
-    "winspool.drv", "wtsapi32.dll", "authz.dll", "normaliz.dll", "mswsock.dll", "ntdll.dll",
+    "cfgmgr32.dll", "dwmapi.dll", "dwrite.dll", "d3d11.dll", "d3d12.dll", "d3d9.dll", "dxgi.dll", "d2d1.dll",
+    "d3dcompiler_47.dll", "opengl32.dll", "vulkan-1.dll", "glu32.dll", "msvcrt.dll", "ucrtbase.dll", "msimg32.dll",
+    "winspool.drv", "wtsapi32.dll", "authz.dll", "normaliz.dll", "mscms.dll", "mswsock.dll", "ntdll.dll",
     "kernelbase.dll", "wevtapi.dll", "wintrust.dll", "runtimeobject.dll", "propsys.dll",
     "dcomp.dll", "windowscodecs.dll", "pdh.dll", "hid.dll", "dxva2.dll", "evr.dll", "mf.dll",
     "mfplat.dll", "mfreadwrite.dll", "shcore.dll", "avrt.dll", "oleacc.dll", "gdiplus.dll",
