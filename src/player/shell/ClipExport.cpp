@@ -120,10 +120,13 @@ bool inspectMp4Boxes(QFile& file, qint64 begin, qint64 end, int depth,
         if (type == "mdat") {
             mediaData = true;
         } else if (type == "stsd") {
+            if (boxEnd - payload < 8) return false;
             quint32 entries = 0;
             if (!readU32(file, payload + 4, entries)) return false;
             qint64 entry = payload + 8;
+            if (quint64(entries) > quint64(boxEnd - entry) / 8) return false;
             for (quint32 i = 0; i < entries; ++i) {
+                if (boxEnd - entry < 8) return false;
                 quint32 entrySize = 0;
                 if (!readU32(file, entry, entrySize) || entrySize < 8 ||
                     quint64(entrySize) > quint64(boxEnd - entry)) return false;
