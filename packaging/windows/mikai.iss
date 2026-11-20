@@ -18,7 +18,10 @@ AppId={{0D3BBE76-AC5C-48E3-9EBF-8563798364AA}
 AppName=Mikai Ja Nai
 AppVersion={#AppVersion}
 AppVerName=Mikai Ja Nai {#AppVersion}
-VersionInfoVersion={#AppVersion}.0
+#ifndef VersionInfoVersion
+  #define VersionInfoVersion AppVersion + ".0"
+#endif
+VersionInfoVersion={#VersionInfoVersion}
 VersionInfoDescription=Mikai Ja Nai Setup
 DefaultDirName={localappdata}\Programs\Mikai
 DefaultGroupName=Mikai Ja Nai
