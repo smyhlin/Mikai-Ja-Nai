@@ -8,6 +8,18 @@ and a checksum manifest. The source tree now identifies as **0.2.3, unreleased**
 Windows review packages described below are not the published v0.2.1 downloads and are not a
 public-release approval.
 
+### Linux review artifacts rebuilt — 2026-11-20
+
+The Linux portable archive and AppImage were rebuilt from `8b5cd5e` as version `0.2.3`.
+Both report that version and revision with `--version`; the portable archive contains all
+49 staged Anime4K shaders. Windows artifacts were left unchanged. This local rebuild is not
+a playback, clean-machine installation, redistribution-clearance or publication claim.
+
+| Artifact | Bytes | SHA-256 |
+|---|---:|---|
+| `mikai-0.2.3-linux-x86_64.tar.gz` | 48,253,753 | `be384bfd950a502f5e46cba1c22e63b8fa032d483bc9dc1969b3cbfb0d2834bb` |
+| `mikai-0.2.3-x86_64.AppImage` | 93,297,144 | `ed9d669c44aa9aef8cc14df8567611d28df675ce15fa0832065ed74b5751ea48` |
+
 ## Application state — 2026-11-13
 
 | Area | Current source state | Evidence or limitation |
