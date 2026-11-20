@@ -1,6 +1,7 @@
 #include "OpenSubtitlesClient.hpp"
 
 #include <backend/HttpTransport.hpp>
+#include <backend/Cancellation.hpp>
 
 #include <QtCore/QEventLoop>
 #include <QtCore/QJsonArray>
@@ -8,6 +9,7 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QTimer>
 #include <QtCore/QUrlQuery>
+#include <QtNetwork/QHostAddress>
 #include <QtNetwork/QNetworkAccessManager>
 #include <QtNetwork/QNetworkReply>
 #include <QtNetwork/QNetworkRequest>
@@ -18,6 +20,30 @@ namespace {
 
 constexpr char kBaseUrl[] = "https://api.opensubtitles.com/api/v1";
 constexpr char kUserAgent[] = "Mikai Ja Nai 0.2.1";
+constexpr qint64 kMaxJsonResponseBytes = 2 * 1024 * 1024;
+constexpr qint64 kMaxSubtitleResponseBytes = 10 * 1024 * 1024;
+
+bool isSafeOpenSubtitlesDownloadUrl(const QUrl& url) {
+    if (!url.isValid() || url.isRelative()) return false;
+    if (url.scheme().compare(QLatin1String("https"), Qt::CaseInsensitive) != 0) return false;
+    if (!url.userInfo().isEmpty()) return false;
+    const QString host = url.host().trimmed().toLower();
+    if (host.isEmpty()) return false;
+    if (host == QLatin1String("localhost") || host.endsWith(QLatin1String(".localhost")) ||
+        host.endsWith(QLatin1String(".local")) || host.endsWith(QLatin1String(".internal"))) {
+        return false;
+    }
+    QHostAddress addr;
+    if (addr.setAddress(host)) {
+        if (addr.isNull() || addr.isLoopback() || addr.isLinkLocal() || addr.isPrivateUse() ||
+            addr.isUniqueLocalUnicast() || addr.isMulticast() || addr.isBroadcast() ||
+            addr == QHostAddress::Any || addr == QHostAddress::AnyIPv4 ||
+            addr == QHostAddress::AnyIPv6) {
+            return false;
+        }
+    }
+    return true;
+}
 
 QNetworkRequest makeRequest(const QString& path, const QString& apiKey) {
     QNetworkRequest request{QUrl(QString::fromLatin1(kBaseUrl) + path)};
@@ -30,35 +56,94 @@ QNetworkRequest makeRequest(const QString& path, const QString& apiKey) {
     return request;
 }
 
-/// One POST on the calling thread with the same bounded wait the GET transport
-/// uses; the download endpoint accepts no other verb.
+/// One POST on the calling thread with bounded size, timeout, and cancellation;
+/// the download endpoint accepts no other verb.
 QByteArray postJson(const QNetworkRequest& request, const QByteArray& body,
-                    int timeoutMs, QString* error) {
+                    int timeoutMs, qint64 maxBytes, QString* error) {
     if (error != nullptr) error->clear();
+    if (mikai::backend::WorkCancellationScope::cancellationRequested()) {
+        if (error != nullptr) *error = QStringLiteral("cancelled");
+        return {};
+    }
     QNetworkAccessManager* manager = mikai::backend::transportManagerForThread();
     QNetworkRequest post = request;
     post.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
     QNetworkReply* reply = manager->post(post, body);
+    QByteArray payload;
+    bool timedOut = false;
+    bool cancelled = false;
+    bool tooLarge = false;
+
     QEventLoop loop;
     QTimer timer;
     timer.setSingleShot(true);
-    QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+    QTimer cancelPoll;
+    cancelPoll.setInterval(100);
+    QObject::connect(&timer, &QTimer::timeout, &loop, [&] {
+        timedOut = true;
+        if (reply->isRunning()) reply->abort();
+        loop.quit();
+    });
+    QObject::connect(&cancelPoll, &QTimer::timeout, &loop, [&] {
+        if (mikai::backend::WorkCancellationScope::cancellationRequested()) {
+            cancelled = true;
+            if (reply->isRunning()) reply->abort();
+            loop.quit();
+        }
+    });
+    QObject::connect(reply, &QNetworkReply::readyRead, &loop, [&] {
+        const QByteArray chunk = reply->readAll();
+        if (maxBytes > 0 && static_cast<qint64>(payload.size()) + chunk.size() > maxBytes) {
+            tooLarge = true;
+            payload.clear();
+            if (reply->isRunning()) reply->abort();
+            loop.quit();
+            return;
+        }
+        payload.append(chunk);
+    });
     QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
     timer.start(timeoutMs);
+    cancelPoll.start();
     loop.exec();
-    QByteArray payload;
-    if (reply->isRunning()) reply->abort();
+    timer.stop();
+    cancelPoll.stop();
+
+    if (reply->isRunning()) {
+        reply->abort();
+        QEventLoop drain;
+        QTimer drainTimer;
+        drainTimer.setSingleShot(true);
+        QObject::connect(reply, &QNetworkReply::finished, &drain, &QEventLoop::quit);
+        QObject::connect(&drainTimer, &QTimer::timeout, &drain, &QEventLoop::quit);
+        drainTimer.start(1000);
+        if (!reply->isFinished()) drain.exec();
+    }
+    if (!tooLarge && !cancelled && !timedOut) {
+        const QByteArray rest = reply->readAll();
+        if (maxBytes > 0 && static_cast<qint64>(payload.size()) + rest.size() > maxBytes) {
+            tooLarge = true;
+            payload.clear();
+        } else {
+            payload.append(rest);
+        }
+    }
     const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-    payload = reply->readAll();
     if (error != nullptr) {
-        if (reply->error() != QNetworkReply::NoError && status == 0) {
+        if (cancelled) {
+            *error = QStringLiteral("cancelled");
+        } else if (timedOut) {
+            *error = QStringLiteral("the request timed out");
+        } else if (tooLarge) {
+            *error = QStringLiteral("the reply exceeded the size limit");
+        } else if (reply->error() != QNetworkReply::NoError && status == 0) {
             *error = reply->errorString();
         } else if (status < 200 || status >= 300) {
             *error = QStringLiteral("HTTP %1").arg(status);
         }
     }
     reply->deleteLater();
-    return payload;
+    return (cancelled || timedOut || tooLarge) ? QByteArray() : payload;
 }
 
 }  // namespace
@@ -86,13 +171,17 @@ OpenSubtitlesSearch searchOpenSubtitles(const QString& apiKey, const QString& qu
     request.setUrl(url);
     const mikai::backend::HttpFetchResult fetch = mikai::backend::runBlockingFetch(
         mikai::backend::transportManagerForThread(), request,
-        mikai::backend::HttpFetchOptions{timeoutMs, false, {}});
+        mikai::backend::HttpFetchOptions{timeoutMs, false, {}, kMaxJsonResponseBytes});
     if (fetch.cancelled) {
         fillError(QStringLiteral("cancelled"));
         return result;
     }
     if (fetch.timedOut) {
         fillError(QStringLiteral("the request timed out"));
+        return result;
+    }
+    if (fetch.responseTooLarge) {
+        fillError(QStringLiteral("the reply exceeded the size limit"));
         return result;
     }
     if (fetch.status < 200 || fetch.status >= 300) {
@@ -144,21 +233,28 @@ QByteArray downloadOpenSubtitles(const QString& apiKey, int fileId, QString* err
     const QByteArray body =
         QStringLiteral("{\"file_id\":%1}").arg(fileId).toUtf8();
     const QByteArray reply =
-        postJson(makeRequest(QStringLiteral("/download"), apiKey), body, timeoutMs, &postError);
+        postJson(makeRequest(QStringLiteral("/download"), apiKey), body, timeoutMs,
+                 kMaxJsonResponseBytes, &postError);
     if (!postError.isEmpty()) return fail(postError);
     const QJsonDocument document = QJsonDocument::fromJson(reply);
-    const QString link = document.object().value(QStringLiteral("link")).toString();
+    const QString link = document.object().value(QStringLiteral("link")).toString().trimmed();
     if (link.isEmpty()) return fail(QStringLiteral("the service offered no file"));
 
-    QNetworkRequest fileRequest{QUrl(link)};
+    const QUrl downloadUrl(link, QUrl::StrictMode);
+    if (!isSafeOpenSubtitlesDownloadUrl(downloadUrl)) {
+        return fail(QStringLiteral("the service offered an unsafe download URL"));
+    }
+
+    QNetworkRequest fileRequest{downloadUrl};
     fileRequest.setRawHeader("User-Agent", QByteArray(kUserAgent));
     fileRequest.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                              QNetworkRequest::NoLessSafeRedirectPolicy);
     const mikai::backend::HttpFetchResult fetch = mikai::backend::runBlockingFetch(
         mikai::backend::transportManagerForThread(), fileRequest,
-        mikai::backend::HttpFetchOptions{timeoutMs, false, {}});
+        mikai::backend::HttpFetchOptions{timeoutMs, false, {}, kMaxSubtitleResponseBytes});
     if (fetch.cancelled) return fail(QStringLiteral("cancelled"));
     if (fetch.timedOut) return fail(QStringLiteral("the download timed out"));
+    if (fetch.responseTooLarge) return fail(QStringLiteral("the subtitle file exceeded the size limit"));
     if (fetch.status < 200 || fetch.status >= 300 || fetch.body.isEmpty()) {
         return fail(fetch.networkError.isEmpty() ? QStringLiteral("the download failed")
                                                  : fetch.networkError);
