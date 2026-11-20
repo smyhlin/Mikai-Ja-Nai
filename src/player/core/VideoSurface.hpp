@@ -19,6 +19,7 @@
 #include <QMetaObject>
 #include <QOpenGLWidget>
 #include <QPointF>
+#include <QPointer>
 #include <QString>
 #include <QTimer>
 
@@ -167,6 +168,10 @@ private:
 
     static bool clientFramePacingEnabled();
 
+    struct GuiSlot {
+        QPointer<VideoSurface> self;
+    };
+    std::shared_ptr<GuiSlot> guiSlot_;
     VideoSession* session_ = nullptr;
     /// The only renderer for this view: one stable overlay-free output, the
     /// render context and every GL object.

@@ -888,17 +888,34 @@ MpvVideoItem::MpvVideoItem(QQuickItem* parent)
     });
     hiddenDrainTimer_.setSingleShot(false);
     connect(&hiddenDrainTimer_, &QTimer::timeout, this, &MpvVideoItem::drainHiddenFrames);
+    guiSlot_ = std::make_shared<GuiSlot>();
+    guiSlot_->self = this;
     bridge_ = std::make_shared<VideoRenderBridge>();
-    // Called from the rendering thread; posting to the item as the receiver makes
-    // the completion auto-removed when the item is gone.
-    const QPointer<MpvVideoItem> guard(this);
-    bridge_->setGuiInvoker([guard](std::function<void()> task) {
-        if (!guard) return;
-        QMetaObject::invokeMethod(guard.data(), std::move(task), Qt::QueuedConnection);
+    // Called from the rendering thread; dispatch via QCoreApplication so
+    // QPointer is only read on the GUI thread (never cross-thread).
+    const std::shared_ptr<GuiSlot> slot = guiSlot_;
+    bridge_->setGuiInvoker([slot](std::function<void()> task) {
+        invokeOnGui(slot, [t = std::move(task)](MpvVideoItem&) mutable {
+            if (t) t();
+        });
     });
 }
 
+void MpvVideoItem::invokeOnGui(const std::shared_ptr<GuiSlot>& slot,
+                               std::function<void(MpvVideoItem&)> fn) {
+    if (!slot || !fn) return;
+    if (QCoreApplication* app = QCoreApplication::instance()) {
+        QMetaObject::invokeMethod(
+            app,
+            [slot, fn = std::move(fn)]() mutable {
+                if (slot && slot->self) fn(*slot->self);
+            },
+            Qt::QueuedConnection);
+    }
+}
+
 MpvVideoItem::~MpvVideoItem() {
+    if (guiSlot_) guiSlot_->self.clear();
     hiddenDrainTimer_.stop();
     pacingTimer_.stop();
     detachSession();
@@ -1076,7 +1093,7 @@ bool MpvVideoItem::canPresentNow() const {
 
 void MpvVideoItem::requestRepaint() {
     if (QThread::currentThread() != thread()) {
-        QMetaObject::invokeMethod(this, [this] { requestRepaint(); }, Qt::QueuedConnection);
+        invokeOnGui(guiSlot_, [](MpvVideoItem& item) { item.requestRepaint(); });
         return;
     }
     refreshSnapshot();
@@ -1385,14 +1402,11 @@ QSGNode* MpvVideoItem::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) {
             renderErrorReported_ = true;
             // This runs on the rendering thread: the session is only reachable
             // through its own thread.
-            QMetaObject::invokeMethod(
-                this,
-                [this] {
-                    if (session_ && renderError)
-                        renderError(QStringLiteral("the scene graph is not rendering through "
-                                                   "OpenGL; the video surface cannot present"));
-                },
-                Qt::QueuedConnection);
+            invokeOnGui(guiSlot_, [](MpvVideoItem& item) {
+                if (item.session_ && item.renderError)
+                    item.renderError(QStringLiteral("the scene graph is not rendering through "
+                                                    "OpenGL; the video surface cannot present"));
+            });
         }
         return nullptr;
     }
@@ -1400,18 +1414,15 @@ QSGNode* MpvVideoItem::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData*) {
     if (!node) {
         // mpv's frame callback runs on its own threads: it may only schedule, and
         // the snapshot the pass reads must be rebuilt on this item's thread.
-        const QPointer<MpvVideoItem> owner(this);
+        const std::shared_ptr<GuiSlot> slot = guiSlot_;
         const std::shared_ptr<MpvVideoItemSharedState> state = state_;
         node = new MpvVideoNode(window, bridge_, state_, lifetimeToken_,
-                                [owner, state] {
-                                    if (!owner || state->guiRefreshPosted.exchange(true)) return;
-                                    QMetaObject::invokeMethod(
-                                        owner.data(),
-                                        [owner, state] {
-                                            state->guiRefreshPosted.store(false);
-                                            if (owner) owner->requestRepaint();
-                                        },
-                                        Qt::QueuedConnection);
+                                [slot, state] {
+                                    if (state->guiRefreshPosted.exchange(true)) return;
+                                    invokeOnGui(slot, [state](MpvVideoItem& item) {
+                                        state->guiRefreshPosted.store(false);
+                                        item.requestRepaint();
+                                    });
                                 });
         // Queued: the node lives on the rendering thread, the item on the GUI
         // thread. Qt removes undelivered reports when the item is destroyed.
@@ -1687,7 +1698,7 @@ void MpvVideoItem::releaseResources() {
 void MpvVideoItem::publishFactsIfChanged() {
     if (!state_) return;
     if (QThread::currentThread() != thread()) {
-        QMetaObject::invokeMethod(this, [this] { publishFactsIfChanged(); }, Qt::QueuedConnection);
+        invokeOnGui(guiSlot_, [](MpvVideoItem& item) { item.publishFactsIfChanged(); });
         return;
     }
     const RenderTargetFacts facts = targetFacts();

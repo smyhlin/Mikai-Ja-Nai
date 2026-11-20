@@ -65,9 +65,19 @@ VideoSurface::VideoSurface(QWidget* parent) : QOpenGLWidget(parent) {
     // The bridge must deliver a queued readback on this object's thread. The
     // rendering thread here IS the GUI thread, but a completion raised inside a
     // render pass may run nested GUI work, so it is posted like any other event.
+    guiSlot_ = std::make_shared<GuiSlot>();
+    guiSlot_->self = this;
     presenterToken_ = std::make_shared<const int>(0);
-    bridge_ = std::make_unique<VideoRenderBridge>([this](std::function<void()> task) {
-        QMetaObject::invokeMethod(this, std::move(task), Qt::QueuedConnection);
+    const std::shared_ptr<GuiSlot> slot = guiSlot_;
+    bridge_ = std::make_unique<VideoRenderBridge>([slot](std::function<void()> task) {
+        if (QCoreApplication* app = QCoreApplication::instance()) {
+            QMetaObject::invokeMethod(
+                app,
+                [slot, t = std::move(task)]() mutable {
+                    if (slot && slot->self && t) t();
+                },
+                Qt::QueuedConnection);
+        }
     });
 
     // One non-visual session owns the core, source, transport intent and every
@@ -99,6 +109,7 @@ VideoSurface::VideoSurface(QWidget* parent) : QOpenGLWidget(parent) {
 
 VideoSurface::~VideoSurface() {
     destroying_ = true;
+    if (guiSlot_) guiSlot_->self.clear();
     pacingTimer_.stop();
     placeholderTimer_.stop();
     // The hooks belong to the session; clearing them first means no notification
@@ -558,11 +569,18 @@ bool VideoSurface::ensureRenderContext(std::shared_ptr<MpvHandle> core, QString*
         // as a render context exists, so the core cannot die before the render
         // context is freed. mpv may invoke its update callback on a render
         // thread; all widget/context work must run on this object's GUI thread.
+        const std::shared_ptr<GuiSlot> slot = guiSlot_;
         created = bridge_->createRenderContext(
             core, presenterToken_,
-            [this] {
-                QMetaObject::invokeMethod(this, [this] { onRenderUpdate(); },
-                                          Qt::QueuedConnection);
+            [slot] {
+                if (QCoreApplication* app = QCoreApplication::instance()) {
+                    QMetaObject::invokeMethod(
+                        app,
+                        [slot] {
+                            if (slot && slot->self) slot->self->onRenderUpdate();
+                        },
+                        Qt::QueuedConnection);
+                }
             },
             &why);
     } catch (const MpvError& error) {

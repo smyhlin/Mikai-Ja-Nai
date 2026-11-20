@@ -185,6 +185,13 @@ private:
     void updateHiddenDrain();
     void drainHiddenFrames();
 
+    struct GuiSlot {
+        QPointer<MpvVideoItem> self;
+    };
+    static void invokeOnGui(const std::shared_ptr<GuiSlot>& slot,
+                            std::function<void(MpvVideoItem&)> fn);
+
+    std::shared_ptr<GuiSlot> guiSlot_;
     std::shared_ptr<MpvVideoItemSharedState> state_;
     QPointer<VideoSession> session_;
     std::shared_ptr<VideoRenderBridge> bridge_;
