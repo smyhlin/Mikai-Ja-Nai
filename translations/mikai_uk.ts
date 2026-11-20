@@ -6544,6 +6544,34 @@ Continue?</source>
         <translation>Відкрити сторінку випуску</translation>
     </message>
     <message>
+        <source>Download &amp; install</source>
+        <translation>Завантажити й встановити</translation>
+    </message>
+    <message>
+        <source>This installation is managed externally. Please update via your package manager or GitHub Releases.</source>
+        <translation>Цим встановленням керує система. Оновіть програму через менеджер пакетів або GitHub Releases.</translation>
+    </message>
+    <message>
+        <source>Downloading and verifying update %1…</source>
+        <translation>Завантаження та перевірка оновлення %1…</translation>
+    </message>
+    <message>
+        <source>Updating Mikai Ja Nai</source>
+        <translation>Оновлення Mikai Ja Nai</translation>
+    </message>
+    <message>
+        <source>Update failed</source>
+        <translation>Помилка оновлення</translation>
+    </message>
+    <message>
+        <source>Update ready to install</source>
+        <translation>Оновлення готове до встановлення</translation>
+    </message>
+    <message>
+        <source>Version %1 has been downloaded and verified (SHA-256). Restart now to apply the update?</source>
+        <translation>Версію %1 завантажено та перевірено (SHA-256). Перезапустити зараз для встановлення оновлення?</translation>
+    </message>
+    <message>
         <location filename="../src/app/pages/MainWindow.cpp" line="883"/>
         <source>You&apos;re up to date</source>
         <translation>У вас найновіша версія</translation>
@@ -8704,10 +8732,12 @@ Active: %1 · queued: %2</source>
         <translation>Перевіряти оновлення автоматично</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="375"/>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="793"/>
-        <source>Checks for a newer stable release using one unauthenticated request to GitHub. No update is downloaded or installed.</source>
-        <translation>Перевіряє наявність нового стабільного випуску одним неавторизованим запитом до GitHub. Оновлення не завантажуються та не встановлюються.</translation>
+        <source>Download verified updates automatically</source>
+        <translation>Автоматично завантажувати перевірені оновлення</translation>
+    </message>
+    <message>
+        <source>Checks for newer releases on GitHub and verifies SHA-256 checksums before applying any update.</source>
+        <translation>Перевіряє нові релізи на GitHub і перевіряє контрольні суми SHA-256 перед встановленням оновлення.</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="414"/>

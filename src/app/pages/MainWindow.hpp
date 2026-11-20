@@ -97,6 +97,7 @@ private:
     void checkForUpdates(bool manual);
     void showUpdateResult(const QString& status, const QString& version,
                           const QUrl& releaseUrl, bool manual);
+    void startUpdateDownload(const QString& version, const QUrl& releaseUrl);
     void openSettings();
     /// Opens Settings on the Components tab, landing on the element the startup
     /// prompt warned about. Plain dialog, no intent: nothing is armed.

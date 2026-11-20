@@ -8,6 +8,8 @@ private slots:
     void comparesNumericVersionComponents();
     void rejectsMalformedAndUnsafeResponses();
     void ignoresPrereleaseAndDrafts();
+  void parsesReleaseAssetsAndSha256Sums();
+
 };
 
 int runTestUpdateCheck(int argc, char** argv);

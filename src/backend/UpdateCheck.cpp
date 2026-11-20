@@ -1,12 +1,20 @@
 #include "UpdateCheck.hpp"
 
+#include "Downloads.hpp"
 #include "HttpTransport.hpp"
 
+#include <QCoreApplication>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QNetworkRequest>
+#include <QProcess>
 #include <QRegularExpression>
+#include <QStandardPaths>
 #include <QUrl>
 #include <limits>
 
@@ -68,8 +76,32 @@ UpdateCheckResult parseLatestReleaseResponse(const QByteArray& response, const Q
         !releaseUrl.query().isEmpty() || !releaseUrl.fragment().isEmpty() ||
         releaseUrl.path() != expectedPath) return {};
 
-    return {newer(latest, current) ? UpdateCheckStatus::UpdateAvailable : UpdateCheckStatus::UpToDate,
-            version, releaseUrl};
+    QVector<UpdateAsset> assets;
+    const QJsonArray rawAssets = release.value(QStringLiteral("assets")).toArray();
+    for (const QJsonValue& item : rawAssets) {
+        const QJsonObject obj = item.toObject();
+        const QString name = obj.value(QStringLiteral("name")).toString().trimmed();
+        const QUrl downloadUrl(
+            obj.value(QStringLiteral("browser_download_url")).toString().trimmed(),
+            QUrl::StrictMode);
+        const qint64 size = obj.value(QStringLiteral("size")).toVariant().toLongLong();
+        if (name.isEmpty() || !downloadUrl.isValid() ||
+            downloadUrl.scheme() != QLatin1String("https") ||
+            downloadUrl.host() != QLatin1String("github.com") ||
+            !downloadUrl.path().startsWith(QStringLiteral("/smyhlin/Mikai-Ja-Nai/releases/download/"))) {
+            continue;
+        }
+        assets.append(UpdateAsset{name, downloadUrl, size});
+    }
+
+    UpdateCheckResult out;
+    out.status = newer(latest, current) ? UpdateCheckStatus::UpdateAvailable
+                                        : UpdateCheckStatus::UpToDate;
+    out.version = version;
+    out.releaseUrl = releaseUrl;
+    out.tagName = release.value(QStringLiteral("tag_name")).toString();
+    out.assets = std::move(assets);
+    return out;
 }
 
 UpdateCheckResult checkForUpdates(const QString& currentVersion) {
@@ -85,6 +117,302 @@ UpdateCheckResult checkForUpdates(const QString& currentVersion) {
     const HttpFetchResult response = runBlockingFetch(transportManagerForThread(), request, options);
     if (response.cancelled || response.timedOut || response.responseTooLarge || response.status != 200) return {};
     return parseLatestReleaseResponse(response.body, currentVersion);
+}
+
+InstallKind detectInstallKind(const QString& applicationFilePath, const QString& appImageEnv) {
+    const QString exePath = applicationFilePath.isEmpty()
+                                ? QCoreApplication::applicationFilePath()
+                                : applicationFilePath;
+#ifdef Q_OS_WIN
+    Q_UNUSED(appImageEnv);
+    const QFileInfo exeInfo(exePath);
+    const QDir installDir = exeInfo.dir();
+    if (QFileInfo::exists(installDir.filePath(QStringLiteral("unins000.exe")))) {
+        return InstallKind::WindowsInstaller;
+    }
+    if (QFileInfo(installDir.absolutePath()).isWritable()) {
+        return InstallKind::WindowsPortable;
+    }
+    return InstallKind::SystemPackage;
+#elif defined(Q_OS_LINUX)
+    const QString appImage = appImageEnv.isEmpty() ? qEnvironmentVariable("APPIMAGE") : appImageEnv;
+    if (!appImage.isEmpty()) {
+        const QFileInfo info(appImage);
+        if (info.exists() && QFileInfo(info.absolutePath()).isWritable()) {
+            return InstallKind::LinuxAppImage;
+        }
+        return InstallKind::SystemPackage;
+    }
+    const QString canonical = QFileInfo(exePath).absoluteFilePath();
+    if (canonical.startsWith(QLatin1String("/usr/")) ||
+        canonical.startsWith(QLatin1String("/opt/")) ||
+        canonical.startsWith(QLatin1String("/var/")) ||
+        canonical.startsWith(QLatin1String("/snap/")) ||
+        canonical.startsWith(QLatin1String("/nix/"))) {
+        return InstallKind::SystemPackage;
+    }
+    const QDir installDir = QFileInfo(canonical).dir();
+    if (QFileInfo(installDir.absolutePath()).isWritable()) {
+        return InstallKind::LinuxTarball;
+    }
+    return InstallKind::SystemPackage;
+#else
+    Q_UNUSED(exePath);
+    Q_UNUSED(appImageEnv);
+    return InstallKind::Unknown;
+#endif
+}
+
+bool isSelfUpdatable(InstallKind kind) {
+    return kind == InstallKind::WindowsInstaller || kind == InstallKind::WindowsPortable ||
+           kind == InstallKind::LinuxAppImage || kind == InstallKind::LinuxTarball;
+}
+
+std::optional<UpdateAsset> selectUpdateAsset(const QVector<UpdateAsset>& assets, InstallKind kind) {
+    for (const UpdateAsset& asset : assets) {
+        const QString lower = asset.name.toLower();
+        switch (kind) {
+            case InstallKind::LinuxAppImage:
+                if (lower.endsWith(QLatin1String(".appimage"))) return asset;
+                break;
+            case InstallKind::LinuxTarball:
+                if (lower.contains(QLatin1String("linux")) &&
+                    (lower.endsWith(QLatin1String(".tar.gz")) || lower.endsWith(QLatin1String(".tgz")))) {
+                    return asset;
+                }
+                break;
+            case InstallKind::WindowsInstaller:
+                if (lower.endsWith(QLatin1String(".exe")) &&
+                    (lower.contains(QLatin1String("setup")) || lower.contains(QLatin1String("installer")))) {
+                    return asset;
+                }
+                break;
+            case InstallKind::WindowsPortable:
+                if (lower.endsWith(QLatin1String(".zip")) &&
+                    (lower.contains(QLatin1String("win")) || lower.contains(QLatin1String("portable")))) {
+                    return asset;
+                }
+                break;
+            case InstallKind::SystemPackage:
+            case InstallKind::Unknown:
+                return std::nullopt;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<UpdateAsset> findChecksumsAsset(const QVector<UpdateAsset>& assets) {
+    for (const UpdateAsset& asset : assets) {
+        const QString upper = asset.name.toUpper();
+        if (upper == QLatin1String("SHA256SUMS") || upper == QLatin1String("SHA256SUMS.TXT")) {
+            return asset;
+        }
+    }
+    return std::nullopt;
+}
+
+QString parseSha256Sums(const QByteArray& content, const QString& assetName) {
+    static const QRegularExpression linePattern(
+        QStringLiteral("^([0-9a-fA-F]{64})\\s+\\*?(.+)$"));
+    const QString text = QString::fromUtf8(content);
+    for (const QString& rawLine : text.split(QLatin1Char('\n'))) {
+        const QString line = rawLine.trimmed();
+        if (line.isEmpty() || line.startsWith(QLatin1Char('#'))) continue;
+        const auto match = linePattern.match(line);
+        if (!match.hasMatch()) continue;
+        const QString candidate = QFileInfo(match.captured(2).trimmed()).fileName();
+        if (candidate == assetName) {
+            return match.captured(1).toLower();
+        }
+    }
+    return {};
+}
+
+bool downloadAndVerifyUpdate(const UpdateCheckResult& release, InstallKind kind,
+                             const std::function<void(qint64 received, qint64 total)>& progress,
+                             StagedUpdate* out, QString* error) {
+    auto fail = [error](const QString& msg) {
+        if (error != nullptr) *error = msg;
+        return false;
+    };
+    if (!isSelfUpdatable(kind)) {
+        return fail(QStringLiteral("This installation is managed externally and cannot self-update."));
+    }
+    const auto asset = selectUpdateAsset(release.assets, kind);
+    if (!asset) {
+        return fail(QStringLiteral("No matching release package was found for this platform."));
+    }
+    const auto checksums = findChecksumsAsset(release.assets);
+    if (!checksums) {
+        return fail(QStringLiteral("Release checksums (SHA256SUMS) are missing; refusing unverified update."));
+    }
+
+    QNetworkRequest sumRequest(checksums->downloadUrl);
+    sumRequest.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("Mikai-Ja-Nai updater"));
+    sumRequest.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                            QNetworkRequest::NoLessSafeRedirectPolicy);
+    HttpFetchOptions sumOptions;
+    sumOptions.timeoutMs = 15000;
+    sumOptions.maxResponseBytes = 256 * 1024;
+    const HttpFetchResult sumFetch =
+        runBlockingFetch(transportManagerForThread(), sumRequest, sumOptions);
+    if (sumFetch.cancelled) return fail(QStringLiteral("Update download was cancelled."));
+    if (sumFetch.timedOut || sumFetch.status < 200 || sumFetch.status >= 300) {
+        return fail(QStringLiteral("Could not download release SHA256SUMS."));
+    }
+    const QString expectedSha = parseSha256Sums(sumFetch.body, asset->name);
+    if (expectedSha.isEmpty()) {
+        return fail(QStringLiteral("SHA256SUMS does not contain a checksum for %1.").arg(asset->name));
+    }
+
+    const QString baseData = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    const QString safeVersion =
+        QString(release.version).replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9._+-]")), QStringLiteral("_"));
+    const QString stagingDir = QDir(baseData).filePath(QStringLiteral("updates/%1").arg(safeVersion));
+    if (!QDir().mkpath(stagingDir)) {
+        return fail(QStringLiteral("Could not create update staging directory."));
+    }
+    const QString destPath = QDir(stagingDir).filePath(asset->name);
+    if (QFileInfo::exists(destPath)) {
+        QFile::remove(destPath);
+    }
+
+    QString dlReason;
+    if (!downloadToFile(asset->downloadUrl, destPath, asset->size, expectedSha, progress, {}, &dlReason)) {
+        return fail(dlReason.isEmpty() ? QStringLiteral("Failed to download or verify update package.")
+                                       : dlReason);
+    }
+
+    if (out != nullptr) {
+        out->stagedPath = destPath;
+        out->stagingDir = stagingDir;
+        out->assetName = asset->name;
+        out->version = release.version;
+        out->installKind = kind;
+    }
+    return true;
+}
+
+bool launchUpdateInstaller(const StagedUpdate& staged, qint64 currentPid, QString* error) {
+    auto fail = [error](const QString& msg) {
+        if (error != nullptr) *error = msg;
+        return false;
+    };
+    if (!QFileInfo::exists(staged.stagedPath)) {
+        return fail(QStringLiteral("Staged update file no longer exists."));
+    }
+
+#ifdef Q_OS_WIN
+    if (staged.installKind == InstallKind::WindowsInstaller) {
+        QProcess proc;
+        proc.setProgram(staged.stagedPath);
+        proc.setArguments({QStringLiteral("/SILENT"), QStringLiteral("/CLOSEAPPLICATIONS"),
+                           QStringLiteral("/RESTARTAPPLICATIONS")});
+        if (!proc.startDetached()) {
+            return fail(QStringLiteral("Could not start the Windows update installer."));
+        }
+        return true;
+    }
+    if (staged.installKind == InstallKind::WindowsPortable) {
+        const QString exePath = QCoreApplication::applicationFilePath();
+        const QString installDir = QFileInfo(exePath).absolutePath();
+        const QString scriptPath = QDir(staged.stagingDir).filePath(QStringLiteral("apply-update.ps1"));
+        QFile script(scriptPath);
+        if (!script.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+            return fail(QStringLiteral("Could not write portable updater script."));
+        }
+        const QString ps = QStringLiteral(
+            "param([int]$PidToWait, [string]$ZipPath, [string]$TargetDir, [string]$ExePath)\n"
+            "try { Wait-Process -Id $PidToWait -Timeout 30 -ErrorAction SilentlyContinue } catch {}\n"
+            "$backup = \"$TargetDir.bak\"\n"
+            "if (Test-Path $backup) { Remove-Item -Recurse -Force $backup -ErrorAction SilentlyContinue }\n"
+            "try {\n"
+            "  Expand-Archive -Path $ZipPath -DestinationPath $TargetDir -Force\n"
+            "  Start-Process -FilePath $ExePath\n"
+            "} catch {\n"
+            "  exit 1\n"
+            "}\n");
+        script.write(ps.toUtf8());
+        script.close();
+        QProcess proc;
+        proc.setProgram(QStringLiteral("powershell.exe"));
+        proc.setArguments({QStringLiteral("-NoProfile"), QStringLiteral("-ExecutionPolicy"),
+                           QStringLiteral("Bypass"), QStringLiteral("-File"), scriptPath,
+                           QString::number(currentPid), staged.stagedPath, installDir, exePath});
+        if (!proc.startDetached()) {
+            return fail(QStringLiteral("Could not launch portable updater helper."));
+        }
+        return true;
+    }
+    return fail(QStringLiteral("Unsupported Windows installation type for automatic updates."));
+#elif defined(Q_OS_LINUX)
+    if (staged.installKind == InstallKind::LinuxAppImage) {
+        const QString targetAppImage = qEnvironmentVariable("APPIMAGE");
+        if (targetAppImage.isEmpty()) {
+            return fail(QStringLiteral("APPIMAGE path is unavailable."));
+        }
+        const QString scriptPath = QDir(staged.stagingDir).filePath(QStringLiteral("apply-update.sh"));
+        QFile script(scriptPath);
+        if (!script.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+            return fail(QStringLiteral("Could not write AppImage updater script."));
+        }
+        const QByteArray sh =
+            "#!/bin/sh\n"
+            "set -eu\n"
+            "PID_WAIT=\"$1\"; STAGED=\"$2\"; TARGET=\"$3\"\n"
+            "i=0; while kill -0 \"$PID_WAIT\" 2>/dev/null && [ \"$i\" -lt 150 ]; do sleep 0.2; i=$((i+1)); done\n"
+            "BACKUP=\"${TARGET}.bak\"\n"
+            "cp -f \"$TARGET\" \"$BACKUP\"\n"
+            "chmod +x \"$STAGED\"\n"
+            "if mv -f \"$STAGED\" \"$TARGET\"; then\n"
+            "  rm -f \"$BACKUP\"\n"
+            "  exec \"$TARGET\" &\n"
+            "else\n"
+            "  mv -f \"$BACKUP\" \"$TARGET\" || true\n"
+            "  exit 1\n"
+            "fi\n";
+        script.write(sh);
+        script.close();
+        QFile::setPermissions(scriptPath, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+        if (!startDetachedHostTool(QStringLiteral("/bin/sh"),
+                                   {scriptPath, QString::number(currentPid), staged.stagedPath, targetAppImage})) {
+            return fail(QStringLiteral("Could not launch AppImage updater helper."));
+        }
+        return true;
+    }
+    if (staged.installKind == InstallKind::LinuxTarball) {
+        const QString exePath = QCoreApplication::applicationFilePath();
+        const QString installDir = QFileInfo(exePath).absolutePath();
+        const QString scriptPath = QDir(staged.stagingDir).filePath(QStringLiteral("apply-update.sh"));
+        QFile script(scriptPath);
+        if (!script.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+            return fail(QStringLiteral("Could not write tarball updater script."));
+        }
+        const QByteArray sh =
+            "#!/bin/sh\n"
+            "set -eu\n"
+            "PID_WAIT=\"$1\"; ARCHIVE=\"$2\"; TARGET_DIR=\"$3\"; EXE_PATH=\"$4\"\n"
+            "i=0; while kill -0 \"$PID_WAIT\" 2>/dev/null && [ \"$i\" -lt 150 ]; do sleep 0.2; i=$((i+1)); done\n"
+            "TMP_EXTRACT=\"${ARCHIVE}.extract\"\n"
+            "rm -rf \"$TMP_EXTRACT\" && mkdir -p \"$TMP_EXTRACT\"\n"
+            "tar -xzf \"$ARCHIVE\" -C \"$TMP_EXTRACT\"\n"
+            "cp -a \"$TMP_EXTRACT\"/. \"$TARGET_DIR\"/\n"
+            "rm -rf \"$TMP_EXTRACT\"\n"
+            "exec \"$EXE_PATH\" &\n";
+        script.write(sh);
+        script.close();
+        QFile::setPermissions(scriptPath, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+        if (!startDetachedHostTool(QStringLiteral("/bin/sh"),
+                                   {scriptPath, QString::number(currentPid), staged.stagedPath, installDir, exePath})) {
+            return fail(QStringLiteral("Could not launch tarball updater helper."));
+        }
+        return true;
+    }
+    return fail(QStringLiteral("This Linux installation cannot be self-updated; please update via your package manager or GitHub Releases."));
+#else
+    Q_UNUSED(currentPid);
+    return fail(QStringLiteral("Automatic updates are not supported on this platform."));
+#endif
 }
 
 }  // namespace mikai::backend

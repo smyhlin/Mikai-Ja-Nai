@@ -371,9 +371,16 @@ QWidget* SettingsDialog::buildGeneralTab() {
         QSettings().value(QString::fromLatin1(kUpdateNotificationsEnabled), true).toBool());
     hdrLayout->addWidget(updateNotifications_);
 
+    updateAutoDownload_ =
+        new QCheckBox(tr("Download verified updates automatically"), hdrCard);
+    updateAutoDownload_->setObjectName(QStringLiteral("updateAutoDownloadCheck"));
+    polishInteractiveControl(updateAutoDownload_, theme::kSettingsControlSize);
+    updateAutoDownload_->setChecked(
+        QSettings().value(QString::fromLatin1(kUpdateAutoDownloadEnabled), false).toBool());
+    hdrLayout->addWidget(updateAutoDownload_);
+
     updateNotificationsHint_ = new QLabel(
-        tr("Checks for a newer stable release using one unauthenticated request to GitHub. "
-           "No update is downloaded or installed."),
+        tr("Checks for newer releases on GitHub and verifies SHA-256 checksums before applying any update."),
         hdrCard);
     styleMutedCaption(updateNotificationsHint_);
     updateNotificationsHint_->setWordWrap(true);
@@ -789,9 +796,11 @@ void SettingsDialog::retranslateGeneralTab() {
     language_->setAccessibleName(tr("Interface language"));
 
     updateNotifications_->setText(tr("Check for updates automatically"));
+    if (updateAutoDownload_ != nullptr) {
+        updateAutoDownload_->setText(tr("Download verified updates automatically"));
+    }
     updateNotificationsHint_->setText(
-        tr("Checks for a newer stable release using one unauthenticated request to GitHub. "
-           "No update is downloaded or installed."));
+        tr("Checks for newer releases on GitHub and verifies SHA-256 checksums before applying any update."));
     playbackTitle_->setText(tr("HDR playback"));
     playbackHint_->setText(
         tr("HDR tone mapping controls how HDR video is mapped to the display. "

@@ -53,6 +53,7 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QProgressBar>
+#include <QProgressDialog>
 #include <QPushButton>
 #include <QScreen>
 #include <QSettings>
@@ -906,7 +907,13 @@ void MainWindow::checkForUpdates(bool manual) {
                     if (manual || settings.value(
                             QString::fromLatin1(kUpdateNotificationsDismissedVersion))
                                       .toString() != version) {
-                        showUpdateResult(QStringLiteral("available"), version, url, manual);
+                        if (!manual &&
+                            settings.value(QString::fromLatin1(kUpdateAutoDownloadEnabled), false).toBool() &&
+                            backend::isSelfUpdatable(backend::detectInstallKind())) {
+                            startUpdateDownload(version, url);
+                        } else {
+                            showUpdateResult(QStringLiteral("available"), version, url, manual);
+                        }
                     }
                 }
             } else if (manual) {
@@ -940,6 +947,12 @@ void MainWindow::showUpdateResult(const QString& status, const QString& version,
         auto* dismissVersion = new QCheckBox(
             tr("Don't remind me about version %1").arg(version), dialog);
         dialog->setCheckBox(dismissVersion);
+        if (backend::isSelfUpdatable(backend::detectInstallKind())) {
+            QPushButton* downloadBtn = dialog->addButton(tr("Download & install"), QMessageBox::ActionRole);
+            connect(downloadBtn, &QPushButton::clicked, this, [this, version, releaseUrl] {
+                startUpdateDownload(version, releaseUrl);
+            });
+        }
         QPushButton* open = dialog->addButton(tr("Open release"), QMessageBox::AcceptRole);
         connect(open, &QPushButton::clicked, dialog, [releaseUrl] {
             const QString host = releaseUrl.host().toLower();
@@ -967,6 +980,97 @@ void MainWindow::showUpdateResult(const QString& status, const QString& version,
     Q_UNUSED(manual);
     dialog->setModal(false);
     dialog->show();
+}
+
+void MainWindow::startUpdateDownload(const QString& version, const QUrl& releaseUrl) {
+    const auto kind = backend::detectInstallKind();
+    if (!backend::isSelfUpdatable(kind)) {
+        QMessageBox::information(
+            this, tr("Update available"),
+            tr("This installation is managed externally. Please update via your package manager or GitHub Releases."));
+        return;
+    }
+    auto* progress = new QProgressDialog(
+        tr("Downloading and verifying update %1…").arg(version), tr("Cancel"), 0, 100, this);
+    progress->setWindowTitle(tr("Updating Mikai Ja Nai"));
+    progress->setWindowModality(Qt::WindowModal);
+    progress->setAutoClose(false);
+    progress->setAutoReset(false);
+    progress->show();
+
+    const auto alive = updateCheckAlive_;
+    QPointer<QProgressDialog> progressGuard(progress);
+    runner_->run(
+        [kind, progressGuard] {
+            const backend::UpdateCheckResult latest =
+                backend::checkForUpdates(QStringLiteral(MIKAI_PROJECT_VERSION));
+            backend::StagedUpdate staged;
+            QString error;
+            const bool ok = backend::downloadAndVerifyUpdate(
+                latest, kind,
+                [progressGuard](qint64 received, qint64 total) {
+                    if (total <= 0) return;
+                    const int pct = static_cast<int>(qBound(qint64{0}, (received * 100) / total, qint64{100}));
+                    QMetaObject::invokeMethod(
+                        QCoreApplication::instance(),
+                        [progressGuard, pct] {
+                            if (progressGuard) progressGuard->setValue(pct);
+                        },
+                        Qt::QueuedConnection);
+                },
+                &staged, &error);
+            QVariantMap result;
+            result.insert(QStringLiteral("ok"), ok);
+            result.insert(QStringLiteral("error"), error);
+            result.insert(QStringLiteral("stagedPath"), staged.stagedPath);
+            result.insert(QStringLiteral("stagingDir"), staged.stagingDir);
+            result.insert(QStringLiteral("assetName"), staged.assetName);
+            result.insert(QStringLiteral("version"), staged.version);
+            result.insert(QStringLiteral("kind"), static_cast<int>(staged.installKind));
+            return result;
+        },
+        [this, alive, progressGuard, releaseUrl](const QVariant& value) {
+            if (progressGuard) {
+                progressGuard->close();
+                progressGuard->deleteLater();
+            }
+            if (!alive->load()) return;
+            const QVariantMap map = value.toMap();
+            if (!map.value(QStringLiteral("ok")).toBool()) {
+                QMessageBox::warning(
+                    this, tr("Update failed"),
+                    map.value(QStringLiteral("error")).toString());
+                return;
+            }
+            backend::StagedUpdate staged;
+            staged.stagedPath = map.value(QStringLiteral("stagedPath")).toString();
+            staged.stagingDir = map.value(QStringLiteral("stagingDir")).toString();
+            staged.assetName = map.value(QStringLiteral("assetName")).toString();
+            staged.version = map.value(QStringLiteral("version")).toString();
+            staged.installKind = static_cast<backend::InstallKind>(
+                map.value(QStringLiteral("kind")).toInt());
+            const auto answer = QMessageBox::question(
+                this, tr("Update ready to install"),
+                tr("Version %1 has been downloaded and verified (SHA-256). Restart now to apply the update?")
+                    .arg(staged.version),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+            if (answer == QMessageBox::Yes) {
+                QString launchError;
+                if (backend::launchUpdateInstaller(staged, QCoreApplication::applicationPid(), &launchError)) {
+                    QApplication::quit();
+                } else {
+                    QMessageBox::warning(this, tr("Update failed"), launchError);
+                }
+            }
+        },
+        [this, alive, progressGuard](const backend::Failure& failure) {
+            if (progressGuard) {
+                progressGuard->close();
+                progressGuard->deleteLater();
+            }
+            if (!alive->load()) return;
+            QMessageBox::warning(this, tr("Update failed"), failure.message);
+        });
 }
 
 void MainWindow::openSettings() {
