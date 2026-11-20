@@ -1,18 +1,20 @@
 #include "state/WatchHistory.hpp"
 
-#include <QHash>
+#include <QCoreApplication>
 #include <QDebug>
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
-#include <QSettings>
+#include <QPointer>
 #include <QSet>
+#include <QSettings>
+#include <QThread>
+#include <QTimer>
 
 #include <cmath>
-#include <condition_variable>
 #include <mutex>
-#include <thread>
 
 namespace mikai::app {
 namespace {
@@ -40,38 +42,74 @@ public:
     }
 
     void submit(QString key, QString payload) {
+        bool shouldWriteImmediately = false;
         {
             const std::lock_guard<std::mutex> lock(mutex_);
             latest_.insert(key, payload);
+            bool updated = false;
             for (Item& item : pending_) {
                 if (item.key == key) {
                     item.payload = std::move(payload);
-                    return;
+                    updated = true;
+                    break;
                 }
             }
-            pending_.append(Item{std::move(key), std::move(payload)});
+            if (!updated) {
+                pending_.append(Item{std::move(key), std::move(payload)});
+            }
+            QCoreApplication* app = QCoreApplication::instance();
+            if (app != nullptr && QThread::currentThread() == app->thread()) {
+                ensureTimerLocked(app);
+                if (flushTimer_ != nullptr && !flushTimer_->isActive()) {
+                    flushTimer_->start();
+                }
+            } else {
+                shouldWriteImmediately = true;
+            }
         }
-        condition_.notify_one();
+        if (shouldWriteImmediately) {
+            flush();
+        }
     }
 
     void flush() {
-        std::unique_lock<std::mutex> lock(mutex_);
-        drained_.wait(lock, [this] { return pending_.isEmpty() && !writing_; });
-        if (!writeFailed_) {
+        const std::lock_guard<std::mutex> lock(mutex_);
+        if (flushTimer_ != nullptr) {
+            flushTimer_->stop();
+        }
+        if (pending_.isEmpty()) {
+            if (!writeFailed_) {
+                latest_.clear();
+            }
+            return;
+        }
+        if (QCoreApplication::instance() == nullptr) {
+            return;
+        }
+        QList<Item> items;
+        items.swap(pending_);
+
+        QSettings settings;
+        for (const Item& item : items) {
+            if (item.payload.isEmpty()) {
+                settings.remove(item.key);
+            } else {
+                settings.setValue(item.key, item.payload);
+            }
+        }
+        settings.sync();
+        const bool saved = settings.status() == QSettings::NoError;
+        if (!saved) {
+            qWarning() << "mikai: could not save episode history, settings status:"
+                       << settings.status();
+            writeFailed_ = true;
+        } else {
+            writeFailed_ = false;
             latest_.clear();
         }
     }
 
-    ~HistoryWriter() {
-        {
-            const std::lock_guard<std::mutex> lock(mutex_);
-            stopping_ = true;
-        }
-        condition_.notify_all();
-        if (thread_.joinable()) {
-            thread_.join();
-        }
-    }
+    ~HistoryWriter() = default;
 
 private:
     struct Item {
@@ -79,55 +117,20 @@ private:
         QString payload;
     };
 
-    HistoryWriter()
-        : thread_([this] {
-              for (;;) {
-                  Item item;
-                  {
-                      std::unique_lock<std::mutex> lock(mutex_);
-                      condition_.wait(lock, [this] { return stopping_ || !pending_.isEmpty(); });
-                      if (pending_.isEmpty()) {
-                          if (stopping_) {
-                              return;
-                          }
-                          continue;
-                      }
-                      item = pending_.takeFirst();
-                      writing_ = true;
-                  }
+    void ensureTimerLocked(QCoreApplication* app) {
+        if (flushTimer_ != nullptr) return;
+        auto* timer = new QTimer(app);
+        timer->setSingleShot(true);
+        timer->setInterval(500);
+        QObject::connect(timer, &QTimer::timeout, app, [this] { flush(); });
+        QObject::connect(app, &QCoreApplication::aboutToQuit, app, [this] { flush(); });
+        flushTimer_ = timer;
+    }
 
-                  QSettings settings;
-                  if (item.payload.isEmpty()) {
-                      settings.remove(item.key);
-                  } else {
-                      settings.setValue(item.key, item.payload);
-                  }
-                  settings.sync();
-                  const bool saved = settings.status() == QSettings::NoError;
-                  if (!saved) {
-                      qWarning() << "mikai: could not save episode history, settings status:"
-                                 << settings.status();
-                  }
-
-                  {
-                      const std::lock_guard<std::mutex> lock(mutex_);
-                      writeFailed_ = writeFailed_ || !saved;
-                      writing_ = false;
-                      if (pending_.isEmpty()) {
-                          drained_.notify_all();
-                      }
-                  }
-              }
-          }) {}
-
-    std::thread thread_;
     std::mutex mutex_;
-    std::condition_variable condition_;
-    std::condition_variable drained_;
+    QPointer<QTimer> flushTimer_;
     QHash<QString, QString> latest_;
     QList<Item> pending_;
-    bool writing_ = false;
-    bool stopping_ = false;
     bool writeFailed_ = false;
 };
 
