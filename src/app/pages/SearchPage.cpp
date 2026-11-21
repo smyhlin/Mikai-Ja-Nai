@@ -530,6 +530,47 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     theme::applyActionRole(searchButton_, theme::ActionRole::Primary);
     searchButton_->setFixedHeight(theme::kControlHeight);
     searchButton_->setIconSize(QSize(theme::kIconSize + theme::kIconGlyphPad, theme::kIconSize));
+    suggestTimer_ = new QTimer(this);
+    suggestTimer_->setSingleShot(true);
+    suggestTimer_->setInterval(320);
+    connect(suggestTimer_, &QTimer::timeout, this, [this] {
+        if (query_ != nullptr && query_->hasFocus()) {
+            showSearchSuggestions(query_->text().trimmed());
+        }
+    });
+
+    suggestPopup_ = new QFrame(this, Qt::ToolTip | Qt::FramelessWindowHint);
+    suggestPopup_->setObjectName(QStringLiteral("settingsCard"));
+    auto* popLayout = new QVBoxLayout(suggestPopup_);
+    popLayout->setContentsMargins(theme::kSpacingXs, theme::kSpacingXs,
+                                  theme::kSpacingXs, theme::kSpacingXs);
+    suggestList_ = new QListWidget(suggestPopup_);
+    suggestList_->setObjectName(QStringLiteral("searchSuggestionsList"));
+    suggestList_->setFrameShape(QFrame::NoFrame);
+    suggestList_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    suggestList_->setFocusPolicy(Qt::NoFocus);
+    connect(suggestList_, &QListWidget::itemClicked, this, [this](QListWidgetItem* item) {
+        if (item == nullptr) return;
+        const QString kind = item->data(Qt::UserRole).toString();
+        const QString val = item->data(Qt::UserRole + 1).toString();
+        hideSearchSuggestions();
+        if (kind == QLatin1String("clear")) {
+            QSettings s;
+            s.remove(QStringLiteral("search/recentQueries"));
+            return;
+        }
+        if (kind == QLatin1String("anime") && !val.isEmpty()) {
+            Q_EMIT openRequested(val, item->data(Qt::UserRole + 2).toString());
+            return;
+        }
+        if (!val.isEmpty() && query_ != nullptr) {
+            query_->setText(val);
+            search();
+        }
+    });
+    popLayout->addWidget(suggestList_);
+    suggestPopup_->hide();
+
     clearResetTimer_ = new QTimer(this);
     clearResetTimer_->setSingleShot(true);
     clearResetTimer_->setInterval(350);
@@ -546,6 +587,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
 
     connect(query_, &QLineEdit::returnPressed, this, [this] {
         if (clearResetTimer_ != nullptr) clearResetTimer_->stop();
+        hideSearchSuggestions();
         search();
     });
     connect(searchButton_, &QPushButton::clicked, this, [this] {
@@ -566,7 +608,17 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
         }
         if (!text.trimmed().isEmpty()) {
             if (clearResetTimer_ != nullptr) clearResetTimer_->stop();
+            if (query_->hasFocus() && suggestTimer_ != nullptr) {
+                if (text.trimmed().size() >= 2) {
+                    suggestTimer_->start();
+                } else {
+                    hideSearchSuggestions();
+                }
+            }
             return;
+        }
+        if (query_->hasFocus()) {
+            showSearchSuggestions(QString());
         }
         if (browseMode_) {
             return;
@@ -1691,6 +1743,15 @@ bool SearchPage::eventFilter(QObject* watched, QEvent* event) {
             const bool showHint = !query_->hasFocus() && query_->text().isEmpty() &&
                                   searchField_->width() >= theme::kSearchKeycapMinFieldWidth;
             searchKeycap_->setVisible(showHint);
+        }
+        if (event->type() == QEvent::FocusIn && query_->text().trimmed().isEmpty()) {
+            showSearchSuggestions(QString());
+        } else if (event->type() == QEvent::FocusOut) {
+            QTimer::singleShot(140, this, [this] {
+                if (query_ != nullptr && !query_->hasFocus()) {
+                    hideSearchSuggestions();
+                }
+            });
         }
     }
     if (watched == searchField_) {
@@ -3335,8 +3396,110 @@ void SearchPage::setSearchInFlight(bool active) {
     }
 }
 
+QStringList SearchPage::loadRecentSearches() const {
+    QSettings s;
+    return s.value(QStringLiteral("search/recentQueries")).toStringList();
+}
+
+void SearchPage::saveRecentSearch(const QString& term) {
+    const QString clean = term.trimmed();
+    if (clean.isEmpty()) return;
+    QStringList recent = loadRecentSearches();
+    recent.removeAll(clean);
+    recent.prepend(clean);
+    while (recent.size() > 8) recent.removeLast();
+    QSettings s;
+    s.setValue(QStringLiteral("search/recentQueries"), recent);
+}
+
+void SearchPage::hideSearchSuggestions() {
+    if (suggestTimer_ != nullptr) suggestTimer_->stop();
+    if (suggestPopup_ != nullptr) suggestPopup_->hide();
+}
+
+void SearchPage::showSearchSuggestions(const QString& term) {
+    if (suggestPopup_ == nullptr || suggestList_ == nullptr || searchField_ == nullptr) return;
+    auto positionAndShow = [this]() {
+        const int rows = qMin(suggestList_->count(), 7);
+        if (rows <= 0) {
+            suggestPopup_->hide();
+            return;
+        }
+        const int rowH = qMax(28, suggestList_->sizeHintForRow(0));
+        suggestPopup_->setFixedWidth(searchField_->width());
+        suggestPopup_->setFixedHeight(rows * rowH + theme::kSpacingSmall * 2 + 4);
+        suggestPopup_->move(searchField_->mapToGlobal(QPoint(0, searchField_->height() + 4)));
+        suggestPopup_->show();
+    };
+
+    if (term.isEmpty()) {
+        const QStringList recent = loadRecentSearches();
+        suggestList_->clear();
+        if (recent.isEmpty()) {
+            suggestPopup_->hide();
+            return;
+        }
+        for (const QString& q : recent) {
+            auto* item = new QListWidgetItem(tr("Recent: %1").arg(q), suggestList_);
+            item->setData(Qt::UserRole, QStringLiteral("query"));
+            item->setData(Qt::UserRole + 1, q);
+        }
+        auto* clearItem = new QListWidgetItem(tr("Clear recent searches"), suggestList_);
+        clearItem->setData(Qt::UserRole, QStringLiteral("clear"));
+        positionAndShow();
+        return;
+    }
+
+    if (term.size() < 2) {
+        suggestPopup_->hide();
+        return;
+    }
+    const int seq = ++suggestSeq_;
+    backend::MikaiClient* client = &client_;
+    const QPointer<SearchPage> self(this);
+    runner_.run(
+        [client, term] {
+            backend::AnimeQuery req;
+            req.search = term;
+            req.page = 1;
+            req.limit = 5;
+            return QVariant::fromValue(client->search(req));
+        },
+        [self, seq, term, positionAndShow](const QVariant& result) {
+            if (self.isNull() || seq != self->suggestSeq_ || self->query_ == nullptr ||
+                !self->query_->hasFocus() || self->query_->text().trimmed() != term) {
+                return;
+            }
+            const auto res = result.value<backend::SearchResult>();
+            self->suggestList_->clear();
+            for (const backend::AnimeSummary& item : res.items) {
+                QString label = labels::titleName(item.titles);
+                if (item.year.has_value() && *item.year > 0) {
+                    label += QStringLiteral(" (%1)").arg(*item.year);
+                }
+                if (!item.format.isEmpty()) {
+                    label += QStringLiteral(" · ") + item.format.toUpper();
+                }
+                auto* row = new QListWidgetItem(label, self->suggestList_);
+                row->setData(Qt::UserRole, QStringLiteral("anime"));
+                row->setData(Qt::UserRole + 1, item.ref);
+                row->setData(Qt::UserRole + 2, backend::posterUrl(item));
+            }
+            auto* allRow = new QListWidgetItem(tr("Search all results for \"%1\"").arg(term),
+                                               self->suggestList_);
+            allRow->setData(Qt::UserRole, QStringLiteral("query"));
+            allRow->setData(Qt::UserRole + 1, term);
+            positionAndShow();
+        },
+        [](const backend::Failure&) {});
+}
+
 void SearchPage::search() {
+    hideSearchSuggestions();
     const QString query = query_->text().trimmed();
+    if (!query.isEmpty()) {
+        saveRecentSearch(query);
+    }
     if (query.isEmpty()) {
         // An empty text with a criterion still chosen is a catalogue query, not
         // a return to the home collection: the sort or the order the filters

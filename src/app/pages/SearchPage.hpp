@@ -435,6 +435,14 @@ private:
     QTimer* healTimer_ = nullptr;
     QTimer* thumbTimer_ = nullptr;
     QTimer* clearResetTimer_ = nullptr;
+    QTimer* suggestTimer_ = nullptr;
+    QFrame* suggestPopup_ = nullptr;
+    QListWidget* suggestList_ = nullptr;
+    int suggestSeq_ = 0;
+    QStringList loadRecentSearches() const;
+    void saveRecentSearch(const QString& term);
+    void showSearchSuggestions(const QString& term);
+    void hideSearchSuggestions();
     bool searchInFlight_ = false;
     int savedResultsScroll_ = 0;
     QString savedSelectedRef_;
