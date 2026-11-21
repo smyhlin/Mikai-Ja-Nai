@@ -3,7 +3,10 @@
 #include <backend/HttpTransport.hpp>
 #include <backend/Cancellation.hpp>
 
+#include <QtCore/QCoreApplication>
 #include <QtCore/QEventLoop>
+#include <QtCore/QFile>
+#include <QtCore/QFileInfo>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
@@ -19,8 +22,32 @@ namespace shell {
 namespace {
 
 constexpr char kBaseUrl[] = "https://api.opensubtitles.com/api/v1";
-constexpr char kUserAgent[] = "Mikai Ja Nai 0.2.1";
+#ifdef MIKAI_PROJECT_VERSION
+constexpr char kUserAgent[] = "Mikai Ja Nai " MIKAI_PROJECT_VERSION;
+#else
+constexpr char kUserAgent[] = "Mikai Ja Nai";
+#endif
 constexpr qint64 kMaxJsonResponseBytes = 2 * 1024 * 1024;
+
+QString computeOpenSubtitlesMovieHash(const QString& localPath) {
+    QFile file(localPath);
+    const qint64 size = file.size();
+    constexpr qint64 kChunk = 65536;
+    if (size < kChunk * 2 || !file.open(QIODevice::ReadOnly)) return {};
+    quint64 hash = static_cast<quint64>(size);
+    const auto accumulate = [&hash](const QByteArray& bytes) {
+        const auto* ptr = reinterpret_cast<const unsigned char*>(bytes.constData());
+        for (qsizetype i = 0; i + 8 <= bytes.size(); i += 8) {
+            quint64 word = 0;
+            for (int b = 0; b < 8; ++b) word |= static_cast<quint64>(ptr[i + b]) << (b * 8);
+            hash += word;
+        }
+    };
+    accumulate(file.read(kChunk));
+    if (!file.seek(size - kChunk)) return {};
+    accumulate(file.read(kChunk));
+    return QStringLiteral("%1").arg(hash, 16, 16, QLatin1Char('0'));
+}
 constexpr qint64 kMaxSubtitleResponseBytes = 10 * 1024 * 1024;
 
 bool isSafeOpenSubtitlesDownloadUrl(const QUrl& url) {
@@ -131,15 +158,15 @@ QByteArray postJson(const QNetworkRequest& request, const QByteArray& body,
     const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     if (error != nullptr) {
         if (cancelled) {
-            *error = QStringLiteral("cancelled");
+            *error = QCoreApplication::translate("OpenSubtitlesClient", "Search cancelled.");
         } else if (timedOut) {
-            *error = QStringLiteral("the request timed out");
+            *error = QCoreApplication::translate("OpenSubtitlesClient", "The request timed out.");
         } else if (tooLarge) {
-            *error = QStringLiteral("the reply exceeded the size limit");
+            *error = QCoreApplication::translate("OpenSubtitlesClient", "The reply exceeded the size limit.");
         } else if (reply->error() != QNetworkReply::NoError && status == 0) {
             *error = reply->errorString();
         } else if (status < 200 || status >= 300) {
-            *error = QStringLiteral("HTTP %1").arg(status);
+            *error = QCoreApplication::translate("OpenSubtitlesClient", "HTTP %1").arg(status);
         }
     }
     reply->deleteLater();
@@ -153,7 +180,7 @@ OpenSubtitlesSearch searchOpenSubtitles(const QString& apiKey, const QString& qu
     OpenSubtitlesSearch result;
     const QString trimmedKey = apiKey.trimmed();
     if (trimmedKey.isEmpty()) {
-        result.error = QStringLiteral("an API key is required");
+        result.error = QCoreApplication::translate("OpenSubtitlesClient", "An API key is required.");
         return result;
     }
     const QString language = languageCode.trimmed();
@@ -161,7 +188,16 @@ OpenSubtitlesSearch searchOpenSubtitles(const QString& apiKey, const QString& qu
 
     QUrl url(QString::fromLatin1(kBaseUrl) + QStringLiteral("/subtitles"));
     QUrlQuery params;
-    params.addQueryItem(QStringLiteral("query"), query.trimmed());
+    const QString trimmedQuery = query.trimmed();
+    if (QFileInfo::exists(trimmedQuery) && QFileInfo(trimmedQuery).isFile()) {
+        const QString movieHash = computeOpenSubtitlesMovieHash(trimmedQuery);
+        if (!movieHash.isEmpty()) {
+            params.addQueryItem(QStringLiteral("moviehash"), movieHash);
+        }
+        params.addQueryItem(QStringLiteral("query"), QFileInfo(trimmedQuery).completeBaseName());
+    } else {
+        params.addQueryItem(QStringLiteral("query"), trimmedQuery);
+    }
     if (!language.isEmpty()) params.addQueryItem(QStringLiteral("languages"), language);
     params.addQueryItem(QStringLiteral("order_by"), QStringLiteral("download_count"));
     params.addQueryItem(QStringLiteral("order_direction"), QStringLiteral("desc"));
@@ -173,20 +209,20 @@ OpenSubtitlesSearch searchOpenSubtitles(const QString& apiKey, const QString& qu
         mikai::backend::transportManagerForThread(), request,
         mikai::backend::HttpFetchOptions{timeoutMs, false, {}, kMaxJsonResponseBytes});
     if (fetch.cancelled) {
-        fillError(QStringLiteral("cancelled"));
+        fillError(QCoreApplication::translate("OpenSubtitlesClient", "Search cancelled."));
         return result;
     }
     if (fetch.timedOut) {
-        fillError(QStringLiteral("the request timed out"));
+        fillError(QCoreApplication::translate("OpenSubtitlesClient", "The request timed out."));
         return result;
     }
     if (fetch.responseTooLarge) {
-        fillError(QStringLiteral("the reply exceeded the size limit"));
+        fillError(QCoreApplication::translate("OpenSubtitlesClient", "The reply exceeded the size limit."));
         return result;
     }
     if (fetch.status < 200 || fetch.status >= 300) {
         fillError(fetch.networkError.isEmpty()
-                      ? QStringLiteral("HTTP %1").arg(fetch.status)
+                      ? QCoreApplication::translate("OpenSubtitlesClient", "HTTP %1").arg(fetch.status)
                       : fetch.networkError);
         return result;
     }
@@ -194,7 +230,7 @@ OpenSubtitlesSearch searchOpenSubtitles(const QString& apiKey, const QString& qu
     QJsonParseError parseError;
     const QJsonDocument document = QJsonDocument::fromJson(fetch.body, &parseError);
     if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
-        fillError(QStringLiteral("the reply was not readable"));
+        fillError(QCoreApplication::translate("OpenSubtitlesClient", "The reply was not readable."));
         return result;
     }
     const QJsonArray data = document.object().value(QStringLiteral("data")).toArray();
