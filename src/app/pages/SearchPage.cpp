@@ -632,6 +632,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     rootLayout_->addWidget(results_, 1);
 
     pager_ = new RangePager(theme::kSearchResultsPerPage, this);
+    pager_->setCompactPageNumbers(true);
     connect(pager_, &RangePager::pageRequested, this, &SearchPage::goToPage);
     pager_->hide();
     rootLayout_->addWidget(pager_);

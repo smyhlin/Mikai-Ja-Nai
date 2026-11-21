@@ -9,6 +9,7 @@
 #include <QIcon>
 #include <QLabel>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QScrollArea>
 #include <QSize>
 #include <QSizePolicy>
@@ -154,6 +155,30 @@ RangePager::RangePager(int pageSize, QWidget* parent)
 
 RangePager::~RangePager() = default;
 
+void RangePager::setCompactPageNumbers(bool enabled) {
+    if (compactPageNumbers_ == enabled) {
+        return;
+    }
+    compactPageNumbers_ = enabled;
+    if (rendered_) {
+        renderChips();
+    }
+}
+
+void RangePager::resizeEvent(QResizeEvent* event) {
+    QWidget::resizeEvent(event);
+    const bool narrow = width() > 0 && width() < 640;
+    if (narrow != narrowLayout_) {
+        narrowLayout_ = narrow;
+        if (jumpLabel_ != nullptr) {
+            jumpLabel_->setVisible(!narrow || chipsScroll_ != nullptr);
+        }
+        if (rendered_ && compactPageNumbers_) {
+            renderChips();
+        }
+    }
+}
+
 void RangePager::setEpisodeMode() {
     if (chipsScroll_ != nullptr) return;
     auto* row = qobject_cast<QHBoxLayout*>(layout());
@@ -263,16 +288,35 @@ void RangePager::updateEnabled() {
 }
 
 void RangePager::renderChips() {
-    // A window of chips follows the current page, centred on it and never
-    // running off either end of the range. The buttons are kept between calls
-    // and re-labelled: setState lands on every episode page render and every
-    // search page change, and building the window afresh there meant a fresh
-    // QSS polish and a fresh connect per chip per page.
-    const int window = qMin(chipsScroll_ != nullptr ? 9 : theme::kPagerChipWindow, pages_);
-    // The window shrinks with the page count, and a chip past the window is not
-    // part of the pager at all, so it goes now rather than lingering as a hidden
-    // button the layout and any child lookup still have to walk past.
-    while (chips_.size() > window) {
+    QList<int> targets;
+    if (compactPageNumbers_ && chipsScroll_ == nullptr) {
+        // Build a compact `1 … p-1 [p] p+1 … N` sequence (-1 marks an ellipsis).
+        const int radius = narrowLayout_ ? 0 : 1;
+        const int lo = qMax(2, page_ - radius);
+        const int hi = qMin(pages_ - 1, page_ + radius);
+        targets.append(1);
+        if (lo > 2) {
+            targets.append(-1);
+        }
+        for (int p = lo; p <= hi; ++p) {
+            targets.append(p);
+        }
+        if (hi < pages_ - 1) {
+            targets.append(-1);
+        }
+        if (pages_ > 1) {
+            targets.append(pages_);
+        }
+    } else {
+        const int window = qMin(chipsScroll_ != nullptr ? 9 : theme::kPagerChipWindow, pages_);
+        const int first = qBound(0, page_ - 1 - window / 2, qMax(0, pages_ - window));
+        for (int offset = 0; offset < window; ++offset) {
+            targets.append(first + offset + 1);
+        }
+    }
+
+    const int slotCount = static_cast<int>(targets.size());
+    while (chips_.size() > slotCount) {
         QPushButton* extra = chips_.takeLast();
         for (int index = 0; index < chipLayout_->count(); ++index) {
             QLayoutItem* item = chipLayout_->itemAt(index);
@@ -283,32 +327,45 @@ void RangePager::renderChips() {
         }
         delete extra;
     }
-    while (chips_.size() < window) {
-        const int target = chips_.size() + 1;
+    while (chips_.size() < slotCount) {
         auto* chip = new QPushButton(chipsHost_);
         chip->setObjectName(QStringLiteral("pagerChip"));
-        chip->setProperty(kChipPageProperty, target);
+        chip->setProperty(kChipPageProperty, 1);
         connect(chip, &QPushButton::clicked, this, [this, chip] {
-            jumpTo(chip->property(kChipPageProperty).toInt());
+            const int target = chip->property(kChipPageProperty).toInt();
+            if (target > 0) {
+                jumpTo(target);
+            }
         });
         chipLayout_->addWidget(chip);
         chips_.append(chip);
         chip->show();
     }
-    const int first = qBound(0, page_ - 1 - window / 2, qMax(0, pages_ - window));
-    for (int offset = 0; offset < window; ++offset) {
+    int activeSlot = -1;
+    for (int offset = 0; offset < slotCount; ++offset) {
         QPushButton* chip = chips_.at(offset);
-        const int target = first + offset + 1;
+        const int target = targets.at(offset);
         chip->setProperty(kChipPageProperty, target);
-        chip->setText(chipLabel(target));
-        chip->setToolTip(tr("Page %1").arg(target));
-        chip->setAccessibleName(tr("Page %1").arg(target));
+        if (target < 0) {
+            chip->setText(QStringLiteral("…"));
+            chip->setEnabled(false);
+            chip->setToolTip(QString());
+            chip->setAccessibleName(tr("More pages"));
+        } else {
+            chip->setEnabled(true);
+            chip->setText(compactPageNumbers_ && chipsScroll_ == nullptr
+                              ? QString::number(target)
+                              : chipLabel(target));
+            chip->setToolTip(tr("Page %1").arg(target));
+            chip->setAccessibleName(tr("Page %1").arg(target));
+        }
         const bool active = target == page_;
+        if (active) {
+            activeSlot = offset;
+        }
         if (active != (chip->objectName() == QLatin1String("pagerChipActive"))) {
             chip->setObjectName(active ? QStringLiteral("pagerChipActive")
                                        : QStringLiteral("pagerChip"));
-            // The object name selects the QSS rule, so only the chips that
-            // actually change role are worth re-polishing.
             chip->style()->unpolish(chip);
             chip->style()->polish(chip);
         }
@@ -321,9 +378,8 @@ void RangePager::renderChips() {
     if (chipsScroll_ != nullptr) {
         chipsHost_->resize(chipsHost_->sizeHint());
         chipsScroll_->setFixedHeight(chipsHost_->sizeHint().height());
-        const int active = page_ - first - 1;
-        if (active >= 0 && active < chips_.size())
-            chipsScroll_->ensureWidgetVisible(chips_.at(active));
+        if (activeSlot >= 0 && activeSlot < chips_.size())
+            chipsScroll_->ensureWidgetVisible(chips_.at(activeSlot));
     }
     rendered_ = true;
 }

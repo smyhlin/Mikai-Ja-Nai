@@ -38,6 +38,9 @@ public:
 
     int pageSize() const { return pageSize_; }
     void setEpisodeMode();
+    /// Render compact page-number pills (`1 … 4 [5] 6 … 20`) instead of entry
+    /// ranges, collapsing intermediate pills automatically on narrow viewports.
+    void setCompactPageNumbers(bool enabled);
 
     /// Point the pager at `page` of `pages` over a result set of `entries` rows,
     /// labelling chips positionally.
@@ -56,6 +59,7 @@ Q_SIGNALS:
 
 protected:
     void changeEvent(QEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
 
 private:
     /// Restates every static caption in place after a LanguageChange: the
@@ -78,6 +82,8 @@ private:
     /// False until the first renderChips, so the first setState always applies
     /// even when it repeats the constructor defaults.
     bool rendered_ = false;
+    bool compactPageNumbers_ = false;
+    bool narrowLayout_ = false;
 
     QPushButton* firstButton_ = nullptr;
     QPushButton* prevButton_ = nullptr;
