@@ -3904,7 +3904,26 @@ void SearchPage::openTeamPicker() {
     layout->addWidget(search);
     layout->addLayout(teamControlsRow);
     layout->addWidget(selectedStrip);
+    auto* emptyCard = new QFrame(&dialog);
+    emptyCard->setObjectName(QStringLiteral("settingsCard"));
+    auto* emptyLayout = new QVBoxLayout(emptyCard);
+    emptyLayout->setContentsMargins(theme::kSpacingLarge, theme::kSpacingLarge,
+                                    theme::kSpacingLarge, theme::kSpacingLarge);
+    emptyLayout->setSpacing(theme::kSpacingSmall);
+    auto* emptyTitle = new QLabel(tr("No teams found"), emptyCard);
+    emptyTitle->setObjectName(QStringLiteral("sectionHeading"));
+    auto* emptySub = new QLabel(tr("Try a different name or clear Voice / Subtitles filters."), emptyCard);
+    emptySub->setObjectName(QStringLiteral("muted"));
+    emptySub->setWordWrap(true);
+    auto* emptyResetBtn = new QPushButton(tr("Reset search & filters"), emptyCard);
+    theme::applyActionRole(emptyResetBtn, theme::ActionRole::Secondary);
+    emptyLayout->addWidget(emptyTitle);
+    emptyLayout->addWidget(emptySub);
+    emptyLayout->addWidget(emptyResetBtn, 0, Qt::AlignLeft);
+    emptyCard->hide();
+
     layout->addWidget(state);
+    layout->addWidget(emptyCard);
     layout->addWidget(rows, 1);
     auto* buttons = new QHBoxLayout();
     buttons->setSpacing(theme::kSpacingSmall);
@@ -3972,10 +3991,11 @@ void SearchPage::openTeamPicker() {
     const QPointer<QListWidget> guardedRows(rows);
     const QPointer<QPushButton> guardedMore(more);
     const QPointer<QLabel> guardedState(state);
+    const QPointer<QFrame> guardedEmpty(emptyCard);
     backend::MikaiClient* client = &client_;
-    auto fetch = [this, client, guardedRows, guardedMore, guardedState, paging, totalPages,
-                  currentTerm, request, inFlight, pickedTeamIds, voiceFilter, subsFilter,
-                  teamSortBox, teamOrderBtn]
+    auto fetch = [this, client, guardedRows, guardedMore, guardedState, guardedEmpty, paging,
+                  totalPages, currentTerm, request, inFlight, pickedTeamIds, voiceFilter,
+                  subsFilter, teamSortBox, teamOrderBtn]
                  (const QString& term, int page) {
         *currentTerm = term;
         if (page == 1) {
@@ -4002,8 +4022,8 @@ void SearchPage::openTeamPicker() {
         runner_.run([client, term, page, haveVoice, haveSubs, sortKey, orderKey] {
             return QVariant::fromValue(
                 client->getTeams(term, page, 50, haveVoice, haveSubs, sortKey, orderKey));
-        }, [guardedRows, guardedMore, guardedState, paging, totalPages, request, inFlight, seq,
-            page, pickedTeamIds]
+        }, [guardedRows, guardedMore, guardedState, guardedEmpty, paging, totalPages, request,
+            inFlight, seq, page, pickedTeamIds]
              (const QVariant& v) {
             if (seq != *request || !guardedRows) return;
             *inFlight = false;
@@ -4052,8 +4072,12 @@ void SearchPage::openTeamPicker() {
             if (guardedState)
                 guardedState->setText(QObject::tr("%1 teams · page %2 of %3")
                                           .arg(total).arg(page).arg(*totalPages));
+            const bool isEmpty = guardedRows->count() == 0;
+            if (guardedEmpty) guardedEmpty->setVisible(isEmpty);
+            guardedRows->setVisible(!isEmpty);
             if (guardedMore) guardedMore->setEnabled(page < *totalPages);
-        }, [guardedState, guardedMore, request, inFlight, seq](const backend::Failure& failure) {
+        }, [guardedState, guardedMore, guardedEmpty, request, inFlight, seq](const backend::Failure& failure) {
+            if (guardedEmpty) guardedEmpty->hide();
             if (seq != *request) return;
             *inFlight = false;
             if (guardedState) guardedState->setText(failure.message);
@@ -4084,6 +4108,14 @@ void SearchPage::openTeamPicker() {
             [fetch, search, teamOrderBtn](bool asc) {
                 teamOrderBtn->setText(asc ? tr("↑ Asc") : tr("↓ Desc"));
                 fetch(search->text().trimmed(), 1);
+            });
+    connect(emptyResetBtn, &QPushButton::clicked, &dialog,
+            [search, voiceFilter, subsFilter, teamSortBox, fetch] {
+                search->clear();
+                voiceFilter->setChecked(false);
+                subsFilter->setChecked(false);
+                teamSortBox->setCurrentIndex(0);
+                fetch(QString(), 1);
             });
     connect(more, &QPushButton::clicked, &dialog, [fetch, paging, totalPages, currentTerm] {
         if (*paging < *totalPages) fetch(*currentTerm, *paging + 1);
@@ -4193,6 +4225,10 @@ void SearchPage::browseSelectedTeam(const backend::Team& team) {
         teamDetailLabel_->setOpenExternalLinks(false);
         teamDetailLabel_->setTextInteractionFlags(Qt::TextBrowserInteraction);
         connect(teamDetailLabel_, &QLabel::linkActivated, this, [this](const QString& target) {
+            if (target == QLatin1String("mikai-action://retry-team")) {
+                browseSelectedTeam(activeTeam_);
+                return;
+            }
             const QUrl url(target);
             if (!url.isValid() || url.host().isEmpty() ||
                 (url.scheme() != QLatin1String("http") && url.scheme() != QLatin1String("https"))) {
@@ -4239,7 +4275,9 @@ void SearchPage::browseSelectedTeam(const backend::Team& team) {
                 self->renderTeamProfile();
             }, [self, seq](const backend::Failure& failure) {
                 if (self.isNull() || seq != self->teamRequestSeq_) return;
-                self->teamDetailLabel_->setText(failure.message.toHtmlEscaped());
+                self->teamDetailLabel_->setText(
+                    QStringLiteral("%1 — <a href=\"mikai-action://retry-team\">%2</a>")
+                        .arg(failure.message.toHtmlEscaped(), tr("Retry")));
             });
     }
     loadTeamAnime(1);
