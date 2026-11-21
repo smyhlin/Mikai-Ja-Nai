@@ -802,6 +802,40 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     resultsSkeleton_->hide();
     rootLayout_->addWidget(resultsSkeleton_, 1);
 
+    resultsStateCard_ = new QFrame(this);
+    resultsStateCard_->setObjectName(QStringLiteral("settingsCard"));
+    auto* stateLayout = new QVBoxLayout(resultsStateCard_);
+    stateLayout->setContentsMargins(theme::kSpacingLarge, theme::kSpacingLarge,
+                                    theme::kSpacingLarge, theme::kSpacingLarge);
+    stateLayout->setSpacing(theme::kSpacingSmall);
+    resultsStateTitle_ = new QLabel(resultsStateCard_);
+    resultsStateTitle_->setObjectName(QStringLiteral("sectionHeading"));
+    resultsStateTitle_->setWordWrap(true);
+    resultsStateDetail_ = new QLabel(resultsStateCard_);
+    resultsStateDetail_->setObjectName(QStringLiteral("muted"));
+    resultsStateDetail_->setWordWrap(true);
+    auto* stateActions = new QHBoxLayout();
+    stateActions->setSpacing(theme::kSpacingSmall);
+    resultsStateRetry_ = new QPushButton(tr("Retry"), resultsStateCard_);
+    theme::applyActionRole(resultsStateRetry_, theme::ActionRole::Primary);
+    connect(resultsStateRetry_, &QPushButton::clicked, this, [this] { fetchPage(page_); });
+    resultsStateClearFilters_ = new QPushButton(tr("Clear filters"), resultsStateCard_);
+    theme::applyActionRole(resultsStateClearFilters_, theme::ActionRole::Secondary);
+    connect(resultsStateClearFilters_, &QPushButton::clicked, this,
+            &SearchPage::resetCatalogueFilters);
+    resultsStateResetSearch_ = new QPushButton(tr("Back to Home"), resultsStateCard_);
+    theme::applyActionRole(resultsStateResetSearch_, theme::ActionRole::Ghost);
+    connect(resultsStateResetSearch_, &QPushButton::clicked, this, &SearchPage::returnHome);
+    stateActions->addWidget(resultsStateRetry_);
+    stateActions->addWidget(resultsStateClearFilters_);
+    stateActions->addWidget(resultsStateResetSearch_);
+    stateActions->addStretch(1);
+    stateLayout->addWidget(resultsStateTitle_);
+    stateLayout->addWidget(resultsStateDetail_);
+    stateLayout->addLayout(stateActions);
+    resultsStateCard_->hide();
+    rootLayout_->addWidget(resultsStateCard_, 0, Qt::AlignTop);
+
     {
         QSettings settings;
         const int savedSize = settings.value(QStringLiteral("search/pageSize"),
@@ -3267,6 +3301,22 @@ void SearchPage::runResultsRequest(int page) {
         });
 }
 
+void SearchPage::showResultsStateCard(const QString& title, const QString& detail, bool isError) {
+    if (resultsStateCard_ == nullptr) return;
+    resultsStateTitle_->setText(title);
+    resultsStateDetail_->setText(detail);
+    resultsStateRetry_->setVisible(isError);
+    resultsStateClearFilters_->setVisible(hasExplicitCatalogueCriteria(catalogueQuery_));
+    resultsStateResetSearch_->setVisible(!currentQuery_.isEmpty() || !homeCurrent_);
+    resultsStateCard_->show();
+    if (resultsGridScroll_ != nullptr) resultsGridScroll_->hide();
+    if (results_ != nullptr) results_->hide();
+}
+
+void SearchPage::hideResultsStateCard() {
+    if (resultsStateCard_ != nullptr) resultsStateCard_->hide();
+}
+
 void SearchPage::setSearchInFlight(bool active) {
     if (searchInFlight_ == active) return;
     searchInFlight_ = active;
@@ -3278,11 +3328,9 @@ void SearchPage::setSearchInFlight(bool active) {
     if (!homeCurrent_ && resultsSkeleton_ != nullptr) {
         resultsSkeleton_->setVisible(active);
         if (active) {
+            hideResultsStateCard();
             if (resultsGridScroll_ != nullptr) resultsGridScroll_->hide();
             if (results_ != nullptr) results_->hide();
-        } else {
-            if (resultsGridScroll_ != nullptr) resultsGridScroll_->setVisible(gridViewMode_);
-            if (results_ != nullptr) results_->setVisible(!gridViewMode_);
         }
     }
 }
@@ -3322,6 +3370,7 @@ void SearchPage::showDiscovery() {
     discoveryScroll_->show();
     results_->hide();
     if (resultsSkeleton_ != nullptr) resultsSkeleton_->hide();
+    hideResultsStateCard();
     if (resultsGridScroll_ != nullptr) resultsGridScroll_->hide();
     if (resultsToolbar_ != nullptr) resultsToolbar_->hide();
     formatBar_->hide();
@@ -3379,6 +3428,21 @@ void SearchPage::onResults(const backend::SearchResult& result, int requestedPag
         refreshFormatTotals();
     }
     populateRows();
+    if (entries_.isEmpty()) {
+        const QString heading =
+            !currentQuery_.isEmpty()
+                ? tr("No anime matched \"%1\"").arg(currentQuery_)
+                : tr("No titles match these filters");
+        const QString hint =
+            hasExplicitCatalogueCriteria(catalogueQuery_)
+                ? tr("Try broadening your active filters or clearing one or more criteria.")
+                : tr("Check the spelling or try searching by English, Ukrainian, or romaji title.");
+        showResultsStateCard(heading, hint, false);
+    } else {
+        hideResultsStateCard();
+        if (resultsGridScroll_ != nullptr) resultsGridScroll_->setVisible(gridViewMode_);
+        if (results_ != nullptr) results_->setVisible(!gridViewMode_);
+    }
     updatePager();
 }
 
@@ -3561,6 +3625,12 @@ void SearchPage::populateResultCards() {
 void SearchPage::onError(const backend::Failure& failure) {
     rateLabel_->refresh();
     reportFailure(failure);
+    if (!homeCurrent_) {
+        showResultsStateCard(tr("Could not load results"),
+                             failure.message.isEmpty() ? tr("The server did not respond. Please try again.")
+                                                       : failure.message,
+                             true);
+    }
     updatePager();
 }
 
