@@ -4319,6 +4319,81 @@ void SearchPage::browseSelectedTeam(const backend::Team& team) {
         actionsRow->addWidget(teamCombineFiltersButton_);
         actionsRow->addWidget(teamCopyLinkButton_);
         actionsRow->addWidget(teamOpenWebButton_);
+        teamPostersButton_ = new QPushButton(tr("UA Posters"), teamHeroCard_);
+        teamPostersButton_->setObjectName(QStringLiteral("teamPostersButton"));
+        teamPostersButton_->setToolTip(tr("Browse Ukrainian localized posters created by this team"));
+        theme::applyActionRole(teamPostersButton_, theme::ActionRole::Ghost);
+        connect(teamPostersButton_, &QPushButton::clicked, this, [this] {
+            if (activeTeam_.id <= 0) return;
+            QDialog dlg(this);
+            dlg.setWindowTitle(tr("UA Posters — %1").arg(activeTeam_.name));
+            dlg.resize(560, 440);
+            auto* lay = new QVBoxLayout(&dlg);
+            lay->setContentsMargins(theme::kSpacingLarge, theme::kSpacingMedium,
+                                    theme::kSpacingLarge, theme::kSpacingMedium);
+            lay->setSpacing(theme::kSpacingSmall);
+            auto* statusLbl = new QLabel(tr("Loading localized Ukrainian posters…"), &dlg);
+            statusLbl->setObjectName(QStringLiteral("muted"));
+            auto* list = new QListWidget(&dlg);
+            list->setObjectName(QStringLiteral("teamPostersList"));
+            auto* closeBtn = new QPushButton(tr("Close"), &dlg);
+            theme::applyActionRole(closeBtn, theme::ActionRole::Secondary);
+            connect(closeBtn, &QPushButton::clicked, &dlg, &QDialog::accept);
+            lay->addWidget(statusLbl);
+            lay->addWidget(list, 1);
+            lay->addWidget(closeBtn, 0, Qt::AlignRight);
+
+            backend::MikaiClient* client = &client_;
+            const qint64 teamId = activeTeam_.id;
+            QPointer<QLabel> statusGuard(statusLbl);
+            QPointer<QListWidget> listGuard(list);
+            runner_.run(
+                [client, teamId] {
+                    return QVariant::fromValue(client->getUaPosters(1, 20, {}, teamId));
+                },
+                [statusGuard, listGuard](const QVariant& v) {
+                    if (statusGuard.isNull() || listGuard.isNull()) return;
+                    const QJsonObject payload = v.toJsonObject();
+                    const QJsonArray items = payload.value(QStringLiteral("items")).toArray();
+                    if (items.isEmpty()) {
+                        statusGuard->setText(tr("This team has no localized Ukrainian posters yet."));
+                        return;
+                    }
+                    statusGuard->setText(tr("%n localized Ukrainian poster(s)", nullptr, items.size()));
+                    for (const QJsonValue& val : items) {
+                        const QJsonObject obj = val.toObject();
+                        const QString author = obj.value(QStringLiteral("author")).toString();
+                        const QString animeTitle =
+                            obj.value(QStringLiteral("anime")).toObject().value(QStringLiteral("title")).toString();
+                        const QString url =
+                            obj.value(QStringLiteral("images")).toObject().value(QStringLiteral("big")).toObject().value(QStringLiteral("webp")).toString();
+                        QString label = animeTitle.isEmpty() ? tr("Poster #%1").arg(obj.value(QStringLiteral("id")).toInteger())
+                                                             : animeTitle;
+                        if (!author.isEmpty()) label += QStringLiteral(" · %1").arg(author);
+                        auto* row = new QListWidgetItem(label, listGuard.data());
+                        row->setData(Qt::UserRole, url);
+                        row->setToolTip(url);
+                    }
+                },
+                [statusGuard](const backend::Failure& failure) {
+                    if (!statusGuard.isNull()) {
+                        statusGuard->setText(
+                            failure.message.isEmpty()
+                                ? tr("Localized posters are unavailable on this server.")
+                                : failure.message);
+                    }
+                });
+            connect(list, &QListWidget::itemActivated, &dlg, [](QListWidgetItem* item) {
+                if (item == nullptr) return;
+                const QUrl url(item->data(Qt::UserRole).toString());
+                if (url.isValid() && (url.scheme() == QLatin1String("http") ||
+                                      url.scheme() == QLatin1String("https"))) {
+                    QDesktopServices::openUrl(url);
+                }
+            });
+            dlg.exec();
+        });
+        actionsRow->addWidget(teamPostersButton_);
         actionsRow->addStretch(1);
         teamFilterEdit_ = new QLineEdit(teamHeroCard_);
         teamFilterEdit_->setObjectName(QStringLiteral("teamInlineSearchEdit"));
