@@ -60,6 +60,7 @@
 #include <QResizeEvent>
 #include <QStyle>
 #include <QScrollArea>
+#include <QStackedWidget>
 #include <QScrollBar>
 #include <QSizePolicy>
 #include <QSettings>
@@ -2866,23 +2867,61 @@ void SearchPage::showCatalogueFilters() {
         bLayout->addWidget(retry, 0, Qt::AlignVCenter);
         layout->addWidget(banner);
     }
-    filterScroll->setWidgetResizable(true);
-    filterScroll->setFrameShape(QFrame::NoFrame);
-    filterScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    filterScroll->setObjectName(QStringLiteral("catalogueFilterScroll"));
-    auto* filterContent = new QWidget(filterScroll);
-    auto* sections = new QVBoxLayout(filterContent);
-    sections->setContentsMargins(0, theme::kSpacingSmall, theme::kSpacingSmall, 0);
-    sections->setSpacing(theme::kSpacingMedium);
-    filterScroll->setWidget(filterContent);
+    delete filterScroll;
+    filterScroll = nullptr;
+
+    // Two-pane sidebar-navigated card layout unified with SettingsDialog.
+    auto* bodyRow = new QHBoxLayout();
+    bodyRow->setContentsMargins(0, 0, 0, 0);
+    bodyRow->setSpacing(theme::kSpacingMedium);
+
+    auto* navRail = new QListWidget(&dialog);
+    navRail->setObjectName(QStringLiteral("catalogueFilterNavRail"));
+    navRail->setFixedWidth(168);
+    navRail->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    navRail->setFrameShape(QFrame::NoFrame);
+
+    auto* sectionStack = new QStackedWidget(&dialog);
+    sectionStack->setObjectName(QStringLiteral("catalogueFilterStack"));
+    connect(navRail, &QListWidget::currentRowChanged, sectionStack, &QStackedWidget::setCurrentIndex);
+
+    bodyRow->addWidget(navRail, 0);
+    bodyRow->addWidget(sectionStack, 1);
+
+    auto* filterContent = sectionStack;
     const auto addSection = [&](const QString& title) {
-        auto* box = new QGroupBox(title, filterContent);
-        box->setObjectName(QStringLiteral("catalogueFilterSection"));
-        auto* inner = new QVBoxLayout(box);
-        inner->setContentsMargins(theme::kSpacingMedium, theme::kSpacingLarge,
-                                  theme::kSpacingMedium, theme::kSpacingMedium);
+        auto* pageScroll = new QScrollArea(sectionStack);
+        pageScroll->setWidgetResizable(true);
+        pageScroll->setFrameShape(QFrame::NoFrame);
+        pageScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        pageScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+
+        auto* pageHost = new QWidget(pageScroll);
+        auto* pageLayout = new QVBoxLayout(pageHost);
+        pageLayout->setContentsMargins(0, 0, theme::kSpacingSmall, 0);
+        pageLayout->setSpacing(theme::kSpacingMedium);
+
+        auto* card = new QFrame(pageHost);
+        card->setObjectName(QStringLiteral("settingsCard"));
+        auto* inner = new QVBoxLayout(card);
+        inner->setContentsMargins(theme::kSpacingLarge, theme::kSpacingLarge,
+                                  theme::kSpacingLarge, theme::kSpacingLarge);
         inner->setSpacing(theme::kSpacingSmall);
-        sections->addWidget(box);
+
+        auto* heading = new QLabel(title, card);
+        heading->setObjectName(QStringLiteral("sectionHeading"));
+        inner->addWidget(heading);
+
+        pageLayout->addWidget(card);
+        pageLayout->addStretch(1);
+        pageScroll->setWidget(pageHost);
+
+        sectionStack->addWidget(pageScroll);
+        auto* navItem = new QListWidgetItem(title, navRail);
+        navItem->setSizeHint(QSize(156, theme::kControlHeight));
+        if (navRail->count() == 1) {
+            navRail->setCurrentRow(0);
+        }
         return inner;
     };
     const auto addField = [](QVBoxLayout* section, const QString& caption, QWidget* field) {
@@ -2933,7 +2972,7 @@ void SearchPage::showCatalogueFilters() {
         });
         return search;
     };
-    layout->addWidget(filterScroll, 1);
+    layout->addLayout(bodyRow, 1);
     const auto optionLabel = [](const QString& value) {
         if (value == QLatin1String("all")) return tr("Match all");
         if (value == QLatin1String("any")) return tr("Match any");
