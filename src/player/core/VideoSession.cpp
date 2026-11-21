@@ -625,10 +625,6 @@ void VideoSession::ensureEngine() {
         {"screenshot-sw", "yes"},
         // Qt owns presentation, so render calls stay nonblocking.
         {"video-timing-offset", "0"},
-        // Prevent SDR video from incorrectly triggering HDR on the display:
-        // hint colorspace only from source metadata.
-        {"target-colorspace-hint-mode", "source"},
-        {"target-colorspace-hint", "no"},
     };
     // The display mode is applied before initialize so the first frame is
     // already in it. An Auto downscale is left out here on purpose: dscale's

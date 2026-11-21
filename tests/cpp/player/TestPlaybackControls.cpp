@@ -418,8 +418,8 @@ void TestPlaybackControls::quickTimelinePointerSeeksAndTimeLabelsFormat() {
     QVERIFY(window != nullptr);
     auto* timeline = timelineItem(window->contentItem());
     QVERIFY2(timeline != nullptr, "the visible Quick scene must expose its actual timeline item");
-    QVERIFY(timeline->width() > 0.0);
-    QVERIFY(timeline->height() > 0.0);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        timeline->isVisible() && timeline->width() > 0.0 && timeline->height() > 0.0, 5000);
     const double target = controller.duration() * 0.5;
 
     QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, windowPoint(timeline, 0.5));

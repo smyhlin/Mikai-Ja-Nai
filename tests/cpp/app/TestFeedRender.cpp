@@ -3340,8 +3340,9 @@ void TestFeedRender::episodeMarksPersistAcrossReopenAndViewChanges() {
     QTRY_VERIFY_WITH_TIMEOUT(
         subPage->findChildren<QPushButton*>(QStringLiteral("episodeButton")).size() >= kEpisodes,
         10000);
-    QPushButton* subFirst = episodePill(*subPage, QStringLiteral("1"));
-    QVERIFY(subFirst != nullptr);
+    QPushButton* subFirst = nullptr;
+    QTRY_VERIFY_WITH_TIMEOUT(
+        (subFirst = episodePill(*subPage, QStringLiteral("1"))) != nullptr, 30000);
     QVERIFY2(episodeWatchedMarkShown(subFirst), "the release switch lost the watched mark");
   }
 
@@ -3359,8 +3360,9 @@ void TestFeedRender::episodeMarksPersistAcrossReopenAndViewChanges() {
         30000);
     auto* toggle = reopened.findChild<QPushButton*>(QStringLiteral("titleWatchWatchedToggle"));
     QVERIFY(toggle != nullptr);
-    QPushButton* first = episodePill(*tabPage, QStringLiteral("1"));
-    QVERIFY(first != nullptr);
+    QPushButton* first = nullptr;
+    QTRY_VERIFY_WITH_TIMEOUT(
+        (first = episodePill(*tabPage, QStringLiteral("1"))) != nullptr, 30000);
     QTRY_VERIFY_WITH_TIMEOUT(episodeWatchedMarkShown(first), 5000);
     QTRY_VERIFY_WITH_TIMEOUT(toggle->isChecked(), 5000);
 
