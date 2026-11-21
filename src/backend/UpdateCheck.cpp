@@ -184,9 +184,14 @@ UpdateCheckResult parseNightlyReleaseResponse(const QByteArray& response,
 
     QString commitSha = release.value(QStringLiteral("target_commitish")).toString().trimmed();
     const QString title = release.value(QStringLiteral("name")).toString().trimmed();
-    static const QRegularExpression shaPattern(QStringLiteral("([0-9a-fA-F]{7,40})"));
+    // Prefer the trailing SHA token (e.g. "Nightly 20261121-2cd1d64") so an
+    // 8-digit YYYYMMDD date prefix is never mistaken for the commit hash.
+    static const QRegularExpression trailingShaPattern(
+        QStringLiteral("(?:^|[-_\\s])([0-9a-fA-F]{7,40})$"));
+    static const QRegularExpression fallbackShaPattern(QStringLiteral("([0-9a-fA-F]{7,40})"));
     if (commitSha.isEmpty() || commitSha == QLatin1String("main")) {
-        const auto match = shaPattern.match(title);
+        auto match = trailingShaPattern.match(title);
+        if (!match.hasMatch()) match = fallbackShaPattern.match(title);
         if (match.hasMatch()) commitSha = match.captured(1);
     }
     const QString shortRemote = commitSha.left(7).toLower();
