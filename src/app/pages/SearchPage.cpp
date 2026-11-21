@@ -3254,44 +3254,61 @@ void SearchPage::resultsContextMenu(const QPoint& position) {
     if (ref.isEmpty()) {
         return;
     }
-    QMenu menu(this);
-    QAction* open = menu.addAction(tr("Open"));
-    open->setToolTip(tr("Open the title page"));
-    connect(open, &QAction::triggered, this, [this, item] { openItem(item); });
-    QAction* copyLink = menu.addAction(tr("Copy link"));
-    copyLink->setToolTip(tr("Copy the page address on mikai.me"));
-    connect(copyLink, &QAction::triggered, this, [this, ref] {
-        if (!mikai::gui::copyText(pageUrlFor(ref))) reportFailure(Notice::CopyLink);
-    });
-    QAction* copyRef = menu.addAction(tr("Copy ID"));
-    copyRef->setToolTip(tr("Copy the title identifier"));
-    connect(copyRef, &QAction::triggered, this, [this, ref] {
-        if (!mikai::gui::copyText(ref)) reportFailure(Notice::CopyId);
-    });
-    menu.exec(results_->mapToGlobal(position));
+    animeCardMenu(ref, results_->mapToGlobal(position));
 }
 
 void SearchPage::animeCardMenu(const QString& ref, const QPoint& globalPos) {
+    QString titleText;
+    for (const backend::AnimeSummary& entry : entries_) {
+        if (entry.ref == ref) {
+            titleText = labels::titleName(entry.titles);
+            break;
+        }
+    }
+    if (titleText.isEmpty()) {
+        for (const QString& key : {QStringLiteral("ongoing"), QStringLiteral("popular"),
+                                   kRecentKey}) {
+            for (const backend::AnimeSummary& entry : carouselEntries_.value(key)) {
+                if (entry.ref == ref) {
+                    titleText = labels::titleName(entry.titles);
+                    break;
+                }
+            }
+            if (!titleText.isEmpty()) break;
+        }
+    }
+
     QMenu menu(this);
     QAction* open = menu.addAction(tr("Open"));
     open->setToolTip(tr("Open the title page"));
     connect(open, &QAction::triggered, this, [this, ref] { openByRef(ref); });
-    QAction* copyLink = menu.addAction(tr("Copy link"));
-    copyLink->setToolTip(tr("Copy the page address on mikai.me"));
-    connect(copyLink, &QAction::triggered, this, [this, ref] {
-        if (!mikai::gui::copyText(pageUrlFor(ref))) reportFailure(Notice::CopyLink);
-    });
-    QAction* copyRef = menu.addAction(tr("Copy ID"));
-    copyRef->setToolTip(tr("Copy the title identifier"));
-    connect(copyRef, &QAction::triggered, this, [this, ref] {
-        if (!mikai::gui::copyText(ref)) reportFailure(Notice::CopyId);
-    });
+
     QAction* browser = menu.addAction(tr("Open in browser"));
     browser->setToolTip(tr("Open the page on mikai.me"));
     connect(browser, &QAction::triggered, this, [this, ref] {
         if (!QDesktopServices::openUrl(QUrl(pageUrlFor(ref)))) {
             reportFailure(Notice::Browser);
         }
+    });
+
+    menu.addSeparator();
+
+    if (!titleText.isEmpty()) {
+        QAction* copyTitle = menu.addAction(tr("Copy title"));
+        copyTitle->setToolTip(tr("Copy the anime title"));
+        connect(copyTitle, &QAction::triggered, this, [this, titleText] {
+            if (!mikai::gui::copyText(titleText)) reportFailure(Notice::CopyId);
+        });
+    }
+    QAction* copyLink = menu.addAction(tr("Copy link"));
+    copyLink->setToolTip(tr("Copy the page address on mikai.me"));
+    connect(copyLink, &QAction::triggered, this, [this, ref] {
+        if (!mikai::gui::copyText(pageUrlFor(ref))) reportFailure(Notice::CopyLink);
+    });
+    QAction* copyRef = menu.addAction(tr("Copy ID"));
+    copyRef->setToolTip(tr("Copy the title identifier"));
+    connect(copyRef, &QAction::triggered, this, [this, ref] {
+        if (!mikai::gui::copyText(ref)) reportFailure(Notice::CopyId);
     });
     menu.exec(globalPos);
 }
