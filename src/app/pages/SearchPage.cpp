@@ -3094,13 +3094,63 @@ void SearchPage::showCatalogueFilters() {
                                      catalogueQuery_.genres_match);
     auto* tagMatch = selectionMode(QStringLiteral("tagMatchMode"), matchModes,
                                    catalogueQuery_.tags_match);
+    const auto attachSectionHeaderTools =
+        [&dialog, navRail](int navIndex, const QString& baseTitle, QVBoxLayout* section,
+                           const QList<QListWidget*>& lists) {
+            QWidget* owner = section->parentWidget();
+            auto* headerRow = new QHBoxLayout();
+            headerRow->setContentsMargins(0, 0, 0, 0);
+            auto* countBadge = new QLabel(owner);
+            countBadge->setObjectName(QStringLiteral("muted"));
+            auto* clearBtn = new QPushButton(tr("Clear"), owner);
+            theme::applyActionRole(clearBtn, theme::ActionRole::Ghost);
+            headerRow->addWidget(countBadge, 1);
+            headerRow->addWidget(clearBtn, 0);
+            section->insertLayout(1, headerRow);
+
+            const auto refresh = [navRail, navIndex, baseTitle, countBadge, clearBtn, lists]() {
+                int selectedCount = 0;
+                for (QListWidget* list : lists) {
+                    for (int r = 0; r < list->count(); ++r) {
+                        if (list->item(r)->checkState() == Qt::Checked) ++selectedCount;
+                    }
+                }
+                if (QListWidgetItem* navItem = navRail->item(navIndex)) {
+                    navItem->setText(selectedCount > 0
+                                         ? QStringLiteral("%1 (%2)").arg(baseTitle).arg(selectedCount)
+                                         : baseTitle);
+                }
+                countBadge->setText(selectedCount > 0
+                                        ? tr("%n selected", nullptr, selectedCount)
+                                        : QString());
+                clearBtn->setVisible(selectedCount > 0);
+            };
+            connect(clearBtn, &QPushButton::clicked, &dialog, [lists, refresh] {
+                for (QListWidget* list : lists) {
+                    for (int r = 0; r < list->count(); ++r) {
+                        if (list->item(r)->checkState() == Qt::Checked) {
+                            list->item(r)->setCheckState(Qt::Unchecked);
+                        }
+                    }
+                }
+                refresh();
+            });
+            for (QListWidget* list : lists) {
+                connect(list, &QListWidget::itemChanged, &dialog,
+                        [refresh](QListWidgetItem*) { refresh(); });
+            }
+            refresh();
+        };
+
     auto* genres = addSection(tr("Genres"));
+    attachSectionHeaderTools(0, tr("Genres"), genres, {genreInclude, genreExclude});
     addSectionSearch(genres, QStringLiteral("genreFilterSearch"), tr("Search genres"),
                      {genreInclude, genreExclude});
     addField(genres, tr("Genres include"), genreInclude);
     addField(genres, tr("Genres exclude"), genreExclude);
     addField(genres, tr("Genre matching"), genreMatch);
     auto* tagsSection = addSection(tr("Tags"));
+    attachSectionHeaderTools(1, tr("Tags"), tagsSection, {tagInclude, tagExclude});
     addSectionSearch(tagsSection, QStringLiteral("tagFilterSearch"), tr("Search tags"),
                      {tagInclude, tagExclude});
     addField(tagsSection, tr("Tags include"), tagInclude);
@@ -3234,6 +3284,8 @@ void SearchPage::showCatalogueFilters() {
     addSectionSearch(release, QStringLiteral("studioFilterSearch"), tr("Search studios…"),
                      {studioList});
     addField(release, tr("Studios"), studioList);
+    attachSectionHeaderTools(2, tr("Release"), release,
+                             {formatList, statusList, seasonList, studioList});
     // Preserve selections when a newer API value is absent from the cached dictionary.
     QStringList sortFields = apiMeta_.anime_sort_fields;
     QStringList sortOrders = apiMeta_.sort_orders;
