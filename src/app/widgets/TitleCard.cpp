@@ -87,6 +87,7 @@ TitleCard::TitleCard(const backend::AnimeSummary& summary, QWidget* parent)
     text->setSpacing(theme::kSpacingXs);
 
     const QString fullTitle = labels::titleName(summary.titles);
+    rawTitle_ = fullTitle;
     title_ = makeLabel(QStringLiteral("carouselTitle"), QString());
     title_->setAlignment(Qt::AlignLeft | Qt::AlignTop);
     title_->setWordWrap(false);
@@ -140,7 +141,13 @@ TitleCard::TitleCard(const backend::AnimeSummary& summary, QWidget* parent)
     // the status and the count floating halfway down the card against a
     // two-line one. Top-aligning the stack puts every card's facts on the
     // same line whichever way the title happens to wrap.
+    altTitle_ = makeLabel(QStringLiteral("muted"), QString());
+    altTitle_->setWordWrap(false);
+    altTitle_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    altTitle_->hide();
+
     text->addWidget(title_, 0, Qt::AlignTop);
+    text->addWidget(altTitle_, 0, Qt::AlignTop);
     text->addLayout(badgesRow);
     text->addWidget(episodes_, 0, Qt::AlignTop);
     text->addStretch(1);
@@ -325,6 +332,42 @@ void TitleCard::applyEpisodes(int aired, int planned) {
     }
     const QString text = episodeCountText(aired, planned_);
     episodes_->setText(text.isEmpty() ? QString::fromLatin1(kPending) : text);
+}
+
+void TitleCard::applySearchHighlight(const QString& query, const backend::Titles& titles) {
+    const QString needle = query.trimmed();
+    if (needle.isEmpty() || title_ == nullptr) {
+        if (altTitle_ != nullptr) altTitle_->hide();
+        return;
+    }
+    const QString plain = title_->text();
+    const int pos = plain.indexOf(needle, 0, Qt::CaseInsensitive);
+    if (pos >= 0) {
+        const QString before = plain.left(pos).toHtmlEscaped().replace(QLatin1Char('\n'), QStringLiteral("<br>"));
+        const QString match = plain.mid(pos, needle.size()).toHtmlEscaped().replace(QLatin1Char('\n'), QStringLiteral("<br>"));
+        const QString after = plain.mid(pos + needle.size()).toHtmlEscaped().replace(QLatin1Char('\n'), QStringLiteral("<br>"));
+        title_->setTextFormat(Qt::RichText);
+        title_->setText(QStringLiteral("%1<span style=\"background:rgba(255,210,77,0.28);border-radius:3px;\">%2</span>%3")
+                            .arg(before, match, after));
+    }
+    if (rawTitle_.indexOf(needle, 0, Qt::CaseInsensitive) < 0 && altTitle_ != nullptr) {
+        QString matchedAlt;
+        for (const QString& candidate : {titles.ua, titles.english, titles.original}) {
+            if (!candidate.trimmed().isEmpty() && candidate != rawTitle_ &&
+                candidate.indexOf(needle, 0, Qt::CaseInsensitive) >= 0) {
+                matchedAlt = candidate.trimmed();
+                break;
+            }
+        }
+        if (!matchedAlt.isEmpty()) {
+            const QFontMetrics fm(altTitle_->font());
+            const int maxW = theme::kHomeCardWidth - theme::kSpacingMedium * 2 -
+                             theme::kHomePosterWidth - theme::kSpacingLarge - 8;
+            altTitle_->setText(fm.elidedText(matchedAlt, Qt::ElideRight, qMax(80, maxW)));
+            altTitle_->show();
+            setToolTip(rawTitle_ + QStringLiteral("\n") + matchedAlt);
+        }
+    }
 }
 
 void TitleCard::applyDetail(const backend::AnimeDetail& detail) {

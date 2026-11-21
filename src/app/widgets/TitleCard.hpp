@@ -41,6 +41,9 @@ public:
     void applyStatus(const QString& status);
     void applyEpisodes(int aired, int planned);
     void applyDetail(const backend::AnimeDetail& detail);
+    /// Highlight `query` inside the card title and surface any matched
+    /// alternative title (UA / EN / original) when the match is secondary.
+    void applySearchHighlight(const QString& query, const backend::Titles& titles);
 
 Q_SIGNALS:
     void openRequested(const QString& ref, const QString& poster);
@@ -77,7 +80,9 @@ private:
     double score_ = 0.0;
 
     QLabel* poster_ = nullptr;
+    QString rawTitle_;
     QLabel* title_ = nullptr;
+    QLabel* altTitle_ = nullptr;
     QLabel* status_ = nullptr;
     QLabel* meta_ = nullptr;
     QLabel* scoreLabel_ = nullptr;

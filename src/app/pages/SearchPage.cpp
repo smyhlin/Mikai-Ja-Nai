@@ -3436,7 +3436,17 @@ void SearchPage::refreshFormatTotals() {
 void SearchPage::populateRows() {
     results_->clear();
     for (const backend::AnimeSummary& entry : entries_) {
-        const QString label = resultRowText(entry);
+        QString label = resultRowText(entry);
+        if (!currentQuery_.isEmpty() &&
+            label.indexOf(currentQuery_, 0, Qt::CaseInsensitive) < 0) {
+            for (const QString& alt : {entry.titles.ua, entry.titles.english, entry.titles.original}) {
+                if (!alt.trimmed().isEmpty() &&
+                    alt.indexOf(currentQuery_, 0, Qt::CaseInsensitive) >= 0) {
+                    label += QStringLiteral(" · ") + alt.trimmed();
+                    break;
+                }
+            }
+        }
         auto* item = new QListWidgetItem(label, results_);
         item->setToolTip(label);
         QVariantMap data;
@@ -3473,6 +3483,9 @@ void SearchPage::populateResultCards() {
 
     for (const backend::AnimeSummary& entry : entries_) {
         auto* card = new TitleCard(entry, resultsGridHost_);
+        if (!currentQuery_.isEmpty()) {
+            card->applySearchHighlight(currentQuery_, entry.titles);
+        }
         connect(card, &TitleCard::openRequested, this,
                 [this](const QString& ref, const QString& poster) {
                     if (resultsGridScroll_ != nullptr &&
