@@ -875,6 +875,7 @@ void MainWindow::ensureNativeComponents() {
 void MainWindow::checkForUpdates(bool manual, bool forceChannelSwitch) {
     if (updateCheckInFlight_) {
         updateCheckManualRequested_ = updateCheckManualRequested_ || manual;
+        if (forceChannelSwitch) updateCheckPendingChannelSwitch_ = true;
         return;
     }
     updateCheckInFlight_ = true;
@@ -897,6 +898,11 @@ void MainWindow::checkForUpdates(bool manual, bool forceChannelSwitch) {
         [this, alive](const QVariant& value) {
             if (!alive->load()) return;
             updateCheckInFlight_ = false;
+            if (std::exchange(updateCheckPendingChannelSwitch_, false)) {
+                const bool pendingManual = std::exchange(updateCheckManualRequested_, false);
+                checkForUpdates(pendingManual || true, true);
+                return;
+            }
             const bool manual = std::exchange(updateCheckManualRequested_, false);
             const auto status = static_cast<backend::UpdateCheckStatus>(
                 value.toMap().value(QStringLiteral("status")).toInt());
@@ -931,6 +937,11 @@ void MainWindow::checkForUpdates(bool manual, bool forceChannelSwitch) {
         [this, alive](const backend::Failure&) {
             if (!alive->load()) return;
             updateCheckInFlight_ = false;
+            if (std::exchange(updateCheckPendingChannelSwitch_, false)) {
+                const bool pendingManual = std::exchange(updateCheckManualRequested_, false);
+                checkForUpdates(pendingManual || true, true);
+                return;
+            }
             const bool manual = std::exchange(updateCheckManualRequested_, false);
             QSettings().setValue(QString::fromLatin1(kUpdateNotificationsLastChecked),
                                  QDateTime::currentDateTimeUtc());

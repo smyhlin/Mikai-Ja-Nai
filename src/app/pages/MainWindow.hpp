@@ -244,6 +244,7 @@ private:
     const bool automaticSetupAllowed_;
     bool setupDeclined_ = false;
     bool setupPromptOffered_ = false;
+    bool updateCheckPendingChannelSwitch_ = false;
     /// The player a component prompt paused, and whether that prompt must turn
     /// AnimeJaNai off when it finishes. Cleared by the matching resume.
     QPointer<mplayer::quick::PlayerController> componentAskPlayer_;
