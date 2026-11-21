@@ -603,7 +603,8 @@ void SettingsDialog::retranslateSystemIntegration() {
 #ifdef Q_OS_LINUX
     systemContextMenu_->setText(tr("Add Mikai Ja Nai to video files' &Open With list"));
     systemContextMenu_->setAccessibleName(tr("Add Mikai Ja Nai to video files' Open With list"));
-    const QString contextHint = tr("Registers Mikai Ja Nai as an Open With and default-player candidate without changing your defaults. Desktop file managers decide where to show it. If default-player registration was requested, disabling Open With retains the desktop identity so existing defaults continue to work. A package-managed entry cannot be disabled here.");
+    const QString contextHint = tr("Adds Mikai Ja Nai to video files' Open With menu without changing your default player.");
+    systemContextMenu_->setToolTip(tr("Desktop file managers decide where to show it. Package-managed entries cannot be disabled here."));
 #else
     systemContextMenu_->setText(tr("Add Mikai Ja Nai to the video file &context menu"));
     systemContextMenu_->setAccessibleName(tr("Add Mikai Ja Nai to the video file context menu"));
@@ -614,7 +615,9 @@ void SettingsDialog::retranslateSystemIntegration() {
             : tr("The video file context menu integration is only available on Windows.");
 #endif
     systemContextMenuHint_->setText(contextHint);
+#ifndef Q_OS_LINUX
     systemContextMenu_->setToolTip(contextHint);
+#endif
     systemContextMenu_->setAccessibleDescription(contextHint);
     if (!systemStartupSupported() && !systemContextMenuSupported()) {
         systemIntegrationHint_->setText(
