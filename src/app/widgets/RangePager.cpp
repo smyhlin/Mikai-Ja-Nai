@@ -124,6 +124,9 @@ RangePager::RangePager(int pageSize, QWidget* parent)
 
     jump_ = new QSpinBox(this);
     jump_->setRange(1, 1);
+    // Wait until editing finishes (Enter / blur / step button) so typing
+    // multi-digit page numbers like "12" does not fire a page-1 request first.
+    jump_->setKeyboardTracking(false);
     jump_->setToolTip(tr("Jump to page"));
     jump_->setAccessibleName(tr("Page number"));
 
