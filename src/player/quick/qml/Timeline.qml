@@ -121,9 +121,19 @@ Item {
     }
 
     Rectangle {
+        anchors.fill: parent
+        anchors.margins: -2
+        visible: root.activeFocus
+        radius: 6
+        color: "transparent"
+        border.width: 1.5
+        border.color: root.controller.accentColor
+    }
+
+    Rectangle {
         id: hoverMarker
         visible: scrub.containsMouse && !root.dragging && root.seekable
-        x: scrub.mouseX - width / 2
+        x: Math.max(0, Math.min(root.width - width, scrub.mouseX - width / 2))
         anchors.verticalCenter: parent.verticalCenter
         width: 2
         height: track.height + 6
@@ -133,7 +143,7 @@ Item {
     Rectangle {
         id: handle
         anchors.verticalCenter: parent.verticalCenter
-        x: root.positionFraction * root.width - width / 2
+        x: Math.max(0, Math.min(root.width - width, root.positionFraction * root.width - width / 2))
         width: 12
         height: 12
         radius: width / 2
@@ -221,6 +231,15 @@ Item {
         onContainsMouseChanged: {
             if (!containsMouse && !pressed) root.previewDismissed()
         }
+        onWheel: wheel => {
+            if (!root.seekable) return
+            const delta = wheel.angleDelta.y !== 0 ? wheel.angleDelta.y : wheel.pixelDelta.y
+            if (delta === 0) return
+            root.controller.noteUserActivity()
+            const step = (wheel.modifiers & Qt.ShiftModifier) ? 1 : 5
+            root.seekByClamped(delta > 0 ? step : -step)
+            wheel.accepted = true
+        }
     }
 
     focus: false
@@ -230,11 +249,11 @@ Item {
         if (!event.isAutoRepeat) root.controller.noteUserActivity()
         switch (event.key) {
         case Qt.Key_Left:
-            root.seekByClamped(-5)
+            root.seekByClamped((event.modifiers & Qt.ShiftModifier) ? -1 : -5)
             event.accepted = true
             break
         case Qt.Key_Right:
-            root.seekByClamped(5)
+            root.seekByClamped((event.modifiers & Qt.ShiftModifier) ? 1 : 5)
             event.accepted = true
             break
         case Qt.Key_Home:
