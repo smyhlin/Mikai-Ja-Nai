@@ -598,11 +598,9 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     discoveryScroll_->setObjectName(QStringLiteral("discoveryScroll"));
     discoveryScroll_->setWidgetResizable(true);
     discoveryScroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    // No bar on the page either: it was the only vertical rule in the content
-    // area and it cost a gutter on every row. The wheel still scrolls, and
-    // Alt + wheel is the explicit gesture (the same modifier the carousels use),
-    // so a reader never loses the ability to reach the rest of the feed.
-    discoveryScroll_->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    // Show the slim themed vertical scrollbar whenever discovery overflows so
+    // users have clear scroll-position awareness and drag-scrolling support.
+    discoveryScroll_->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     discoveryScroll_->viewport()->installEventFilter(this);
     discoveryScroll_->setFrameShape(QFrame::NoFrame);
     discoveryScroll_->setWidget(discovery);
