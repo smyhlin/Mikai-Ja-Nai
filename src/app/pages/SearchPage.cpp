@@ -2843,17 +2843,28 @@ void SearchPage::showCatalogueFilters() {
     layout->setSpacing(theme::kSpacingMedium);
     auto* filterScroll = new QScrollArea(&dialog);
     if (!dictionaryError_.isEmpty()) {
-        auto* dictionaryFailure = new QLabel(tr("Catalogue dictionaries failed: %1").arg(dictionaryError_), &dialog);
+        auto* banner = new QFrame(&dialog);
+        banner->setObjectName(QStringLiteral("settingsCard"));
+        auto* bLayout = new QHBoxLayout(banner);
+        bLayout->setContentsMargins(theme::kSpacingMedium, theme::kSpacingSmall,
+                                    theme::kSpacingMedium, theme::kSpacingSmall);
+        bLayout->setSpacing(theme::kSpacingSmall);
+        auto* dictionaryFailure =
+            new QLabel(tr("Catalogue dictionaries failed: %1").arg(dictionaryError_), banner);
         dictionaryFailure->setObjectName(QStringLiteral("catalogueDictionaryFailure"));
         dictionaryFailure->setWordWrap(true);
-        auto* retry = new QPushButton(tr("Retry dictionaries"), &dialog);
+        auto* retry = new QPushButton(tr("Retry dictionaries"), banner);
         retry->setObjectName(QStringLiteral("catalogueDictionaryRetryButton"));
-        connect(retry, &QPushButton::clicked, this, [this, &dialog] {
+        theme::applyActionRole(retry, theme::ActionRole::Secondary);
+        connect(retry, &QPushButton::clicked, &dialog, [this, retry, dictionaryFailure] {
+            retry->setEnabled(false);
+            retry->setText(tr("Retrying…"));
+            dictionaryFailure->setText(tr("Reloading catalogue dictionaries in the background…"));
             loadDictionaries();
-            dialog.reject();
         });
-        layout->addWidget(dictionaryFailure);
-        layout->addWidget(retry);
+        bLayout->addWidget(dictionaryFailure, 1);
+        bLayout->addWidget(retry, 0, Qt::AlignVCenter);
+        layout->addWidget(banner);
     }
     filterScroll->setWidgetResizable(true);
     filterScroll->setFrameShape(QFrame::NoFrame);
