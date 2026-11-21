@@ -145,7 +145,11 @@ SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWi
 
     quotaTimer_ = new QTimer(this);
     quotaTimer_->setInterval(1000);
-    connect(quotaTimer_, &QTimer::timeout, this, &SettingsDialog::refreshQuota);
+    connect(quotaTimer_, &QTimer::timeout, this, [this] {
+        if (generalTab_ != nullptr && generalTab_->isVisible()) {
+            refreshQuota();
+        }
+    });
     quotaTimer_->start();
     retranslateUi();
 
