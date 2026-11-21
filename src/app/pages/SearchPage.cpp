@@ -656,13 +656,58 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     rootLayout_->addWidget(discoveryScroll_, 1);
     placeIntro(true);
 
-    formatBar_ = new QTabBar(this);
+    resultsToolbar_ = new QWidget(this);
+    resultsToolbar_->setObjectName(QStringLiteral("resultsToolbar"));
+    auto* toolbarLayout = new QHBoxLayout(resultsToolbar_);
+    toolbarLayout->setContentsMargins(0, 0, 0, 0);
+    toolbarLayout->setSpacing(theme::kSpacingSmall);
+
+    formatBar_ = new QTabBar(resultsToolbar_);
     formatBar_->setObjectName(QStringLiteral("formatPillBar"));
     formatBar_->setExpanding(false);
     formatBar_->setDrawBase(false);
     formatBar_->hide();
     connect(formatBar_, &QTabBar::currentChanged, this, [this](int) { applyFormatFilter(); });
-    rootLayout_->addWidget(formatBar_);
+    toolbarLayout->addWidget(formatBar_, 1);
+
+    resultsSortBox_ = new QComboBox(resultsToolbar_);
+    resultsSortBox_->setObjectName(QStringLiteral("resultsSortBox"));
+    resultsSortBox_->setToolTip(tr("Sort results"));
+    resultsSortBox_->setAccessibleName(tr("Sort results"));
+    resultsSortBox_->addItem(tr("Name"), QStringLiteral("name"));
+    resultsSortBox_->addItem(tr("Rating"), QStringLiteral("score"));
+    resultsSortBox_->addItem(tr("Release year"), QStringLiteral("year"));
+    resultsSortBox_->addItem(tr("Views"), QStringLiteral("views"));
+    resultsSortBox_->addItem(tr("Recently updated"), QStringLiteral("updated"));
+    connect(resultsSortBox_, &QComboBox::currentIndexChanged, this, [this](int index) {
+        if (syncingSortToolbar_ || index < 0) return;
+        const QString sortKey = resultsSortBox_->itemData(index).toString();
+        if (catalogueQuery_.sort != sortKey) {
+            catalogueQuery_.sort = sortKey;
+            if (catalogueQuery_.order.isEmpty() && sortKey != QLatin1String("name")) {
+                catalogueQuery_.order = QStringLiteral("desc");
+            }
+            syncResultsSortToolbar();
+            applyCatalogueFilters();
+        }
+    });
+    toolbarLayout->addWidget(resultsSortBox_, 0, Qt::AlignVCenter);
+
+    resultsOrderButton_ = new QToolButton(resultsToolbar_);
+    resultsOrderButton_->setObjectName(QStringLiteral("resultsOrderButton"));
+    resultsOrderButton_->setFixedHeight(theme::kControlHeight);
+    theme::applyActionRole(resultsOrderButton_, theme::ActionRole::Secondary);
+    connect(resultsOrderButton_, &QToolButton::clicked, this, [this] {
+        catalogueQuery_.order =
+            catalogueQuery_.order == QLatin1String("asc") ? QStringLiteral("desc")
+                                                          : QStringLiteral("asc");
+        syncResultsSortToolbar();
+        applyCatalogueFilters();
+    });
+    toolbarLayout->addWidget(resultsOrderButton_, 0, Qt::AlignVCenter);
+    resultsToolbar_->hide();
+    rootLayout_->addWidget(resultsToolbar_);
+    syncResultsSortToolbar();
 
     results_ = new QListWidget(this);
     results_->setObjectName(QStringLiteral("searchResults"));
@@ -965,6 +1010,20 @@ void SearchPage::updateResultsHeading() {
     } else {
         resultsHeading_->setText(tr("Recommendations") + countSuffix);
     }
+}
+
+void SearchPage::syncResultsSortToolbar() {
+    if (resultsSortBox_ == nullptr || resultsOrderButton_ == nullptr) return;
+    syncingSortToolbar_ = true;
+    int idx = resultsSortBox_->findData(catalogueQuery_.sort);
+    if (idx < 0) idx = 0;
+    resultsSortBox_->setCurrentIndex(idx);
+    const bool asc = catalogueQuery_.order == QLatin1String("asc");
+    resultsOrderButton_->setText(asc ? tr("↑ Asc") : tr("↓ Desc"));
+    resultsOrderButton_->setToolTip(asc ? tr("Ascending order — click for descending")
+                                        : tr("Descending order — click for ascending"));
+    resultsOrderButton_->setAccessibleName(asc ? tr("Sort ascending") : tr("Sort descending"));
+    syncingSortToolbar_ = false;
 }
 
 void SearchPage::updateHomeIndicator() {
@@ -3161,6 +3220,7 @@ void SearchPage::showDiscovery() {
     placeIntro(true);
     discoveryScroll_->show();
     results_->hide();
+    if (resultsToolbar_ != nullptr) resultsToolbar_->hide();
     formatBar_->hide();
     resultsHeading_->show();
     homeCurrent_ = true;
@@ -3173,6 +3233,8 @@ void SearchPage::showDiscovery() {
 void SearchPage::showSearchResults() {
     placeIntro(false);
     discoveryScroll_->hide();
+    if (resultsToolbar_ != nullptr) resultsToolbar_->show();
+    syncResultsSortToolbar();
     results_->show();
     resultsHeading_->show();
     homeCurrent_ = false;

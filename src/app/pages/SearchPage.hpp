@@ -29,6 +29,7 @@ class QPushButton;
 class QResizeEvent;
 class QToolButton;
 class QScrollArea;
+class QComboBox;
 class QScrollBar;
 class QTabBar;
 class QTimer;
@@ -238,6 +239,7 @@ private:
     /// whole page without telling the rail anything.
     void updateHomeIndicator();
     void updateResultsHeading();
+    void syncResultsSortToolbar();
     void retranslateUi();
     /// The heading of the block `key` names, in the active language. Both the
     /// constructor and a retranslate pass take it from here, so the two can
@@ -469,7 +471,11 @@ private:
     QVBoxLayout* rootLayout_ = nullptr;
     QVBoxLayout* discoveryLayout_ = nullptr;
     QScrollArea* discoveryScroll_ = nullptr;
+    QWidget* resultsToolbar_ = nullptr;
     QTabBar* formatBar_ = nullptr;
+    QComboBox* resultsSortBox_ = nullptr;
+    QToolButton* resultsOrderButton_ = nullptr;
+    bool syncingSortToolbar_ = false;
     QListWidget* results_ = nullptr;
     RangePager* pager_ = nullptr;
     RateLimitLabel* rateLabel_ = nullptr;
