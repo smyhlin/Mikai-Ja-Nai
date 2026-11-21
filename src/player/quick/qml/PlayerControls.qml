@@ -487,12 +487,14 @@ Item {
 
                 Label {
                     id: elapsedLabel
-                    Layout.preferredWidth: 46
+                    Layout.minimumWidth: Math.max(46, implicitWidth)
+                    Layout.preferredWidth: Math.max(46, implicitWidth)
                     text: root.controller.formatTime(root.controller.position)
                     color: root.labelColor
                     opacity: 0.92
                     font.pixelSize: 12
                     font.weight: Font.DemiBold
+                    font.features: ({ "tnum": 1 })
                     horizontalAlignment: Text.AlignLeft
                     Accessible.role: Accessible.StaticText
                     Accessible.name: qsTr("Elapsed time")
@@ -507,10 +509,12 @@ Item {
 
                 Label {
                     id: remainingLabel
-                    Layout.preferredWidth: 56
+                    Layout.minimumWidth: Math.max(56, implicitWidth)
+                    Layout.preferredWidth: Math.max(56, implicitWidth)
                     text: root.controller.formatRemaining(root.controller.position)
                     color: root.mutedLabelColor
                     font.pixelSize: 12
+                    font.features: ({ "tnum": 1 })
                     horizontalAlignment: Text.AlignRight
                     Accessible.role: Accessible.StaticText
                     Accessible.name: qsTr("Remaining time")
