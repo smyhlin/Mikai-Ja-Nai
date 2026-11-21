@@ -129,10 +129,11 @@ Rectangle {
             visible: root.controller.preparationStageCount > 0 || root.succeeded || root.failed
             from: 0
             to: Math.max(1, root.controller.preparationStageCount)
+            // Show active progress on Stage 1 (index 0) instead of appearing frozen at 0%.
             value: root.succeeded ? to
                                   : root.failed ? 0
-                                                : Math.max(0, Math.min(root.controller.preparationStageIndex,
-                                                                       to))
+                                                : Math.max(0.15, Math.min(root.controller.preparationStageIndex + 0.5,
+                                                                          to - 0.1))
             Accessible.role: Accessible.ProgressBar
             Accessible.name: qsTr("Preparation progress")
             Accessible.description: root.controller.preparationStageCount > 0
