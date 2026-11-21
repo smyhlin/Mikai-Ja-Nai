@@ -150,6 +150,21 @@ PlayerPanel {
     onFocusedSlotChanged: if (focusedSlot) takeFocus()
     onMenuModelChanged: body.currentIndex = -1
 
+    Timer {
+        id: hoverIntentTimer
+        interval: 160
+        repeat: false
+        property int pendingRow: -1
+        property bool pendingSubmenu: false
+        property string pendingValue: ""
+        onTriggered: {
+            if (pendingRow < 0) return;
+            menu.rowHovered(pendingRow, pendingSubmenu, pendingValue, menu.rowSceneRect(pendingRow));
+        }
+    }
+
+    onVisibleChanged: if (!visible) hoverIntentTimer.stop()
+
     Item {
         id: bodyHost
         width: menu.width - menu.padding * 2
@@ -167,6 +182,10 @@ PlayerPanel {
             boundsBehavior: Flickable.StopAtBounds
             keyNavigationEnabled: false
             interactive: contentHeight > height
+
+            ScrollBar.vertical: ScrollBar {
+                policy: body.contentHeight > body.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+            }
 
             Accessible.role: Accessible.List
 
@@ -307,8 +326,18 @@ PlayerPanel {
                     onHoveredChanged: {
                         if (!hoverHandler.hovered || rowItem.headingRole) return;
                         if (rowItem.rowEnabled) body.currentIndex = rowItem.index;
-                        menu.rowHovered(rowItem.index, rowItem.rowSubmenu && rowItem.rowEnabled,
-                                        rowItem.rowValue, menu.rowSceneRect(rowItem.index));
+                        hoverIntentTimer.pendingRow = rowItem.index;
+                        hoverIntentTimer.pendingSubmenu = rowItem.rowSubmenu && rowItem.rowEnabled;
+                        hoverIntentTimer.pendingValue = rowItem.rowValue;
+                        if (rowItem.rowSubmenu && rowItem.rowEnabled) {
+                            hoverIntentTimer.stop();
+                            menu.rowHovered(rowItem.index, true, rowItem.rowValue,
+                                            menu.rowSceneRect(rowItem.index));
+                        } else {
+                            // Brief grace period so diagonal movement toward an open submenu
+                            // does not dismiss it when brushing an adjacent non-submenu row.
+                            hoverIntentTimer.restart();
+                        }
                     }
                 }
 
