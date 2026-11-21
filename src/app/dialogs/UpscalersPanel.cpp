@@ -5,6 +5,7 @@
 #include "theme/Theme.hpp"
 #include "workers/Runner.hpp"
 
+#include <backend/Cancellation.hpp>
 #include <backend/MikaiClient.hpp>
 
 #include <QtCore/QFileInfo>
@@ -122,13 +123,20 @@ void UpscalersPanel::buildUi() {
         line->addWidget(row.action, 0);
         cardLayout->addLayout(line);
 
+        const QString publisherName = model.sourceCard.section(QLatin1Char('/'), -1).toHtmlEscaped();
+        const QString publisherLink = model.sourceCard.startsWith(QLatin1String("https://"))
+                                          ? QStringLiteral("<a href=\"%1\">%2</a>")
+                                                .arg(model.sourceCard.toHtmlEscaped(), publisherName)
+                                          : publisherName;
         row.meta = new QLabel(
             tr("%1× upscale · %2 · publisher: %3")
                 .arg(model.scale)
-                .arg(model.precision, model.sourceCard.section(QLatin1Char('/'), -1)),
+                .arg(model.precision.toHtmlEscaped(), publisherLink),
             card);
         row.meta->setObjectName(QStringLiteral("upscalerMeta_%1").arg(model.fileName));
         row.meta->setProperty("textRole", QStringLiteral("muted"));
+        row.meta->setTextFormat(Qt::RichText);
+        row.meta->setOpenExternalLinks(true);
         row.meta->setWordWrap(true);
         cardLayout->addWidget(row.meta);
 
@@ -151,7 +159,15 @@ void UpscalersPanel::buildUi() {
         connect(row.action, &QPushButton::clicked, this, [this, id] {
             for (Row& candidate : rows_) {
                 if (candidate.model.fileName != id) continue;
-                if (candidate.running) return;
+                if (candidate.running) {
+                    if (!candidate.removing && candidate.cancelFlag) {
+                        candidate.cancelFlag->store(true, std::memory_order_release);
+                        candidate.action->setEnabled(false);
+                        candidate.action->setText(tr("Cancelling…"));
+                        setRowStatus(candidate, tr("Cancelling download…"), false);
+                    }
+                    return;
+                }
                 const bool installed =
                     !mplayer::native::installedUpscalerPath(candidate.model).isEmpty();
                 if (installed) startRemoval(candidate);
@@ -197,10 +213,17 @@ void UpscalersPanel::retranslateUi() {
     }
     for (Row& row : rows_) {
         if (row.meta != nullptr) {
+            const QString publisherName =
+                row.model.sourceCard.section(QLatin1Char('/'), -1).toHtmlEscaped();
+            const QString publisherLink =
+                row.model.sourceCard.startsWith(QLatin1String("https://"))
+                    ? QStringLiteral("<a href=\"%1\">%2</a>")
+                          .arg(row.model.sourceCard.toHtmlEscaped(), publisherName)
+                    : publisherName;
             row.meta->setText(
                 tr("%1× upscale · %2 · publisher: %3")
                     .arg(row.model.scale)
-                    .arg(row.model.precision, row.model.sourceCard.section(QLatin1Char('/'), -1)));
+                    .arg(row.model.precision.toHtmlEscaped(), publisherLink));
         }
     }
     refresh();
@@ -263,22 +286,30 @@ void UpscalersPanel::startDownload(Row& row) {
     }
     row.running = true;
     row.removing = false;
-    row.action->setEnabled(false);
-    row.action->setText(tr("Downloading…"));
+    row.cancelFlag = std::make_shared<std::atomic_bool>(false);
+    row.action->setEnabled(true);
+    row.action->setText(tr("Cancel"));
+    theme::applyActionRole(row.action, theme::ActionRole::Secondary);
     row.progress->setRange(0, 0);
     row.progress->show();
     setRowStatus(row, tr("Contacting the publisher…"), false);
 
     backend::MikaiClient* client = client_;
     const mplayer::native::UpscalerModel model = row.model;
+    const auto cancelFlag = row.cancelFlag;
     runner_->runTransfer(
-        [client, model]() -> QVariant {
+        [client, model, cancelFlag]() -> QVariant {
+            backend::WorkCancellationScope scope(cancelFlag);
             // The bar is indeterminate for the transfer and turns into the
             // verified result: a few megabytes over a network that may not
             // report its total would otherwise sit at a stalled percentage.
             const QByteArray bytes =
                 client->fetchBytes(model.url, kDownloadTimeoutMs, {},
                                    backend::MikaiClient::Redirects::FollowSafe);
+            if (cancelFlag && cancelFlag->load(std::memory_order_acquire)) {
+                throw std::runtime_error(
+                    QCoreApplication::translate("UpscalersPanel", "Download cancelled.").toStdString());
+            }
             QString reason;
             const QString registered =
                 mplayer::native::installUpscalerBytes(model, bytes, &reason);

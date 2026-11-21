@@ -58,6 +58,7 @@ private:
         QLabel* status = nullptr;
         QProgressBar* progress = nullptr;
         QPushButton* action = nullptr;
+        std::shared_ptr<std::atomic_bool> cancelFlag;
         bool running = false;
         bool removing = false;
     };
