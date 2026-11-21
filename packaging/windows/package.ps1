@@ -119,7 +119,8 @@ foreach ($file in @(Get-ChildItem -LiteralPath $payload -Recurse -File -Force | 
 }
 $filesInclude = Join-Path $stage 'payload-files.iss'
 [IO.File]::WriteAllLines($filesInclude, $entries, [Text.UTF8Encoding]::new($true))
-Invoke-Checked $isccCommand.Source @('/Qp', "/DAppVersion=$version", "/DStageDir=$payload", "/DOutputDir=$output", "/DPayloadFiles=$filesInclude", (Join-Path $PSScriptRoot 'mikai.iss'))
+$versionInfoVersion = if ($version -match '^\d+\.\d+\.\d+$') { "$version.0" } else { $version }
+Invoke-Checked $isccCommand.Source @('/Qp', "/DAppVersion=$version", "/DVersionInfoVersion=$versionInfoVersion", "/DStageDir=$payload", "/DOutputDir=$output", "/DPayloadFiles=$filesInclude", (Join-Path $PSScriptRoot 'mikai.iss'))
 if (-not (Test-Path -LiteralPath $zipPath) -or -not (Test-Path -LiteralPath $setupPath)) { throw 'Packaging completed without both required artifacts.' }
 
 $checksums = @()
