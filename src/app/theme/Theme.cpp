@@ -367,6 +367,19 @@ QTabBar::tab:selected { color: %2; border-bottom: 2px solid %11;
     border-top-right-radius: %21px; }
 QTabBar::tab:hover:!selected { color: %2; background: rgba(%23, 0.03);
     border-top-left-radius: %21px; border-top-right-radius: %21px; }
+QTabBar#formatPillBar::tab {
+    background: %5; color: %4; border: 1px solid %10;
+    border-radius: %17px; padding: 5px %18px; margin-right: 6px;
+    font-weight: 600;
+}
+QTabBar#formatPillBar::tab:selected {
+    background: rgba(%24, 0.18); color: %2; border: 1px solid %11;
+    border-radius: %17px;
+}
+QTabBar#formatPillBar::tab:hover:!selected {
+    color: %2; background: %8; border-color: rgba(%24, 0.45);
+    border-radius: %17px;
+}
 QTableWidget {
     background: %1;
     alternate-background-color: %5;

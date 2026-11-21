@@ -657,6 +657,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     placeIntro(true);
 
     formatBar_ = new QTabBar(this);
+    formatBar_->setObjectName(QStringLiteral("formatPillBar"));
     formatBar_->setExpanding(false);
     formatBar_->setDrawBase(false);
     formatBar_->hide();
@@ -3083,8 +3084,10 @@ void SearchPage::runResultsRequest(int page) {
     request.search = currentQuery_;
     request.page = page;
     request.limit = pageSize_;
-    if (!activeFormat_.isEmpty() && !request.formats.contains(activeFormat_)) {
-        request.formats << activeFormat_;
+    // Selecting a format pill scopes the request to that single format instead
+    // of appending onto multi-format catalogue criteria and duplicating entries.
+    if (!activeFormat_.isEmpty()) {
+        request.formats = {activeFormat_};
     }
     // Every catalogue request names its own criteria. The browse calls carry
     // the home carousels' fixed criteria - currently airing, newest episode
