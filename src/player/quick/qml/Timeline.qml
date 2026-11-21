@@ -148,7 +148,8 @@ Item {
     // the drag.
     Rectangle {
         id: dragReadout
-        visible: root.dragging
+        // Avoid overlapping HoverPreview when the decoded frame preview card is shown.
+        visible: root.dragging && !root.controller.hoverPreviewVisible
         x: Math.max(0, Math.min(root.width - width, scrub.mouseX - width / 2))
         y: -height - 6
         width: readout.implicitWidth + 16
