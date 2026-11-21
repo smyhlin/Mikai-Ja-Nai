@@ -44,7 +44,7 @@ Item {
     /// fixed list, each once. Selection comes from the controller property.
     readonly property var subtitleLanguages: {
         const system = Qt.locale().name.substring(0, 2).toLowerCase()
-        const ordered = [system, "uk", "en", "ru", "pl", "de", "es"]
+        const ordered = [system, "uk", "en", "ja", "fr", "de", "es", "pt", "it", "pl", "ko", "zh", "ru"]
         const codes = []
         for (let i = 0; i < ordered.length; ++i) {
             if (ordered[i].length !== 2 || codes.indexOf(ordered[i]) >= 0) continue
@@ -52,9 +52,11 @@ Item {
         }
         const current = controller.subtitleSearchLanguage
         if (current !== "" && codes.indexOf(current) < 0) codes.push(current)
-        const out = []
-        for (let i = 0; i < codes.length; ++i)
-            out.push({ code: codes[i], name: Qt.locale(codes[i]).nativeLanguageName })
+        const out = [{ code: "", name: qsTr("All languages") }]
+        for (let i = 0; i < codes.length; ++i) {
+            const nativeName = Qt.locale(codes[i]).nativeLanguageName
+            out.push({ code: codes[i], name: nativeName !== "" ? nativeName : codes[i].toUpperCase() })
+        }
         return out
     }
 
@@ -78,7 +80,7 @@ Item {
     }
 
     function chooseLanguage(code) {
-        if (code === "" || code === controller.subtitleSearchLanguage) return
+        if (code === controller.subtitleSearchLanguage) return
         controller.setSubtitleSearchLanguage(code)
     }
 
