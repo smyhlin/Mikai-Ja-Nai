@@ -14,6 +14,7 @@
 #include "theme/Palette.hpp"
 #include "theme/Theme.hpp"
 #include "widgets/CarouselButton.hpp"
+#include "widgets/FlowLayout.hpp"
 #include "widgets/RangePager.hpp"
 #include "widgets/RateLimitLabel.hpp"
 #include "widgets/FailureView.hpp"
@@ -722,6 +723,23 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
             &SearchPage::resultsContextMenu);
     results_->hide();
     rootLayout_->addWidget(results_, 1);
+
+    resultsGridHost_ = new QWidget(this);
+    resultsGridHost_->setObjectName(QStringLiteral("searchResultsGrid"));
+    resultsGridLayout_ = new FlowLayout(theme::kSpacingMedium, theme::kSpacingMedium);
+    resultsGridLayout_->setContentsMargins(0, theme::kSpacingXs, theme::kSpacingSmall,
+                                           theme::kSpacingSmall);
+    resultsGridHost_->setLayout(resultsGridLayout_);
+
+    resultsGridScroll_ = new QScrollArea(this);
+    resultsGridScroll_->setObjectName(QStringLiteral("searchResultsGridScroll"));
+    resultsGridScroll_->setWidgetResizable(true);
+    resultsGridScroll_->setFrameShape(QFrame::NoFrame);
+    resultsGridScroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    resultsGridScroll_->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    resultsGridScroll_->setWidget(resultsGridHost_);
+    resultsGridScroll_->hide();
+    rootLayout_->addWidget(resultsGridScroll_, 1);
 
     {
         QSettings settings;
@@ -3220,6 +3238,7 @@ void SearchPage::showDiscovery() {
     placeIntro(true);
     discoveryScroll_->show();
     results_->hide();
+    if (resultsGridScroll_ != nullptr) resultsGridScroll_->hide();
     if (resultsToolbar_ != nullptr) resultsToolbar_->hide();
     formatBar_->hide();
     resultsHeading_->show();
@@ -3235,7 +3254,12 @@ void SearchPage::showSearchResults() {
     discoveryScroll_->hide();
     if (resultsToolbar_ != nullptr) resultsToolbar_->show();
     syncResultsSortToolbar();
-    results_->show();
+    if (resultsGridScroll_ != nullptr) {
+        resultsGridScroll_->setVisible(gridViewMode_);
+        results_->setVisible(!gridViewMode_);
+    } else {
+        results_->show();
+    }
     resultsHeading_->show();
     homeCurrent_ = false;
     updateHomeIndicator();
@@ -3388,6 +3412,53 @@ void SearchPage::populateRows() {
         // call per row is safe and a repaint costs nothing.
         requestThumb(thumb);
     }
+    populateResultCards();
+}
+
+void SearchPage::populateResultCards() {
+    if (resultsGridLayout_ == nullptr || resultsGridHost_ == nullptr) return;
+    for (TitleCard* card : resultCards_) {
+        const QString key = card->imageKey();
+        if (!key.isEmpty()) {
+            cardsByImageKey_[key].removeAll(card);
+        }
+        cardsByRef_[card->ref()].removeAll(card);
+        resultsGridLayout_->removeWidget(card);
+        card->deleteLater();
+    }
+    resultCards_.clear();
+
+    for (const backend::AnimeSummary& entry : entries_) {
+        auto* card = new TitleCard(entry, resultsGridHost_);
+        connect(card, &TitleCard::openRequested, this,
+                [this](const QString& ref, const QString& poster) {
+                    if (resultsGridScroll_ != nullptr &&
+                        resultsGridScroll_->verticalScrollBar() != nullptr) {
+                        savedResultsScroll_ = resultsGridScroll_->verticalScrollBar()->value();
+                    }
+                    savedSelectedRef_ = ref;
+                    Q_EMIT openRequested(ref, poster);
+                });
+        connect(card, &TitleCard::menuRequested, this, &SearchPage::animeCardMenu);
+        resultsGridLayout_->addWidget(card);
+        resultCards_.append(card);
+        const QString key = card->imageKey();
+        if (!key.isEmpty()) {
+            cardsByImageKey_[key].append(card);
+            const auto cached = rounded_.constFind(key);
+            if (cached != rounded_.constEnd()) {
+                card->applyPixmap(cached.value());
+            } else {
+                requestThumb(key);
+            }
+        }
+        cardsByRef_[card->ref()].append(card);
+        const auto detailIt = cardDetails_.constFind(card->ref());
+        if (detailIt != cardDetails_.constEnd()) {
+            card->applyDetail(detailIt.value());
+        }
+    }
+    resultsGridHost_->updateGeometry();
 }
 
 void SearchPage::onError(const backend::Failure& failure) {

@@ -51,6 +51,7 @@ class PageGlow;
 
 
 class FailureView;
+class FlowLayout;
 class RangePager;
 class RateLimitLabel;
 class Runner;
@@ -329,6 +330,7 @@ private:
     void refreshFormatTotals();
     void applyFormatFilter();
     void populateRows();
+    void populateResultCards();
     void updatePager();
     void goToPage(int page);
     void openByRef(const QString& ref);
@@ -476,6 +478,11 @@ private:
     QComboBox* resultsSortBox_ = nullptr;
     QToolButton* resultsOrderButton_ = nullptr;
     bool syncingSortToolbar_ = false;
+    QScrollArea* resultsGridScroll_ = nullptr;
+    QWidget* resultsGridHost_ = nullptr;
+    FlowLayout* resultsGridLayout_ = nullptr;
+    QList<TitleCard*> resultCards_;
+    bool gridViewMode_ = true;
     QListWidget* results_ = nullptr;
     RangePager* pager_ = nullptr;
     RateLimitLabel* rateLabel_ = nullptr;
