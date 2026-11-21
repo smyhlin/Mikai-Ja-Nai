@@ -362,7 +362,14 @@ void MainWindow::restateEnginePreparation() {
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
+    const auto showDeferredCloseNote = [this](const QString& message) {
+        if (acquisitionStatus_ != nullptr && acquisitionBar_ != nullptr) {
+            acquisitionStatus_->setText(message);
+            acquisitionBar_->show();
+        }
+    };
     if (mplayer::native::animeJanaiRuntimeRelocationInProgress()) {
+        showDeferredCloseNote(tr("Waiting for TensorRT runtime relocation to finish before closing…"));
         event->ignore();
         return;
     }
@@ -372,16 +379,21 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     // reentrant close arriving through the player's own settling pump, which
     // finds the same refusal and returns without recursing.
     if (!settingsDialog_.isNull() || !setupPrompt_.isNull() || !componentPrompt_.isNull()) {
-        // Settings and both component prompts are inside their own nested exec()
-        // loops. The prompts are heap dialogs owned by those loops, so a close
-        // would no longer delete them, but it would still tear down the players
-        // whose windows they name as native owners - under an application-wide
-        // modal ask. The window stays up and the close can be retried once the
-        // ask is answered.
+        if (!settingsDialog_.isNull()) {
+            settingsDialog_->raise();
+            settingsDialog_->activateWindow();
+        } else if (!setupPrompt_.isNull()) {
+            setupPrompt_->raise();
+            setupPrompt_->activateWindow();
+        } else if (!componentPrompt_.isNull()) {
+            componentPrompt_->raise();
+            componentPrompt_->activateWindow();
+        }
         event->ignore();
         return;
     }
     if (!closeMedia() || !disposeTitle()) {
+        showDeferredCloseNote(tr("Finishing active playback shutdown — try closing again in a moment."));
         event->ignore();
         return;
     }
