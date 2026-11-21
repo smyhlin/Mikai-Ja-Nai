@@ -2978,9 +2978,16 @@ void SearchPage::showCatalogueFilters() {
         return list;
     };
     const auto namesFor = [](const QVector<backend::GenreTag>& values) {
+        QSettings s;
+        const QString uiLang = s.value(QStringLiteral("ui/language"), QString()).toString().toLower();
+        const bool preferEnglish = uiLang.startsWith(QLatin1String("en"));
         QStringList labels, canonical;
         for (const backend::GenreTag& value : values) {
-            labels << (value.ua.isEmpty() ? value.name : value.ua);
+            if (preferEnglish) {
+                labels << (value.name.isEmpty() ? value.ua : value.name);
+            } else {
+                labels << (value.ua.isEmpty() ? value.name : value.ua);
+            }
             canonical << value.name;
         }
         return qMakePair(labels, canonical);
