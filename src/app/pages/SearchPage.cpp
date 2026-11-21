@@ -3921,8 +3921,17 @@ void SearchPage::openTeamPicker() {
             if (guardedMore) guardedMore->setEnabled(true);
         });
     };
+    auto* teamSearchTimer = new QTimer(&dialog);
+    teamSearchTimer->setSingleShot(true);
+    teamSearchTimer->setInterval(280);
+    connect(teamSearchTimer, &QTimer::timeout, &dialog,
+            [fetch, search] { fetch(search->text().trimmed(), 1); });
     connect(search, &QLineEdit::textChanged, &dialog,
-            [fetch](const QString& term) { fetch(term, 1); });
+            [teamSearchTimer](const QString&) { teamSearchTimer->start(); });
+    connect(search, &QLineEdit::returnPressed, &dialog, [teamSearchTimer, fetch, search] {
+        teamSearchTimer->stop();
+        fetch(search->text().trimmed(), 1);
+    });
     connect(more, &QPushButton::clicked, &dialog, [fetch, paging, totalPages, currentTerm] {
         if (*paging < *totalPages) fetch(*currentTerm, *paging + 1);
     });
