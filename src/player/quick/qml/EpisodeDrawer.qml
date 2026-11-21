@@ -30,12 +30,20 @@ PlayerPanel {
     readonly property real sceneWidth: sceneItem ? sceneItem.width : 640
     readonly property real sceneHeight: sceneItem ? sceneItem.height : 720
     readonly property real panelWidth: Math.min(300, Math.max(1, sceneWidth - edgeMargin * 2))
+    readonly property real spaceBelow: Math.max(0, sceneHeight - edgeMargin - (anchorRect.y + anchorRect.height + 8))
+    readonly property real spaceAbove: Math.max(0, anchorRect.y - edgeMargin - 8)
+    readonly property bool openAbove: spaceBelow < 180 && spaceAbove > spaceBelow
+    readonly property real maxAvailableHeight: Math.max(120, Math.min(420, openAbove ? spaceAbove : spaceBelow))
+    property string filterText: ""
 
     x: Math.max(edgeMargin, Math.min(anchorRect.x, sceneWidth - edgeMargin - width))
-    y: Math.min(anchorRect.y + anchorRect.height + 8, sceneHeight - edgeMargin - height)
+    y: openAbove
+       ? Math.max(edgeMargin, anchorRect.y - height - 8)
+       : Math.min(anchorRect.y + anchorRect.height + 8, sceneHeight - edgeMargin - height)
     width: panelWidth
-    height: Math.max(1, Math.min(400, sceneHeight - edgeMargin - anchorRect.y - anchorRect.height - 8,
-                                 drawerHeader.height + Math.max(rowHeight, list.contentHeight) + padding * 2))
+    height: Math.max(1, Math.min(maxAvailableHeight,
+                                 drawerHeader.height + (filterBar.visible ? filterBar.height + 4 : 0)
+                                 + Math.max(rowHeight, list.contentHeight) + padding * 2))
     padding: 10
     opaqueSurface: true
     z: 20
@@ -144,11 +152,34 @@ PlayerPanel {
         }
     }
 
-    ListView {
-        id: list
+    TextField {
+        id: filterBar
+        visible: list.count > 8
         y: drawerHeader.height
         width: drawer.width - drawer.padding * 2
-        height: drawer.height - drawer.padding * 2 - drawerHeader.height
+        height: visible ? 30 : 0
+        placeholderText: qsTr("Filter episodes…")
+        placeholderTextColor: drawer.mutedColor
+        color: drawer.menuTextColor
+        font.pixelSize: 12
+        leftPadding: 10
+        rightPadding: 10
+        text: drawer.filterText
+        onTextChanged: drawer.filterText = text.trim().toLowerCase()
+        background: Rectangle {
+            radius: Math.max(3, Math.min(6, drawer.controller.cornerRadius))
+            color: drawer.controller.darkTheme ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05)
+            border.width: 1
+            border.color: filterBar.activeFocus ? drawer.controller.accentColor
+                                                : (drawer.controller.darkTheme ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.14))
+        }
+    }
+
+    ListView {
+        id: list
+        y: drawerHeader.height + (filterBar.visible ? filterBar.height + 4 : 0)
+        width: drawer.width - drawer.padding * 2
+        height: drawer.height - drawer.padding * 2 - y
         model: drawer.menuModel
         clip: true
         reuseItems: true
@@ -191,9 +222,12 @@ PlayerPanel {
             required property var model
             required property int index
 
-            enabled: !rowItem.model.heading && rowItem.model.enabled
+            readonly property bool matchesFilter: drawer.filterText === ""
+                                                  || rowItem.model.label.toLowerCase().indexOf(drawer.filterText) >= 0
+            visible: matchesFilter
+            enabled: !rowItem.model.heading && rowItem.model.enabled && matchesFilter
             width: list.width
-            height: rowItem.model.heading ? 26 : drawer.rowHeight
+            height: !matchesFilter ? 0 : (rowItem.model.heading ? 26 : drawer.rowHeight)
             opacity: rowItem.model.heading || rowItem.model.enabled ? 1.0 : 0.5
 
             readonly property bool headingRole: rowItem.model.heading
