@@ -51,7 +51,20 @@ PlayerPanel {
         if (!visible) return;
         if (list.count > 0) {
             list.forceActiveFocus();
-            if (list.currentIndex < 0) list.currentIndex = 0;
+            let selected = -1;
+            for (let i = 0; i < list.count; ++i) {
+                if (rowIsSelectable(i) &&
+                        menuModel.data(menuModel.index(i, 0), PlayerMenuModel.SelectedRole)) {
+                    selected = i;
+                    break;
+                }
+            }
+            if (selected >= 0) {
+                list.currentIndex = selected;
+                list.positionViewAtIndex(selected, ListView.Contain);
+            } else {
+                jumpCursor(true);
+            }
         } else {
             panel.forceActiveFocus();
         }
@@ -174,6 +187,10 @@ PlayerPanel {
         boundsBehavior: Flickable.StopAtBounds
         keyNavigationEnabled: false
         interactive: contentHeight > height
+
+        ScrollBar.vertical: ScrollBar {
+            policy: list.contentHeight > list.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+        }
 
         Accessible.role: Accessible.List
 
