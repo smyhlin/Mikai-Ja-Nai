@@ -3940,9 +3940,32 @@ void SearchPage::openTeamPicker() {
              (const QVariant& v) {
             if (seq != *request || !guardedRows) return;
             const backend::TeamsResult result = v.value<backend::TeamsResult>();
+            const auto formatCompact = [](qint64 n) -> QString {
+                if (n >= 1000000) return QStringLiteral("%1M").arg(n / 1000000.0, 0, 'f', 1);
+                if (n >= 1000) return QStringLiteral("%1K").arg(n / 1000.0, 0, 'f', 1);
+                return QLocale().toString(n);
+            };
             for (const auto& profile : result.items) {
                 // Populate off-list: itemChanged would erase seeded checks during initialization.
-                auto* item = new QListWidgetItem(profile.team.name);
+                QStringList meta;
+                if (profile.has_voice) meta << QObject::tr("Voice");
+                if (profile.has_subs) meta << QObject::tr("Subs");
+                if (profile.anime_count > 0) {
+                    meta << QObject::tr("%n anime", nullptr, profile.anime_count);
+                }
+                if (profile.views_total > 0) {
+                    meta << QObject::tr("%1 views").arg(formatCompact(profile.views_total));
+                }
+                const QString rowText =
+                    meta.isEmpty()
+                        ? profile.team.name
+                        : QStringLiteral("%1  ·  %2").arg(profile.team.name, meta.join(QStringLiteral(" · ")));
+                auto* item = new QListWidgetItem(rowText);
+                item->setSizeHint(QSize(0, 38));
+                if (!profile.description.trimmed().isEmpty()) {
+                    item->setToolTip(profile.team.name + QStringLiteral("\n") +
+                                     profile.description.trimmed().left(240));
+                }
                 item->setData(Qt::UserRole, QVariantMap{
                     {QStringLiteral("id"), profile.team.id},
                     {QStringLiteral("slug"), profile.team.slug},
