@@ -472,6 +472,8 @@ private:
     QLabel* searchKeycap_ = nullptr;
     QFrame* teamHeroCard_ = nullptr;
     QLabel* teamMonogram_ = nullptr;
+    QPushButton* teamDirectoryButton_ = nullptr;
+    QLabel* teamBreadcrumbLabel_ = nullptr;
     QPushButton* teamBackButton_ = nullptr;
     QLabel* teamDetailLabel_ = nullptr;
     QLabel* resultsHeading_ = nullptr;

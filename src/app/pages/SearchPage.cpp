@@ -4229,11 +4229,22 @@ void SearchPage::browseSelectedTeam(const backend::Team& team) {
         topRow->setContentsMargins(0, 0, 0, 0);
         topRow->setSpacing(theme::kSpacingMedium);
 
+        teamDirectoryButton_ = new QPushButton(tr("← Teams"), teamHeroCard_);
+        teamDirectoryButton_->setObjectName(QStringLiteral("teamDirectoryButton"));
+        theme::applyActionRole(teamDirectoryButton_, theme::ActionRole::Ghost);
+        connect(teamDirectoryButton_, &QPushButton::clicked, this, &SearchPage::openTeamPicker);
+
+        teamBreadcrumbLabel_ = new QLabel(teamHeroCard_);
+        teamBreadcrumbLabel_->setObjectName(QStringLiteral("muted"));
+
         teamBackButton_ = new QPushButton(tr("All catalogue"), teamHeroCard_);
         teamBackButton_->setObjectName(QStringLiteral("teamBackButton"));
         theme::applyActionRole(teamBackButton_, theme::ActionRole::Ghost);
-        topRow->addWidget(teamBackButton_, 0, Qt::AlignLeft);
+
+        topRow->addWidget(teamDirectoryButton_, 0, Qt::AlignVCenter);
+        topRow->addWidget(teamBreadcrumbLabel_, 0, Qt::AlignVCenter);
         topRow->addStretch(1);
+        topRow->addWidget(teamBackButton_, 0, Qt::AlignVCenter);
         heroV->addLayout(topRow);
 
         auto* bodyRow = new QHBoxLayout();
@@ -4290,6 +4301,9 @@ void SearchPage::browseSelectedTeam(const backend::Team& team) {
     }
     if (teamMonogram_ != nullptr) {
         teamMonogram_->setText(team.name.trimmed().left(2).toUpper());
+    }
+    if (teamBreadcrumbLabel_ != nullptr) {
+        teamBreadcrumbLabel_->setText(QStringLiteral("›  %1").arg(team.name));
     }
     if (teamHeroCard_ != nullptr) teamHeroCard_->show();
     teamBackButton_->setText(tr("All catalogue"));
