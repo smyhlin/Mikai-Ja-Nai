@@ -8,6 +8,8 @@
 #include <backend/Cancellation.hpp>
 #include <backend/MikaiClient.hpp>
 
+#include <QtCore/QCoreApplication>
+#include <QtCore/QEvent>
 #include <QtCore/QFileInfo>
 
 #include <stdexcept>
@@ -299,7 +301,7 @@ void UpscalersPanel::startDownload(Row& row) {
     const auto cancelFlag = row.cancelFlag;
     runner_->runTransfer(
         [client, model, cancelFlag]() -> QVariant {
-            backend::WorkCancellationScope scope(cancelFlag);
+            backend::WorkCancellationScope scope(cancelFlag.get());
             // The bar is indeterminate for the transfer and turns into the
             // verified result: a few megabytes over a network that may not
             // report its total would otherwise sit at a stalled percentage.
