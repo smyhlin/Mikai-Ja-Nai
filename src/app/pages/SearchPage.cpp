@@ -1527,6 +1527,15 @@ bool SearchPage::eventFilter(QObject* watched, QEvent* event) {
             ke->accept();
             return true;
         }
+        if (watched == query_ && ke->key() == Qt::Key_Down && results_ != nullptr &&
+            results_->isVisible() && results_->count() > 0) {
+            results_->setFocus(Qt::OtherFocusReason);
+            if (results_->currentRow() < 0) {
+                results_->setCurrentRow(0);
+            }
+            ke->accept();
+            return true;
+        }
     }
     if (event->type() == QEvent::Wheel) {
         for (auto* section : carousels_) {
@@ -1640,9 +1649,33 @@ void SearchPage::placeIntro(bool inDiscovery) {
 }
 
 void SearchPage::keyPressEvent(QKeyEvent* event) {
+    const Qt::KeyboardModifiers mods = event->modifiers();
     if (event->key() == Qt::Key_Escape && escapeSearch()) {
         event->accept();
         return;
+    }
+    if (((mods == Qt::ControlModifier) &&
+         (event->key() == Qt::Key_K || event->key() == Qt::Key_F)) ||
+        (mods == Qt::NoModifier && event->key() == Qt::Key_Slash &&
+         (query_ == nullptr || !query_->hasFocus()))) {
+        if (query_ != nullptr) {
+            query_->setFocus(Qt::ShortcutFocusReason);
+            query_->selectAll();
+            event->accept();
+            return;
+        }
+    }
+    if (mods == Qt::AltModifier && !homeCurrent_ && pages_ > 1) {
+        if (event->key() == Qt::Key_Left && page_ > 1) {
+            goToPage(page_ - 1);
+            event->accept();
+            return;
+        }
+        if (event->key() == Qt::Key_Right && page_ < pages_) {
+            goToPage(page_ + 1);
+            event->accept();
+            return;
+        }
     }
     QWidget::keyPressEvent(event);
 }
