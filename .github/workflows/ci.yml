@@ -96,7 +96,7 @@ jobs:
     # and is deliberately not part of the per-push/per-PR contract; the
     # release workflow_call path skips it too, so a red sanitizer run can
     # never block a release.
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.source-ref == ''
     name: Sanitizer matrix (tsan / ubsan / asan)
     runs-on: ubuntu-24.04
     # Three sequential Debug configure/build/ctest rounds on 2 build workers;
@@ -215,7 +215,7 @@ jobs:
     # skip is needed. Gated to workflow_dispatch like the sanitizer lane:
     # it re-runs the full build+package recipe, so it must not tax every
     # push, and the release workflow_call path skips it too.
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.source-ref == ''
     name: Bundled runtime smoke (packaged private libmpv)
     runs-on: ubuntu-24.04
     timeout-minutes: 90
