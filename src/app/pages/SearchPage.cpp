@@ -3156,54 +3156,11 @@ void SearchPage::applyFormatFilter() {
 }
 
 void SearchPage::refreshFormatTotals() {
-    // Browse and filtered results already describe their own total, and only a
-    // search over several formats has counts worth asking for.
-    if (browseMode_ || currentQuery_.isEmpty() || !formatBar_->isVisible()) {
-        return;
-    }
-    QStringList formats;
-    for (int index = 0; index < formatBar_->count(); ++index) {
-        const QString value = formatBar_->tabData(index).toString();
-        if (value != QLatin1String("all")) {
-            formats << value;
-        }
-    }
-    if (formats.isEmpty()) {
-        return;
-    }
-    const QString query = currentQuery_;
-    const backend::AnimeQuery baseQuery = catalogueQuery_;
-    const int seq = ++formatTotalsSeq_;
-    formatTotalsQuery_ = query;
-    backend::MikaiClient* client = &client_;
-    const QPointer<SearchPage> self(this);
-    runner_.run(
-        [client, query, formats, baseQuery] {
-            QHash<QString, int> totals;
-            for (const QString& format : formats) {
-                backend::AnimeQuery request = baseQuery;
-                request.search = query;
-                request.page = 1;
-                request.limit = 1;
-                request.formats = {format};
-                const backend::SearchResult one = client->search(request);
-                if (one.total.has_value()) {
-                    totals.insert(format, *one.total);
-                }
-            }
-            return QVariant::fromValue(totals);
-        },
-        [self, seq, query](const QVariant& result) {
-            if (self.isNull() || seq != self->formatTotalsSeq_ || query != self->formatTotalsQuery_) {
-                return;
-            }
-            self->formatTotals_ = result.value<QHash<QString, int>>();
-            self->rebuildFormatBar();
-        },
-        [](const backend::Failure&) {
-            // A count is a label, not a result: leaving the page-local figure in
-            // place beats an empty bar.
-        });
+    // Avoid N+1 per-format search() requests on every search query: each extra
+    // call drains the Mikai API rate-limit quota. Format tabs use honest
+    // page-local counts (and the exact total when a format tab is selected).
+    ++formatTotalsSeq_;
+    formatTotals_.clear();
 }
 
 void SearchPage::populateRows() {
