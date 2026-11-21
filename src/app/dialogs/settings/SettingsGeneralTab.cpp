@@ -1,4 +1,11 @@
 #include "dialogs/SettingsDialog.hpp"
+#include "support/CrashLog.hpp"
+#include <QClipboard>
+#include <QDesktopServices>
+#include <QFileInfo>
+#include <QGuiApplication>
+#include <QSysInfo>
+#include <QUrl>
 #include "state/AppearanceStore.hpp"
 #include "state/SettingsKeys.hpp"
 
@@ -514,6 +521,53 @@ QWidget* SettingsDialog::buildGeneralTab() {
     scalingLayout->addWidget(scalingComparisonHint_);
 
     root->addWidget(scalingCard);
+
+    QVBoxLayout* diagLayout = nullptr;
+    QFrame* diagCard = makeSettingsCard(page, &diagLayout);
+    diagLayout->setSpacing(theme::kSpacingSmall);
+    auto* diagHeading = new QLabel(tr("Diagnostics & logs"), diagCard);
+    styleSectionHeading(diagHeading);
+    diagLayout->addWidget(diagHeading);
+    auto* diagHint = new QLabel(
+        tr("Open the folder containing redacted session logs and crash reports, or copy basic system info for bug reports."),
+        diagCard);
+    styleMutedCaption(diagHint);
+    diagLayout->addWidget(diagHint);
+    auto* diagButtons = new QHBoxLayout();
+    diagButtons->setSpacing(theme::kSpacingSmall);
+    auto* openLogsBtn = new QPushButton(tr("Open logs folder"), diagCard);
+    openLogsBtn->setObjectName(QStringLiteral("openLogsFolderButton"));
+    theme::applyActionRole(openLogsBtn, theme::ActionRole::Secondary);
+    connect(openLogsBtn, &QPushButton::clicked, this, [] {
+        const QString path = logPath();
+        const QString dir = path.isEmpty() ? runtimeDir() : QFileInfo(path).absolutePath();
+        if (!dir.isEmpty()) QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
+    });
+    auto* copyDiagBtn = new QPushButton(tr("Copy system diagnostics"), diagCard);
+    copyDiagBtn->setObjectName(QStringLiteral("copyDiagnosticsButton"));
+    theme::applyActionRole(copyDiagBtn, theme::ActionRole::Secondary);
+    connect(copyDiagBtn, &QPushButton::clicked, this, [copyDiagBtn] {
+        const QString summary = QStringLiteral(
+            "Mikai Ja Nai %1 (%2)\nOS: %3 (%4)\nQt: %5\nLog: %6")
+            .arg(QStringLiteral(MIKAI_PROJECT_VERSION),
+                 QStringLiteral(MIKAI_BUILD_REVISION),
+                 QSysInfo::prettyProductName(),
+                 QSysInfo::currentCpuArchitecture(),
+                 QString::fromLatin1(qVersion()),
+                 logPath());
+        if (QClipboard* cb = QGuiApplication::clipboard()) {
+            cb->setText(summary);
+        }
+        copyDiagBtn->setText(tr("Copied"));
+        QTimer::singleShot(1400, copyDiagBtn, [copyDiagBtn] {
+            copyDiagBtn->setText(tr("Copy system diagnostics"));
+        });
+    });
+    diagButtons->addWidget(openLogsBtn);
+    diagButtons->addWidget(copyDiagBtn);
+    diagButtons->addStretch(1);
+    diagLayout->addLayout(diagButtons);
+    root->addWidget(diagCard);
 
     root->addStretch();
     scroll->setWidget(page);
