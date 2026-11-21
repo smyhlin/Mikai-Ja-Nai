@@ -131,7 +131,7 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     text: qsTr("Preview unavailable")
-                    color: root.textColor
+                    color: "#f4f4f5"
                     visible: !root.editor.previewLoading && !root.editor.videoVisible
                              && still.source.toString().length === 0
                     font.pixelSize: 13

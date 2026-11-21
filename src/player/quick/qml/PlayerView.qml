@@ -176,7 +176,7 @@ Item {
             Label {
                 width: parent.width
                 text: qsTr("No media loaded — drop a file to begin")
-                color: root.controller.darkTheme ? "#f4f4f5" : "#18181b"
+                color: "#f4f4f5"
                 font.pixelSize: 14
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WordWrap
@@ -185,7 +185,7 @@ Item {
             Label {
                 width: parent.width
                 text: qsTr("Any local video opens here; subtitle and audio files attach to the current title.")
-                color: root.controller.darkTheme ? "#a1a1aa" : "#52525b"
+                color: "#a1a1aa"
                 font.pixelSize: 12
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WordWrap
