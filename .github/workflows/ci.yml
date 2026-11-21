@@ -132,9 +132,7 @@ jobs:
         run: python packaging/ci/provision.py --root "$RUNNER_TEMP/mikai-sdk" --evidence "$RUNNER_TEMP/sanitizer-evidence"
       - name: Build and test under ThreadSanitizer
         env:
-          LIBGL_ALWAYS_SOFTWARE: '1'
-          QT_OPENGL: software
-          QT_QPA_PLATFORM: xcb
+          QT_QPA_PLATFORM: offscreen
           MIKAI_LIVE: '0'
           TSAN_OPTIONS: suppressions=${{ github.workspace }}/packaging/ci/tsan.supp
         run: |
@@ -158,9 +156,7 @@ jobs:
           '
       - name: Build and test under UndefinedBehaviorSanitizer
         env:
-          LIBGL_ALWAYS_SOFTWARE: '1'
-          QT_OPENGL: software
-          QT_QPA_PLATFORM: xcb
+          QT_QPA_PLATFORM: offscreen
           MIKAI_LIVE: '0'
         run: |
           cmake --preset linux-ubsan \
@@ -183,9 +179,7 @@ jobs:
           '
       - name: Build and test under AddressSanitizer with UBSan
         env:
-          LIBGL_ALWAYS_SOFTWARE: '1'
-          QT_OPENGL: software
-          QT_QPA_PLATFORM: xcb
+          QT_QPA_PLATFORM: offscreen
           MIKAI_LIVE: '0'
           # Leak reports need their own triaged baseline before they can gate
           # anything; this lane's contract is heap errors and UB, not

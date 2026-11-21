@@ -21,8 +21,10 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <thread>
 
@@ -77,24 +79,22 @@ void spinFor(int milliseconds) {
 class Gate {
 public:
   void release() {
-    QMutexLocker<QMutex> lock(&mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     released_ = true;
-    armed_.wakeAll();
+    armed_.notify_all();
   }
 
   // Bounded. Milliseconds, so a case that never releases cannot pin a thread
   // for the lifetime of the process.
   bool waitUntilReleased(int timeoutMs = kHoldMs) {
-    QMutexLocker<QMutex> lock(&mutex_);
-    while (!released_) {
-      if (!armed_.wait(&mutex_, QDeadlineTimer(timeoutMs))) return false;
-    }
-    return true;
+    std::unique_lock<std::mutex> lock(mutex_);
+    return armed_.wait_for(lock, std::chrono::milliseconds(timeoutMs),
+                           [this] { return released_; });
   }
 
 private:
-  mutable QMutex mutex_;
-  QWaitCondition armed_;
+  mutable std::mutex mutex_;
+  std::condition_variable armed_;
   bool released_ = false;
 };
 

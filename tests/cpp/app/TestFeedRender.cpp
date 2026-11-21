@@ -3282,8 +3282,9 @@ void TestFeedRender::episodeMarksPersistAcrossReopenAndViewChanges() {
     QTRY_VERIFY_WITH_TIMEOUT(toggle->isVisible() && toggle->isEnabled(), 5000);
     QVERIFY2(!toggle->isChecked(), "an unmarked episode opened with its mark already set");
 
-    QPushButton* first = episodePill(*tabPage, QStringLiteral("1"));
-    QVERIFY(first != nullptr);
+    QPushButton* first = nullptr;
+    QTRY_VERIFY_WITH_TIMEOUT(
+        (first = episodePill(*tabPage, QStringLiteral("1"))) != nullptr, 30000);
     QVERIFY2(!episodeWatchedMarkShown(first), "the grid painted a watched mark nobody recorded");
 
     QTest::mouseClick(toggle, Qt::LeftButton);
@@ -3557,9 +3558,12 @@ void TestFeedRender::episodeContextMenuHandlesPagingAndSpecialIdentifiers() {
         tabPage->findChildren<QPushButton*>(QStringLiteral("episodeButton")).size() >= kEpisodes,
         30000);
 
-    QPushButton* first = episodePill(*tabPage, QStringLiteral("OVA 1"));
-    QPushButton* second = episodePill(*tabPage, QStringLiteral("OVA 2"));
-    QVERIFY(first != nullptr && second != nullptr);
+    QPushButton* first = nullptr;
+    QPushButton* second = nullptr;
+    QTRY_VERIFY_WITH_TIMEOUT(
+        (first = episodePill(*tabPage, QStringLiteral("OVA 1"))) != nullptr &&
+            (second = episodePill(*tabPage, QStringLiteral("OVA 2"))) != nullptr,
+        30000);
     ContextMenuActionResult action =
         activateEpisodeContextAction(first, QStringLiteral("episodeUnwatchPreviousAction"));
     QVERIFY(action.found && !action.enabled);
@@ -3672,8 +3676,8 @@ void TestFeedRender::titlePageKeepsSpecialEpisodeIdentifiers() {
       tabPage->findChildren<QPushButton*>(QStringLiteral("episodeButton")).size() >= kEpisodes,
       30000);
 
-  QVERIFY(episodePill(*tabPage, QStringLiteral("OVA 1")) != nullptr);
-  QVERIFY(episodePill(*tabPage, QStringLiteral("OVA 12")) != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(episodePill(*tabPage, QStringLiteral("OVA 1")) != nullptr, 30000);
+  QTRY_VERIFY_WITH_TIMEOUT(episodePill(*tabPage, QStringLiteral("OVA 12")) != nullptr, 30000);
   QCOMPARE(tabPage->findChildren<QPushButton*>(QStringLiteral("episodeButton")).size(), kEpisodes);
   QVERIFY2(episodePill(*tabPage, QStringLiteral("1")) == nullptr,
            "a numbered slot was invented beside the release's own identifiers");
