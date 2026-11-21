@@ -706,6 +706,37 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
         applyCatalogueFilters();
     });
     toolbarLayout->addWidget(resultsOrderButton_, 0, Qt::AlignVCenter);
+
+    {
+        QSettings settings;
+        gridViewMode_ = settings.value(QStringLiteral("search/viewMode"), QStringLiteral("grid"))
+                            .toString() != QLatin1String("list");
+    }
+
+    gridViewButton_ = new QToolButton(resultsToolbar_);
+    gridViewButton_->setObjectName(QStringLiteral("resultsGridButton"));
+    gridViewButton_->setText(tr("Grid"));
+    gridViewButton_->setToolTip(tr("Card grid view"));
+    gridViewButton_->setAccessibleName(tr("Card grid view"));
+    gridViewButton_->setCheckable(true);
+    gridViewButton_->setFixedHeight(theme::kControlHeight);
+    theme::applyActionRole(gridViewButton_, theme::ActionRole::Secondary);
+    connect(gridViewButton_, &QToolButton::clicked, this, [this] { setResultsGridMode(true); });
+    toolbarLayout->addWidget(gridViewButton_, 0, Qt::AlignVCenter);
+
+    listViewButton_ = new QToolButton(resultsToolbar_);
+    listViewButton_->setObjectName(QStringLiteral("resultsListButton"));
+    listViewButton_->setText(tr("List"));
+    listViewButton_->setToolTip(tr("Compact list view"));
+    listViewButton_->setAccessibleName(tr("Compact list view"));
+    listViewButton_->setCheckable(true);
+    listViewButton_->setFixedHeight(theme::kControlHeight);
+    theme::applyActionRole(listViewButton_, theme::ActionRole::Secondary);
+    connect(listViewButton_, &QToolButton::clicked, this, [this] { setResultsGridMode(false); });
+    toolbarLayout->addWidget(listViewButton_, 0, Qt::AlignVCenter);
+
+    gridViewButton_->setChecked(gridViewMode_);
+    listViewButton_->setChecked(!gridViewMode_);
     resultsToolbar_->hide();
     rootLayout_->addWidget(resultsToolbar_);
     syncResultsSortToolbar();
@@ -1030,6 +1061,18 @@ void SearchPage::updateResultsHeading() {
     }
 }
 
+void SearchPage::setResultsGridMode(bool grid) {
+    gridViewMode_ = grid;
+    QSettings settings;
+    settings.setValue(QStringLiteral("search/viewMode"),
+                      grid ? QStringLiteral("grid") : QStringLiteral("list"));
+    if (gridViewButton_ != nullptr) gridViewButton_->setChecked(grid);
+    if (listViewButton_ != nullptr) listViewButton_->setChecked(!grid);
+    if (!homeCurrent_) {
+        if (resultsGridScroll_ != nullptr) resultsGridScroll_->setVisible(grid);
+        if (results_ != nullptr) results_->setVisible(!grid);
+    }
+}
 void SearchPage::syncResultsSortToolbar() {
     if (resultsSortBox_ == nullptr || resultsOrderButton_ == nullptr) return;
     syncingSortToolbar_ = true;

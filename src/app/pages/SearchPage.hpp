@@ -241,6 +241,7 @@ private:
     void updateHomeIndicator();
     void updateResultsHeading();
     void syncResultsSortToolbar();
+    void setResultsGridMode(bool grid);
     void retranslateUi();
     /// The heading of the block `key` names, in the active language. Both the
     /// constructor and a retranslate pass take it from here, so the two can
@@ -477,6 +478,8 @@ private:
     QTabBar* formatBar_ = nullptr;
     QComboBox* resultsSortBox_ = nullptr;
     QToolButton* resultsOrderButton_ = nullptr;
+    QToolButton* gridViewButton_ = nullptr;
+    QToolButton* listViewButton_ = nullptr;
     bool syncingSortToolbar_ = false;
     QScrollArea* resultsGridScroll_ = nullptr;
     QWidget* resultsGridHost_ = nullptr;
