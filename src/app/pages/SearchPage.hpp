@@ -478,6 +478,7 @@ private:
     QPushButton* teamCombineFiltersButton_ = nullptr;
     QPushButton* teamCopyLinkButton_ = nullptr;
     QPushButton* teamOpenWebButton_ = nullptr;
+    QLineEdit* teamFilterEdit_ = nullptr;
     QLabel* teamDetailLabel_ = nullptr;
     QLabel* resultsHeading_ = nullptr;
     QLabel* status_ = nullptr;

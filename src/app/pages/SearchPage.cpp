@@ -4320,6 +4320,18 @@ void SearchPage::browseSelectedTeam(const backend::Team& team) {
         actionsRow->addWidget(teamCopyLinkButton_);
         actionsRow->addWidget(teamOpenWebButton_);
         actionsRow->addStretch(1);
+        teamFilterEdit_ = new QLineEdit(teamHeroCard_);
+        teamFilterEdit_->setObjectName(QStringLiteral("teamInlineSearchEdit"));
+        teamFilterEdit_->setPlaceholderText(tr("Filter this team's anime…"));
+        teamFilterEdit_->setClearButtonEnabled(true);
+        teamFilterEdit_->setMaximumWidth(240);
+        connect(teamFilterEdit_, &QLineEdit::returnPressed, this, [this] {
+            if (teamBrowseMode_) loadTeamAnime(1);
+        });
+        connect(teamFilterEdit_, &QLineEdit::textChanged, this, [this](const QString& t) {
+            if (teamBrowseMode_ && t.trimmed().isEmpty()) loadTeamAnime(1);
+        });
+        actionsRow->addWidget(teamFilterEdit_);
         heroV->addLayout(actionsRow);
 
         if (pageIntro_ != nullptr) {
@@ -4337,6 +4349,7 @@ void SearchPage::browseSelectedTeam(const backend::Team& team) {
             applyCatalogueFilters();
         });
     }
+    if (teamFilterEdit_ != nullptr) teamFilterEdit_->clear();
     if (teamMonogram_ != nullptr) {
         teamMonogram_->setText(team.name.trimmed().left(2).toUpper());
     }
@@ -4430,13 +4443,32 @@ void SearchPage::loadTeamAnime(int page) {
     const int seq = ++catalogueRequestSeq_;
     const backend::Team team = activeTeam_;
     const int limit = pageSize_;
+    const QString inTeamSearch =
+        teamFilterEdit_ != nullptr ? teamFilterEdit_->text().trimmed() : QString();
+    const QString fmt = activeFormat_;
+    const QString sortKey = catalogueQuery_.sort;
+    const QString orderKey = catalogueQuery_.order;
+    const bool useScopedSearch =
+        team.id > 0 && (!inTeamSearch.isEmpty() || !fmt.isEmpty() ||
+                        sortKey != QLatin1String("name") || !orderKey.isEmpty());
     statusLine_ = Status::LoadingSearch;
     renderStatus();
     backend::MikaiClient* client = &client_;
     const QPointer<SearchPage> self(this);
-    runner_.run([client, team, page, limit] {
-        return QVariant::fromValue(client->getTeamAnime(team.slug.isEmpty() ? QString::number(team.id) : team.slug,
-                                                        page, limit));
+    runner_.run([client, team, page, limit, inTeamSearch, fmt, sortKey, orderKey, useScopedSearch] {
+        if (useScopedSearch) {
+            backend::AnimeQuery req;
+            req.teams = {team.id};
+            req.search = inTeamSearch;
+            if (!fmt.isEmpty()) req.formats = {fmt};
+            req.sort = sortKey;
+            req.order = orderKey;
+            req.page = page;
+            req.limit = limit;
+            return QVariant::fromValue(client->search(req));
+        }
+        return QVariant::fromValue(client->getTeamAnime(
+            team.slug.isEmpty() ? QString::number(team.id) : team.slug, page, limit));
     }, [self, seq, page](const QVariant& value) {
         if (self.isNull() || seq != self->catalogueRequestSeq_ || !self->teamBrowseMode_) return;
         self->onResults(value.value<backend::SearchResult>(), page);
@@ -4719,10 +4751,8 @@ void SearchPage::onResults(const backend::SearchResult& result, int requestedPag
     statusLine_ = Status::Results;
     updateResultsHeading();
     renderStatus();
-    if (teamBrowseMode_) {
-        formatBar_->hide();
-    } else {
-        rebuildFormatBar();
+    rebuildFormatBar();
+    if (!teamBrowseMode_) {
         refreshFormatTotals();
     }
     populateRows();
