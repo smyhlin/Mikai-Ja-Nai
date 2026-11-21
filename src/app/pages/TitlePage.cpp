@@ -805,8 +805,8 @@ void TitlePage::buildHeader() {
     // The same outline gear the main page uses for the same action.
     settingsButton_->setIcon(theme::outlineGearIcon());
     settingsButton_->setIconSize(QSize(theme::kIconSize, theme::kIconSize));
-    settingsButton_->setToolTip(tr("API token settings"));
-    settingsButton_->setAccessibleName(tr("API token settings"));
+    settingsButton_->setToolTip(tr("Settings"));
+    settingsButton_->setAccessibleName(tr("Settings"));
     settingsButton_->setCursor(Qt::PointingHandCursor);
     connect(settingsButton_, &QPushButton::clicked, this, &TitlePage::settingsRequested);
 
@@ -4707,8 +4707,8 @@ void TitlePage::retranslateUi() {
         homeButton_->setText(tr("Home"));
     }
     if (settingsButton_ != nullptr) {
-        settingsButton_->setToolTip(tr("API token settings"));
-        settingsButton_->setAccessibleName(tr("API token settings"));
+        settingsButton_->setToolTip(tr("Settings"));
+        settingsButton_->setAccessibleName(tr("Settings"));
     }
     if (episodesHeading_ != nullptr) {
         episodesHeading_->setText(tr("Episodes"));

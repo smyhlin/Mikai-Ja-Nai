@@ -452,8 +452,8 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     settingsButton_ = new QToolButton(sidebar_);
     settingsButton_->setObjectName(QStringLiteral("settingsChip"));
     settingsButton_->setText(tr("Settings"));
-    settingsButton_->setToolTip(tr("API token settings"));
-    settingsButton_->setAccessibleName(tr("API token settings"));
+    settingsButton_->setToolTip(tr("Settings"));
+    settingsButton_->setAccessibleName(tr("Settings"));
     settingsButton_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     settingsButton_->setIcon(theme::outlineGearIcon());
     settingsButton_->setIconSize(sidebarGlyphBox);
@@ -916,8 +916,8 @@ void SearchPage::retranslateUi() {
     }
     if (settingsButton_ != nullptr) {
         settingsButton_->setText(tr("Settings"));
-        settingsButton_->setToolTip(tr("API token settings"));
-        settingsButton_->setAccessibleName(tr("API token settings"));
+        settingsButton_->setToolTip(tr("Settings"));
+        settingsButton_->setAccessibleName(tr("Settings"));
     }
     if (updatesButton_ != nullptr) {
         updatesButton_->setText(tr("Check for updates"));
