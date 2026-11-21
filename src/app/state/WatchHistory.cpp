@@ -2,14 +2,19 @@
 
 #include <QCoreApplication>
 #include <QDebug>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QPointer>
+#include <QSaveFile>
 #include <QSet>
 #include <QSettings>
+#include <QStandardPaths>
 #include <QThread>
 #include <QTimer>
 
@@ -28,11 +33,35 @@ public:
         return writer;
     }
 
+    static QString filePathForKey(const QString& key) {
+        if (key != defaultKey()) return {};
+        const QString dataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+        if (dataDir.isEmpty()) return {};
+        return QDir(dataDir).filePath(QStringLiteral("watch_history.json"));
+    }
+
     QString snapshot(const QString& key) {
         const std::lock_guard<std::mutex> lock(mutex_);
         const auto cached = latest_.constFind(key);
         if (cached != latest_.constEnd()) {
             return cached.value();
+        }
+
+        const QString path = filePathForKey(key);
+        if (!path.isEmpty()) {
+            for (const QString& candidate : {path, path + QStringLiteral(".bak")}) {
+                QFile file(candidate);
+                if (file.open(QIODevice::ReadOnly)) {
+                    const QByteArray data = file.readAll();
+                    QJsonParseError parseError{};
+                    if (QJsonDocument::fromJson(data, &parseError).isObject() &&
+                        parseError.error == QJsonParseError::NoError) {
+                        const QString payload = QString::fromUtf8(data);
+                        latest_.insert(key, payload);
+                        return payload;
+                    }
+                }
+            }
         }
 
         QSettings settings;
@@ -89,16 +118,45 @@ public:
         QList<Item> items;
         items.swap(pending_);
 
+        bool saved = true;
         QSettings settings;
+        bool settingsTouched = false;
         for (const Item& item : items) {
-            if (item.payload.isEmpty()) {
-                settings.remove(item.key);
+            const QString path = filePathForKey(item.key);
+            if (!path.isEmpty()) {
+                QDir().mkpath(QFileInfo(path).absolutePath());
+                if (item.payload.isEmpty()) {
+                    QFile::remove(path);
+                    QFile::remove(path + QStringLiteral(".bak"));
+                } else {
+                    if (QFile::exists(path)) {
+                        QFile::remove(path + QStringLiteral(".bak"));
+                        QFile::copy(path, path + QStringLiteral(".bak"));
+                    }
+                    QSaveFile out(path);
+                    if (out.open(QIODevice::WriteOnly | QIODevice::Truncate) &&
+                        out.write(item.payload.toUtf8()) != -1 && out.commit()) {
+                        if (settings.contains(item.key)) {
+                            settings.remove(item.key);
+                            settingsTouched = true;
+                        }
+                    } else {
+                        saved = false;
+                    }
+                }
             } else {
-                settings.setValue(item.key, item.payload);
+                settingsTouched = true;
+                if (item.payload.isEmpty()) {
+                    settings.remove(item.key);
+                } else {
+                    settings.setValue(item.key, item.payload);
+                }
             }
         }
-        settings.sync();
-        const bool saved = settings.status() == QSettings::NoError;
+        if (settingsTouched) {
+            settings.sync();
+            saved = saved && (settings.status() == QSettings::NoError);
+        }
         if (!saved) {
             qWarning() << "mikai: could not save episode history, settings status:"
                        << settings.status();
