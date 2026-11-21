@@ -62,6 +62,7 @@ class ClipController : public QObject {
     Q_PROPERTY(QString positionText READ positionText NOTIFY positionChanged)
     Q_PROPERTY(bool playing READ playing NOTIFY previewChanged)
     Q_PROPERTY(bool muted READ muted NOTIFY previewChanged)
+    Q_PROPERTY(bool loopPreview READ loopPreview WRITE setLoopPreview NOTIFY previewChanged)
     Q_PROPERTY(bool previewLoading READ previewLoading NOTIFY previewChanged)
     Q_PROPERTY(bool videoVisible READ videoVisible NOTIFY previewChanged)
     Q_PROPERTY(QUrl previewSource READ previewSource NOTIFY previewChanged)
@@ -101,6 +102,12 @@ public:
     QString windowStartText() const;
     QString windowEndText() const;
     double position() const { return position_; }
+    bool loopPreview() const { return loopPreview_; }
+    void setLoopPreview(bool loop) {
+        if (loopPreview_ == loop) return;
+        loopPreview_ = loop;
+        emit previewChanged();
+    }
     QString positionText() const;
     bool playing() const { return playing_; }
     bool muted() const { return muted_; }
@@ -199,6 +206,7 @@ private:
     QSize sourceSize_;
     double sourceFps_ = 0.0;
     double position_ = 0.0;
+    bool loopPreview_ = true;
     double pendingSeek_ = 0.0;
     bool seeking_ = false;
     bool playing_ = false;

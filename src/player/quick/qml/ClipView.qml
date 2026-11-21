@@ -201,13 +201,23 @@ Item {
                     enabled: root.editor.editingEnabled
                     onClicked: { root.editor.toggleMute(); root.forceActiveFocus() }
                 }
-                Text {
-                    Layout.preferredWidth: 64
-                    text: qsTr("Loop preview")
-                    color: root.textColor
-                    opacity: 0.6
-                    font.pixelSize: 11
-                    wrapMode: Text.WordWrap
+                CheckBox {
+                    id: loopPreviewCheck
+                    objectName: "clipLoop"
+                    text: qsTr("Loop")
+                    checked: root.editor.loopPreview
+                    enabled: root.editor.editingEnabled
+                    onToggled: {
+                        root.editor.loopPreview = checked
+                        root.forceActiveFocus()
+                    }
+                    contentItem: Text {
+                        text: loopPreviewCheck.text
+                        color: root.textColor
+                        font.pixelSize: 12
+                        verticalAlignment: Text.AlignVCenter
+                        leftPadding: loopPreviewCheck.indicator.width + loopPreviewCheck.spacing
+                    }
                 }
             }
 

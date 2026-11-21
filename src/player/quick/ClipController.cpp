@@ -131,17 +131,29 @@ ClipController::ClipController(VideoSession* source, QString caption, QObject* p
         position_ = std::clamp(seconds, windowStart(), windowEnd());
         emit positionChanged();
         if (playing_ && seconds >= selectionEnd() - 0.02) {
-            pendingSeek_ = selectionStart();
-            seeking_ = true;
-            preview_->seekExact(pendingSeek_);
+            if (loopPreview_) {
+                pendingSeek_ = selectionStart();
+                seeking_ = true;
+                preview_->seekExact(pendingSeek_);
+            } else {
+                playing_ = false;
+                preview_->setPaused(true);
+                emit previewChanged();
+            }
         }
     });
     connect(preview_, &VideoSession::mediaEnded, this, [this](quint64) {
         if (!playing_ || invalidated_ || stopped_) return;
-        pendingSeek_ = selectionStart();
-        seeking_ = true;
-        preview_->seekExact(pendingSeek_);
-        preview_->setPaused(false);
+        if (loopPreview_) {
+            pendingSeek_ = selectionStart();
+            seeking_ = true;
+            preview_->seekExact(pendingSeek_);
+            preview_->setPaused(false);
+        } else {
+            playing_ = false;
+            preview_->setPaused(true);
+            emit previewChanged();
+        }
     });
     connect(preview_, &VideoSession::errorOccurred, this, [this](const QString& reason) {
         if (invalidated_ || stopped_) return;
