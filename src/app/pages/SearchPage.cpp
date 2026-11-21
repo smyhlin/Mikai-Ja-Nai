@@ -4286,6 +4286,42 @@ void SearchPage::browseSelectedTeam(const backend::Team& team) {
         bodyRow->addWidget(teamDetailLabel_, 1);
         heroV->addLayout(bodyRow);
 
+        auto* actionsRow = new QHBoxLayout();
+        actionsRow->setContentsMargins(0, 0, 0, 0);
+        actionsRow->setSpacing(theme::kSpacingSmall);
+        teamCombineFiltersButton_ = new QPushButton(tr("Combine with filters…"), teamHeroCard_);
+        teamCombineFiltersButton_->setObjectName(QStringLiteral("teamCombineFiltersButton"));
+        theme::applyActionRole(teamCombineFiltersButton_, theme::ActionRole::Secondary);
+        connect(teamCombineFiltersButton_, &QPushButton::clicked, this, [this] {
+            if (activeTeam_.id > 0 && !catalogueQuery_.teams.contains(activeTeam_.id)) {
+                catalogueQuery_.teams.append(activeTeam_.id);
+            }
+            showCatalogueFilters();
+        });
+        teamCopyLinkButton_ = new QPushButton(tr("Copy link"), teamHeroCard_);
+        teamCopyLinkButton_->setObjectName(QStringLiteral("teamCopyLinkButton"));
+        theme::applyActionRole(teamCopyLinkButton_, theme::ActionRole::Ghost);
+        connect(teamCopyLinkButton_, &QPushButton::clicked, this, [this] {
+            const QString ref =
+                activeTeam_.slug.isEmpty() ? QString::number(activeTeam_.id) : activeTeam_.slug;
+            const QString url = QStringLiteral("https://mikai.me/teams/%1").arg(ref);
+            if (!mikai::gui::copyText(url)) reportFailure(Notice::CopyLink);
+        });
+        teamOpenWebButton_ = new QPushButton(tr("Open on mikai.me"), teamHeroCard_);
+        teamOpenWebButton_->setObjectName(QStringLiteral("teamOpenWebButton"));
+        theme::applyActionRole(teamOpenWebButton_, theme::ActionRole::Ghost);
+        connect(teamOpenWebButton_, &QPushButton::clicked, this, [this] {
+            const QString ref =
+                activeTeam_.slug.isEmpty() ? QString::number(activeTeam_.id) : activeTeam_.slug;
+            const QUrl url(QStringLiteral("https://mikai.me/teams/%1").arg(ref));
+            if (!QDesktopServices::openUrl(url)) reportFailure(Notice::Browser);
+        });
+        actionsRow->addWidget(teamCombineFiltersButton_);
+        actionsRow->addWidget(teamCopyLinkButton_);
+        actionsRow->addWidget(teamOpenWebButton_);
+        actionsRow->addStretch(1);
+        heroV->addLayout(actionsRow);
+
         if (pageIntro_ != nullptr) {
             if (auto* intro = qobject_cast<QVBoxLayout*>(pageIntro_->layout())) {
                 intro->insertWidget(1, teamHeroCard_);

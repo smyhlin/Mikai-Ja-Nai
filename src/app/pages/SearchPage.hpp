@@ -475,6 +475,9 @@ private:
     QPushButton* teamDirectoryButton_ = nullptr;
     QLabel* teamBreadcrumbLabel_ = nullptr;
     QPushButton* teamBackButton_ = nullptr;
+    QPushButton* teamCombineFiltersButton_ = nullptr;
+    QPushButton* teamCopyLinkButton_ = nullptr;
+    QPushButton* teamOpenWebButton_ = nullptr;
     QLabel* teamDetailLabel_ = nullptr;
     QLabel* resultsHeading_ = nullptr;
     QLabel* status_ = nullptr;
