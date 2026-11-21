@@ -547,8 +547,8 @@ void MainWindow::chooseMediaUrl() {
     if (openMedia(source)) {
         // Strip userinfo and query tokens before persisting URL history.
         QUrl sanitized = QUrl::fromUserInput(source);
-        sanitized.setUserInfo({});
-        sanitized.setQuery({});
+        sanitized.setUserInfo(QString());
+        sanitized.setQuery(QString());
         const QString storedUrl = sanitized.isValid() ? sanitized.toString() : source;
         history.removeAll(storedUrl);
         history.prepend(storedUrl);
