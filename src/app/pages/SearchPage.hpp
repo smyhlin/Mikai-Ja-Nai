@@ -110,6 +110,7 @@ protected:
     bool event(QEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
+    void showEvent(QShowEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
     void changeEvent(QEvent* event) override;
 
@@ -429,6 +430,8 @@ private:
     QTimer* thumbTimer_ = nullptr;
     QTimer* clearResetTimer_ = nullptr;
     bool searchInFlight_ = false;
+    int savedResultsScroll_ = 0;
+    QString savedSelectedRef_;
     void setSearchInFlight(bool active);
     QToolButton* homeButton_ = nullptr;
     QToolButton* mediaButton_ = nullptr;

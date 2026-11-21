@@ -2027,6 +2027,8 @@ void SearchPage::loadOngoing() {
     page_ = 1;
     pages_ = 1;
     total_ = 0;
+    savedResultsScroll_ = 0;
+    savedSelectedRef_.clear();
     entries_.clear();
     results_->clear();
     pager_->hide();
@@ -3109,6 +3111,8 @@ void SearchPage::search() {
     page_ = 1;
     pages_ = 1;
     total_ = 0;
+    savedResultsScroll_ = 0;
+    savedSelectedRef_.clear();
     entries_.clear();
     results_->clear();
     pager_->hide();
@@ -3328,8 +3332,35 @@ void SearchPage::updatePager() {
     pager_->setState(page_, pages_, total_);
 }
 
+void SearchPage::showEvent(QShowEvent* event) {
+    QWidget::showEvent(event);
+    if (!homeCurrent_ && results_ != nullptr && results_->isVisible()) {
+        if (!savedSelectedRef_.isEmpty()) {
+            for (int i = 0; i < results_->count(); ++i) {
+                QListWidgetItem* item = results_->item(i);
+                if (item != nullptr &&
+                    item->data(Qt::UserRole).toMap().value(QStringLiteral("ref")).toString() ==
+                        savedSelectedRef_) {
+                    results_->setCurrentItem(item);
+                    break;
+                }
+            }
+        }
+        if (savedResultsScroll_ > 0 && results_->verticalScrollBar() != nullptr) {
+            const int targetScroll = savedResultsScroll_;
+            QTimer::singleShot(0, this, [this, targetScroll] {
+                if (results_ != nullptr && results_->verticalScrollBar() != nullptr) {
+                    results_->verticalScrollBar()->setValue(targetScroll);
+                }
+            });
+        }
+    }
+}
+
 void SearchPage::goToPage(int page) {
     if (page >= 1 && page <= pages_ && page != page_) {
+        savedResultsScroll_ = 0;
+        savedSelectedRef_.clear();
         fetchPage(page);
     }
 }
@@ -3341,6 +3372,10 @@ void SearchPage::openItem(QListWidgetItem* item) {
     const QVariantMap data = item->data(Qt::UserRole).toMap();
     const QString ref = data.value(QStringLiteral("ref")).toString();
     if (!ref.isEmpty()) {
+        if (results_ != nullptr && results_->verticalScrollBar() != nullptr) {
+            savedResultsScroll_ = results_->verticalScrollBar()->value();
+        }
+        savedSelectedRef_ = ref;
         Q_EMIT openRequested(ref, data.value(QStringLiteral("poster")).toString());
     }
 }
