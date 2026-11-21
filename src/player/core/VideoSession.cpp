@@ -1814,8 +1814,16 @@ void VideoSession::captureUnfilteredFrame(const std::shared_ptr<UnfilteredCaptur
     // their vo=libmpv cores - no second screenshot path. The reply is parsed
     // here rather than through previewFrameFromRaw, which refuses frames wider
     // than 1024 px: a player frame is full-size.
+    // mpv 0.37 (client API 2.2) does not accept a format argument on
+    // `screenshot-raw` and always returns `bgr0`; mpv 0.38+ (API >= 2.3)
+    // accepts `"rgba"`.
+    constexpr uint64_t kMpvApiWithScreenshotRawFormat = (2ull << 16) | 3ull;
+    std::vector<std::string> captureArgs = {"screenshot-raw", "video"};
+    if (MpvHandle::apiVersion() >= kMpvApiWithScreenshotRawFormat) {
+        captureArgs.emplace_back("rgba");
+    }
     const AsyncRequestId request = mpv_->commandAsync(
-        {"screenshot-raw", "video", "rgba"},
+        std::move(captureArgs),
         [this, state](const AsyncReply& reply) {
             if (!unfilteredCaptureActive(state)) return;
             if (!reply.ok() || reply.node.format != MPV_FORMAT_NODE_MAP) {
@@ -1840,13 +1848,20 @@ void VideoSession::captureUnfilteredFrame(const std::shared_ptr<UnfilteredCaptur
                                         tr("the frame capture did not report its pixels"));
                 return;
             }
+            QImage::Format imageFormat = QImage::Format_Invalid;
+            if (format->text == "rgba") {
+                imageFormat = QImage::Format_RGBA8888;
+            } else if (format->text == "bgr0") {
+                imageFormat = QImage::Format_RGB32;
+            }
             // qint64, not qsizetype: `stride * height` overflows a 32-bit
             // qsizetype before the comparison could reject it.
             const qint64 declaredWidth = width->integer;
             const qint64 declaredHeight = height->integer;
             const qint64 declaredStride = stride->integer;
             if (declaredWidth <= 0 || declaredHeight <= 0 ||
-                declaredStride < declaredWidth * 4 || format->text != "rgba" ||
+                declaredStride < declaredWidth * 4 ||
+                imageFormat == QImage::Format_Invalid ||
                 static_cast<qint64>(data->bytes.size()) < declaredStride * declaredHeight) {
                 finishUnfilteredCapture(state, {},
                                         tr("the captured frame could not be read"));
@@ -1856,7 +1871,7 @@ void VideoSession::captureUnfilteredFrame(const std::shared_ptr<UnfilteredCaptur
             const QImage frame =
                 QImage(reinterpret_cast<const uchar*>(data->bytes.data()),
                        static_cast<int>(declaredWidth), static_cast<int>(declaredHeight),
-                       static_cast<qsizetype>(declaredStride), QImage::Format_RGBA8888)
+                       static_cast<qsizetype>(declaredStride), imageFormat)
                     .copy();
             if (frame.isNull()) {
                 finishUnfilteredCapture(state, {}, tr("the captured frame could not be read"));
@@ -1871,19 +1886,23 @@ void VideoSession::captureUnfilteredFrame(const std::shared_ptr<UnfilteredCaptur
 
 void VideoSession::finishUnfilteredCapture(const std::shared_ptr<UnfilteredCapture>& state,
                                            const QImage& image, const QString& reason) {
-    if (state == nullptr || state->finished) return;
-    state->finished = true;
-    if (state->timer != nullptr) {
-        state->timer->stop();
-        state->timer->deleteLater();
-        state->timer = nullptr;
+    // Pin a local owner before resetting `unfilteredCapture_`: callers such as
+    // `checkUnfilteredFramePresented(unfilteredCapture_)` pass a reference that
+    // aliases `unfilteredCapture_` directly.
+    const std::shared_ptr<UnfilteredCapture> held = state;
+    if (held == nullptr || held->finished) return;
+    held->finished = true;
+    if (held->timer != nullptr) {
+        held->timer->stop();
+        held->timer->deleteLater();
+        held->timer = nullptr;
     }
-    if (unfilteredCapture_.get() == state.get()) unfilteredCapture_.reset();
-    restoreUnfilteredFilters(state);
+    if (unfilteredCapture_.get() == held.get()) unfilteredCapture_.reset();
+    restoreUnfilteredFilters(held);
     // The captured content is not what is on screen now, so a normal paint is
     // asked for rather than leaving the view showing the capture.
     if (presenter_ != nullptr) presenter_->requestRepaint();
-    if (state->completion) state->completion(image, reason);
+    if (held->completion) held->completion(image, reason);
 }
 
 void VideoSession::restoreUnfilteredFilters(

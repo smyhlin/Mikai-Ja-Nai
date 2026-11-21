@@ -84,11 +84,13 @@ bool decodeRawFrame(const NodeValue& node, native::FrameFixture* frame, QString*
         return refuse(QStringLiteral("native.reference.replyShape"),
                       QStringLiteral("the capture reply is missing a declared member"));
     }
-    if (format->text != "rgba") {
-        // The requested order is what the channel strip below assumes; a
-        // different one would silently swap colour channels.
+    const bool isRgba = format->text == "rgba";
+    const bool isBgr0 = format->text == "bgr0";
+    if (!isRgba && !isBgr0) {
+        // Only known 4-byte channel orders are accepted; an unknown layout
+        // would silently swap colour channels.
         return refuse(QStringLiteral("native.reference.format"),
-                      QStringLiteral("the core returned '%1', not the requested rgba")
+                      QStringLiteral("the core returned unsupported format '%1'")
                           .arg(QString::fromStdString(format->text)));
     }
     const qint64 w = width->integer;
@@ -118,9 +120,15 @@ bool decodeRawFrame(const NodeValue& node, native::FrameFixture* frame, QString*
         const unsigned char* row = source + static_cast<qsizetype>(y) * rowPitch;
         unsigned char* out = destination + static_cast<qsizetype>(y) * outPitch;
         for (qint64 x = 0; x < w; ++x) {
-            out[0] = row[0];
-            out[1] = row[1];
-            out[2] = row[2];
+            if (isRgba) {
+                out[0] = row[0];
+                out[1] = row[1];
+                out[2] = row[2];
+            } else {
+                out[0] = row[2];
+                out[1] = row[1];
+                out[2] = row[0];
+            }
             row += 4;
             out += 3;
         }
@@ -1023,8 +1031,13 @@ void VideoSession::stepToAdjacentNativeFrame(double restore, double adjacent,
 void VideoSession::issueNativeReferenceCapture(uint64_t epoch, int frameIndex,
                                               double position) {
     if (mpv_ == nullptr) return;
+    constexpr uint64_t kMpvApiWithScreenshotRawFormat = (2ull << 16) | 3ull;
+    std::vector<std::string> captureArgs = {"screenshot-raw", "video"};
+    if (MpvHandle::apiVersion() >= kMpvApiWithScreenshotRawFormat) {
+        captureArgs.emplace_back("rgba");
+    }
     nativeReferenceRequest_ = mpv_->commandAsync(
-        {"screenshot-raw", "video", "rgba"},
+        std::move(captureArgs),
         [this, epoch, frameIndex, position](const AsyncReply& reply) {
             nativeReferenceRequest_ = AsyncRequestId{};
             if (mpv_ == nullptr || epoch != mpv_->sourceEpoch()) {

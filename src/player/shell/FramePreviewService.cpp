@@ -199,10 +199,15 @@ QImage previewFrameFromRaw(const QByteArray& format, qint64 width, qint64 height
         if (reason != nullptr) *reason = text;
         return QImage();
     };
-    if (format != QByteArrayLiteral("rgba")) {
+    QImage::Format imageFormat = QImage::Format_Invalid;
+    if (format == QByteArrayLiteral("rgba")) {
+        imageFormat = QImage::Format_RGBA8888;
+    } else if (format == QByteArrayLiteral("bgr0")) {
+        imageFormat = QImage::Format_RGB32;
+    } else {
         return refuse(QCoreApplication::translate(
             "mplayer::shell::FramePreviewService",
-            "The captured frame is not in the requested RGBA order."));
+            "The captured frame is not in a supported pixel order."));
     }
     if (width <= 0 || height <= 0 || width > kMaxPreviewSide || height > kMaxPreviewSide) {
         return refuse(QCoreApplication::translate(
@@ -221,7 +226,7 @@ QImage previewFrameFromRaw(const QByteArray& format, qint64 width, qint64 height
             "mplayer::shell::FramePreviewService",
             "The capture payload is shorter than the declared rows."));
     }
-    QImage image(static_cast<int>(width), static_cast<int>(height), QImage::Format_RGBA8888);
+    QImage image(static_cast<int>(width), static_cast<int>(height), imageFormat);
     if (image.isNull()) {
         return refuse(QCoreApplication::translate(
             "mplayer::shell::FramePreviewService",
@@ -879,8 +884,13 @@ void FramePreviewWorker::captureFrame() {
     const quint64 token = activeToken_;
     const double requested = activeSeconds_;
     const double decoded = decodedSeconds_;
+    constexpr uint64_t kMpvApiWithScreenshotRawFormat = (2ull << 16) | 3ull;
+    std::vector<std::string> captureArgs = {"screenshot-raw", "video"};
+    if (MpvHandle::apiVersion() >= kMpvApiWithScreenshotRawFormat) {
+        captureArgs.emplace_back("rgba");
+    }
     const AsyncRequestId request = core_->commandAsync(
-        {"screenshot-raw", "video", "rgba"},
+        std::move(captureArgs),
         [this, token, requested, decoded](const AsyncReply& reply) {
             captureRequest_ = AsyncRequestId{};
             if (phase_ != Phase::Capture) return;
