@@ -3393,6 +3393,53 @@ void SearchPage::showCatalogueFilters() {
                                catalogueQuery_.sort);
     auto* order = selectionMode(QStringLiteral("catalogueSortOrder"), sortOrders,
                                 catalogueQuery_.order);
+    auto* licensesSection = addSection(tr("Licenses"));
+    auto* licensesStatus = new QLabel(tr("Loading official license holders…"), licensesSection->parentWidget());
+    licensesStatus->setObjectName(QStringLiteral("muted"));
+    licensesSection->addWidget(licensesStatus);
+    auto* licensesBoard = new QWidget(licensesSection->parentWidget());
+    auto* licensesFlow = new FlowLayout(theme::kSpacingXs, theme::kSpacingXs);
+    licensesFlow->setContentsMargins(0, 0, 0, 0);
+    licensesBoard->setLayout(licensesFlow);
+    licensesSection->addWidget(licensesBoard);
+    {
+        backend::MikaiClient* client = &client_;
+        QPointer<QLabel> statusGuard(licensesStatus);
+        QPointer<QWidget> boardGuard(licensesBoard);
+        QPointer<QDialog> dlgGuard(&dialog);
+        const QPointer<SearchPage> self(this);
+        runner_.run(
+            [client] { return QVariant::fromValue(client->getLicenseHolders()); },
+            [self, statusGuard, boardGuard, dlgGuard, licensesFlow](const QVariant& result) {
+                if (self.isNull() || statusGuard.isNull() || boardGuard.isNull() || dlgGuard.isNull()) return;
+                const QJsonArray holders = result.toJsonArray();
+                if (holders.isEmpty()) {
+                    statusGuard->setText(tr("No license holders reported by this server."));
+                    return;
+                }
+                statusGuard->setText(tr("Select an official license holder to browse licensed releases:"));
+                for (const QJsonValue& v : holders) {
+                    QString holderName = v.isString() ? v.toString() : v.toObject().value(QStringLiteral("name")).toString();
+                    if (holderName.trimmed().isEmpty()) continue;
+                    auto* btn = new QPushButton(holderName, boardGuard.data());
+                    btn->setObjectName(QStringLiteral("pagerChip"));
+                    btn->setCursor(Qt::PointingHandCursor);
+                    connect(btn, &QPushButton::clicked, dlgGuard.data(), [self, dlgGuard, holderName] {
+                        if (self.isNull()) return;
+                        if (!dlgGuard.isNull()) dlgGuard->reject();
+                        if (self->query_ != nullptr) self->query_->setText(holderName);
+                        self->search();
+                    });
+                    licensesFlow->addWidget(btn);
+                }
+                boardGuard->updateGeometry();
+            },
+            [statusGuard](const backend::Failure&) {
+                if (!statusGuard.isNull()) {
+                    statusGuard->setText(tr("License holders are unavailable on this server."));
+                }
+            });
+    }
     auto* ordering = addSection(tr("Sorting"));
     addField(ordering, tr("Sort by"), sort);
     addField(ordering, tr("Order"), order);
