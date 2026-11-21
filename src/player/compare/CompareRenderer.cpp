@@ -228,7 +228,7 @@ struct CompareRenderer::State {
         // write runs must unwind this one.
         const quint64 startedIn = generation;
         while (!write->done.load(std::memory_order_acquire)) {
-            QCoreApplication::processEvents();
+            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 10);
             if (generation != startedIn || (cancelled && cancelled())) {
                 // Signal cancellation to the self-contained FrameWrite worker;
                 // never block the GUI thread on QThreadPool::globalInstance()->waitForDone().
@@ -529,7 +529,7 @@ struct CompareRenderer::State {
     /// picture stop changing when no new frame arrives.
     QImage pump() {
         pumpFrame();
-        QCoreApplication::processEvents();
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 10);
         QThread::msleep(kPollMs);
         return lastFrame;
     }
@@ -541,7 +541,7 @@ struct CompareRenderer::State {
         timer.start();
         while (timer.elapsed() < timeoutMs && !cancelled() && error.isEmpty()) {
             if (pumpFrame() && presentedFrames > after) return true;
-            QCoreApplication::processEvents();
+            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 10);
             if (generation != startedIn) return false;
             QThread::msleep(kFrameWaitMs);
         }
@@ -572,7 +572,7 @@ struct CompareRenderer::State {
                     rendering->update();
                 }
             }
-            QCoreApplication::processEvents();
+            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 10);
             if (generation != startedIn) return false;
             QThread::msleep(5);
         }
@@ -689,7 +689,7 @@ struct CompareRenderer::State {
                 reported = buildDetail;
                 progress(buildDetail);
             }
-            QCoreApplication::processEvents();
+            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 10);
             if (generation != startedIn) return false;
             QThread::msleep(kFrameWaitMs);
         }
@@ -904,7 +904,7 @@ struct CompareRenderer::State {
             }
             if (!lastHwdec.isEmpty()) break;
             pumpFrame();
-            QCoreApplication::processEvents();
+            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 10);
             if (generation != startedIn) return false;
             QThread::msleep(kFrameWaitMs);
         }
@@ -1386,7 +1386,7 @@ QImage CompareRenderer::State::queryVoFrame() {
     timer.start();
     while (!reply->finished && timer.elapsed() < 5000 && state.error.isEmpty()) {
         state.pumpFrame();
-        QCoreApplication::processEvents();
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 10);
         if (state.generation != startedIn) return {};
         QThread::msleep(kFrameWaitMs);
     }

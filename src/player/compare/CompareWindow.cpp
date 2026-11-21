@@ -1781,7 +1781,7 @@ QImage CompareWindow::grabSettledFrame() {
     int quietEpochRounds = 0;
     const quint64 expectedSeekEpoch = seekEpoch_;
     for (int waited = 0; waited < kSettleTimeoutMs; waited += kPollIntervalMs) {
-        QCoreApplication::processEvents();
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 10);
         if (self.isNull()) {
             return QImage();
         }
@@ -1842,7 +1842,7 @@ std::optional<double> CompareWindow::readPlaybackTimestamp() {
         return std::nullopt;
     }
     for (int waited = 0; waited < kSettleTimeoutMs; waited += 10) {
-        QCoreApplication::processEvents();
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 10);
         if (self.isNull()) {
             return std::nullopt;
         }
@@ -1894,7 +1894,7 @@ void CompareWindow::captureFrame() {
     for (int waited = 0; waited < kSettleTimeoutMs &&
                          (!session_->pauseObserved() || session_->isPlaying());
          waited += kPollIntervalMs) {
-        QCoreApplication::processEvents();
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 10);
         if (self.isNull()) {
             return;
         }
@@ -2056,7 +2056,7 @@ QImage CompareWindow::renderIsolated(const QString& id) {
         }));
         while (!task->finished.load(std::memory_order_acquire)) {
             if (cancelled()) task->cancelled.store(true, std::memory_order_release);
-            if (self != nullptr) QCoreApplication::processEvents();
+            if (self != nullptr) QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 10);
             QThread::msleep(kPollIntervalMs);
         }
         if (self == nullptr) {
