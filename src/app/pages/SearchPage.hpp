@@ -243,6 +243,7 @@ private:
     void updateResultsHeading();
     void syncResultsSortToolbar();
     void setResultsGridMode(bool grid);
+    void rebuildActiveFilterChips();
     void retranslateUi();
     /// The heading of the block `key` names, in the active language. Both the
     /// constructor and a retranslate pass take it from here, so the two can
@@ -483,6 +484,8 @@ private:
     QVBoxLayout* rootLayout_ = nullptr;
     QVBoxLayout* discoveryLayout_ = nullptr;
     QScrollArea* discoveryScroll_ = nullptr;
+    QWidget* activeFiltersBar_ = nullptr;
+    FlowLayout* activeFiltersLayout_ = nullptr;
     QWidget* resultsToolbar_ = nullptr;
     QTabBar* formatBar_ = nullptr;
     QComboBox* resultsSortBox_ = nullptr;

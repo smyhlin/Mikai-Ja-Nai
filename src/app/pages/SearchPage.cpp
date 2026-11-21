@@ -709,6 +709,14 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     rootLayout_->addWidget(discoveryScroll_, 1);
     placeIntro(true);
 
+    activeFiltersBar_ = new QWidget(this);
+    activeFiltersBar_->setObjectName(QStringLiteral("activeFiltersBar"));
+    activeFiltersLayout_ = new FlowLayout(theme::kSpacingXs, theme::kSpacingXs);
+    activeFiltersLayout_->setContentsMargins(0, 0, 0, 0);
+    activeFiltersBar_->setLayout(activeFiltersLayout_);
+    activeFiltersBar_->hide();
+    rootLayout_->addWidget(activeFiltersBar_);
+
     resultsToolbar_ = new QWidget(this);
     resultsToolbar_->setObjectName(QStringLiteral("resultsToolbar"));
     auto* toolbarLayout = new QHBoxLayout(resultsToolbar_);
@@ -1189,6 +1197,85 @@ void SearchPage::setResultsGridMode(bool grid) {
         if (results_ != nullptr) results_->setVisible(!grid);
     }
 }
+void SearchPage::rebuildActiveFilterChips() {
+    if (activeFiltersBar_ == nullptr || activeFiltersLayout_ == nullptr) return;
+    while (QLayoutItem* item = activeFiltersLayout_->takeAt(0)) {
+        if (QWidget* w = item->widget()) w->deleteLater();
+        delete item;
+    }
+    auto addChip = [this](const QString& text, const QString& tooltip, std::function<void()> onRemove) {
+        auto* btn = new QPushButton(text + QStringLiteral("  ×"), activeFiltersBar_);
+        btn->setObjectName(QStringLiteral("pagerChipActive"));
+        btn->setToolTip(tooltip);
+        btn->setCursor(Qt::PointingHandCursor);
+        connect(btn, &QPushButton::clicked, this, [this, fn = std::move(onRemove)] {
+            fn();
+            applyCatalogueFilters();
+        });
+        activeFiltersLayout_->addWidget(btn);
+    };
+
+    for (const QString& g : catalogueQuery_.genres) {
+        addChip(QStringLiteral("+ %1").arg(g), tr("Remove genre filter: %1").arg(g),
+                [this, g] { catalogueQuery_.genres.removeAll(g); });
+    }
+    for (const QString& g : catalogueQuery_.genres_exclude) {
+        addChip(QStringLiteral("- %1").arg(g), tr("Remove excluded genre: %1").arg(g),
+                [this, g] { catalogueQuery_.genres_exclude.removeAll(g); });
+    }
+    for (const QString& t : catalogueQuery_.tags) {
+        addChip(QStringLiteral("+ #%1").arg(t), tr("Remove tag filter: %1").arg(t),
+                [this, t] { catalogueQuery_.tags.removeAll(t); });
+    }
+    for (const QString& t : catalogueQuery_.tags_exclude) {
+        addChip(QStringLiteral("- #%1").arg(t), tr("Remove excluded tag: %1").arg(t),
+                [this, t] { catalogueQuery_.tags_exclude.removeAll(t); });
+    }
+    if (catalogueQuery_.year_from || catalogueQuery_.year_to) {
+        const QString range = QStringLiteral("%1–%2")
+                                  .arg(catalogueQuery_.year_from ? QString::number(*catalogueQuery_.year_from) : QStringLiteral("…"))
+                                  .arg(catalogueQuery_.year_to ? QString::number(*catalogueQuery_.year_to) : QStringLiteral("…"));
+        addChip(tr("Year: %1").arg(range), tr("Remove year range filter"), [this] {
+            catalogueQuery_.year_from.reset();
+            catalogueQuery_.year_to.reset();
+        });
+    }
+    for (int y : catalogueQuery_.years) {
+        addChip(QString::number(y), tr("Remove year filter: %1").arg(y),
+                [this, y] { catalogueQuery_.years.removeAll(y); });
+    }
+    for (const QString& f : catalogueQuery_.formats) {
+        addChip(f.toUpper(), tr("Remove format filter: %1").arg(f),
+                [this, f] { catalogueQuery_.formats.removeAll(f); });
+    }
+    for (const QString& s : catalogueQuery_.statuses) {
+        addChip(labels::status(s).isEmpty() ? s : labels::status(s),
+                tr("Remove status filter"),
+                [this, s] { catalogueQuery_.statuses.removeAll(s); });
+    }
+    for (const QString& sn : catalogueQuery_.seasons) {
+        addChip(sn, tr("Remove season filter: %1").arg(sn),
+                [this, sn] { catalogueQuery_.seasons.removeAll(sn); });
+    }
+    for (const QString& st : catalogueQuery_.studios) {
+        addChip(tr("Studio: %1").arg(st), tr("Remove studio filter: %1").arg(st),
+                [this, st] { catalogueQuery_.studios.removeAll(st); });
+    }
+    for (qint64 tm : catalogueQuery_.teams) {
+        addChip(tr("Team #%1").arg(tm), tr("Remove team filter #%1").arg(tm),
+                [this, tm] { catalogueQuery_.teams.removeAll(tm); });
+    }
+
+    const bool hasChips = activeFiltersLayout_->count() > 0;
+    if (hasChips) {
+        auto* clearAll = new QPushButton(tr("Clear all"), activeFiltersBar_);
+        theme::applyActionRole(clearAll, theme::ActionRole::Ghost);
+        connect(clearAll, &QPushButton::clicked, this, &SearchPage::resetCatalogueFilters);
+        activeFiltersLayout_->addWidget(clearAll);
+    }
+    activeFiltersBar_->setVisible(hasChips && !homeCurrent_);
+}
+
 void SearchPage::syncResultsSortToolbar() {
     if (resultsSortBox_ == nullptr || resultsOrderButton_ == nullptr) return;
     syncingSortToolbar_ = true;
@@ -3536,6 +3623,7 @@ void SearchPage::showDiscovery() {
     hideResultsStateCard();
     if (resultsGridScroll_ != nullptr) resultsGridScroll_->hide();
     if (resultsToolbar_ != nullptr) resultsToolbar_->hide();
+    if (activeFiltersBar_ != nullptr) activeFiltersBar_->hide();
     formatBar_->hide();
     resultsHeading_->show();
     homeCurrent_ = true;
@@ -3550,6 +3638,7 @@ void SearchPage::showSearchResults() {
     discoveryScroll_->hide();
     if (resultsToolbar_ != nullptr) resultsToolbar_->show();
     syncResultsSortToolbar();
+    rebuildActiveFilterChips();
     if (resultsGridScroll_ != nullptr) {
         resultsGridScroll_->setVisible(gridViewMode_);
         results_->setVisible(!gridViewMode_);
