@@ -3051,14 +3051,16 @@ void SearchPage::showCatalogueFilters() {
     addField(tagsSection, tr("Tags exclude"), tagExclude);
     addField(tagsSection, tr("Tag matching"), tagMatch);
 
+    const int currentYear = QDate::currentDate().year();
+    const int maxYear = currentYear + 2;
     auto* yearFrom = new QSpinBox(&dialog);
     yearFrom->setObjectName(QStringLiteral("yearFromSpin"));
-    yearFrom->setRange(0, 9999);
+    yearFrom->setRange(0, maxYear);
     yearFrom->setSpecialValueText(tr("Any"));
     yearFrom->setValue(catalogueQuery_.year_from.value_or(0));
     auto* yearTo = new QSpinBox(&dialog);
     yearTo->setObjectName(QStringLiteral("yearToSpin"));
-    yearTo->setRange(0, 9999);
+    yearTo->setRange(0, maxYear);
     yearTo->setSpecialValueText(tr("Any"));
     yearTo->setValue(catalogueQuery_.year_to.value_or(0));
     auto* years = new QLineEdit(&dialog);
@@ -3068,6 +3070,32 @@ void SearchPage::showCatalogueFilters() {
     for (int year : catalogueQuery_.years) yearStrings << QString::number(year);
     years->setText(yearStrings.join(QLatin1Char(',')));
     auto* release = addSection(tr("Release"));
+
+    // Quick decade/year preset pills for fast range selection.
+    auto* yearPresetsHost = new QWidget(filterContent);
+    auto* yearPresetsFlow = new FlowLayout(theme::kSpacingXs, theme::kSpacingXs);
+    yearPresetsFlow->setContentsMargins(0, 0, 0, 0);
+    yearPresetsHost->setLayout(yearPresetsFlow);
+    const auto addYearPreset = [&](const QString& label, int fromVal, int toVal) {
+        auto* btn = new QPushButton(label, yearPresetsHost);
+        btn->setObjectName(QStringLiteral("pagerChip"));
+        btn->setCursor(Qt::PointingHandCursor);
+        connect(btn, &QPushButton::clicked, &dialog, [yearFrom, yearTo, years, fromVal, toVal] {
+            yearFrom->setValue(fromVal);
+            yearTo->setValue(toVal);
+            years->clear();
+        });
+        yearPresetsFlow->addWidget(btn);
+    };
+    addYearPreset(QString::number(currentYear), currentYear, currentYear);
+    addYearPreset(QString::number(currentYear - 1), currentYear - 1, currentYear - 1);
+    addYearPreset(QStringLiteral("2020s"), 2020, currentYear);
+    addYearPreset(QStringLiteral("2010s"), 2010, 2019);
+    addYearPreset(QStringLiteral("2000s"), 2000, 2009);
+    addYearPreset(tr("Classic (<2000)"), 1950, 1999);
+    addYearPreset(tr("Any"), 0, 0);
+    release->addWidget(yearPresetsHost);
+
     auto* yearSpan = new QWidget(filterContent);
     auto* yearRow = new QHBoxLayout(yearSpan);
     yearRow->setContentsMargins(0, 0, 0, 0);
@@ -3087,6 +3115,45 @@ void SearchPage::showCatalogueFilters() {
     yearRow->addStretch();
     release->addWidget(yearSpan);
     addField(release, tr("Years (comma separated)"), years);
+
+    auto* yearValidation = new QLabel(filterContent);
+    yearValidation->setObjectName(QStringLiteral("yearValidationLabel"));
+    yearValidation->setStyleSheet(QStringLiteral("color: #f87171;"));
+    yearValidation->setWordWrap(true);
+    yearValidation->hide();
+    release->addWidget(yearValidation);
+    const auto validateYears = [yearFrom, yearTo, years, yearValidation, maxYear]() -> bool {
+        QStringList errs;
+        if (yearFrom->value() > 0 && yearTo->value() > 0 && yearFrom->value() > yearTo->value()) {
+            errs << tr("\"Year from\" (%1) cannot exceed \"Year to\" (%2).")
+                        .arg(yearFrom->value())
+                        .arg(yearTo->value());
+        }
+        QStringList badTokens;
+        for (const QString& part : years->text().split(QLatin1Char(','), Qt::SkipEmptyParts)) {
+            bool ok = false;
+            const int y = part.trimmed().toInt(&ok);
+            if (!ok || y < 1950 || y > maxYear) {
+                badTokens << part.trimmed();
+            }
+        }
+        if (!badTokens.isEmpty()) {
+            errs << tr("Invalid year(s): %1 (expected 1950–%2).")
+                        .arg(badTokens.join(QStringLiteral(", ")))
+                        .arg(maxYear);
+        }
+        if (errs.isEmpty()) {
+            yearValidation->hide();
+            return true;
+        }
+        yearValidation->setText(errs.join(QLatin1Char(' ')));
+        yearValidation->show();
+        return false;
+    };
+    connect(yearFrom, &QSpinBox::valueChanged, &dialog, [validateYears](int) { validateYears(); });
+    connect(yearTo, &QSpinBox::valueChanged, &dialog, [validateYears](int) { validateYears(); });
+    connect(years, &QLineEdit::textChanged, &dialog, [validateYears](const QString&) { validateYears(); });
+    validateYears();
 
     const auto translatedValues = [](const QStringList& values, const auto& label) {
         QStringList names;
