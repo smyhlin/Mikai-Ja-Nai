@@ -3861,11 +3861,25 @@ void SearchPage::openTeamPicker() {
     layout->addWidget(dirHeader);
     auto* search = new QLineEdit(&dialog);
     search->setObjectName(QStringLiteral("teamSearchEdit"));
-    search->setPlaceholderText(tr("Search teams"));
+    search->setPlaceholderText(tr("Search teams (Ctrl+F or /)"));
+    search->setAccessibleName(tr("Search Ukrainian dubbing and subtitles teams"));
     search->setClearButtonEnabled(true);
     auto* rows = new QListWidget(&dialog);
     rows->setObjectName(QStringLiteral("teamResultsList"));
+    rows->setAccessibleName(tr("Teams directory list"));
+    rows->setAccessibleDescription(
+        tr("Press Enter to browse a team's anime, or Space to toggle catalogue filtering."));
     rows->setUniformItemSizes(true);
+    auto* focusSearchShortcut1 = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_F), &dialog);
+    auto* focusSearchShortcut2 = new QShortcut(QKeySequence(Qt::Key_Slash), &dialog);
+    const auto focusTeamSearch = [search] {
+        search->setFocus(Qt::ShortcutFocusReason);
+        search->selectAll();
+    };
+    connect(focusSearchShortcut1, &QShortcut::activated, &dialog, focusTeamSearch);
+    connect(focusSearchShortcut2, &QShortcut::activated, &dialog, [search, focusTeamSearch] {
+        if (!search->hasFocus()) focusTeamSearch();
+    });
     auto* more = new QPushButton(tr("Load more"), &dialog);
     more->setObjectName(QStringLiteral("teamLoadMoreButton"));
     theme::applyActionRole(more, theme::ActionRole::Ghost);
@@ -4091,9 +4105,12 @@ void SearchPage::openTeamPicker() {
             *totalPages = result.pages.value_or(
                 result.total.has_value() ? qMax(1, (total + 49) / 50)
                                          : page + (result.items.size() == 50 ? 1 : 0));
-            if (guardedState)
+            if (guardedState) {
                 guardedState->setText(QObject::tr("%1 teams · page %2 of %3")
                                           .arg(total).arg(page).arg(*totalPages));
+                QAccessibleEvent ev(guardedState.data(), QAccessible::NameChanged);
+                QAccessible::updateAccessibility(&ev);
+            }
             const bool isEmpty = guardedRows->count() == 0;
             if (guardedEmpty) guardedEmpty->setVisible(isEmpty);
             guardedRows->setVisible(!isEmpty);
@@ -4503,6 +4520,11 @@ void SearchPage::renderTeamProfile() {
         details << links.join(QStringLiteral("&nbsp;&nbsp;·&nbsp;&nbsp;"));
     }
     teamDetailLabel_->setText(details.join(QStringLiteral("<br>")));
+    if (teamHeroCard_ != nullptr) {
+        teamHeroCard_->setAccessibleName(tr("Team profile: %1").arg(profile.team.name));
+    }
+    QAccessibleEvent ev(teamDetailLabel_, QAccessible::NameChanged);
+    QAccessible::updateAccessibility(&ev);
 }
 
 QStringList SearchPage::renderTeamLinks() const {
