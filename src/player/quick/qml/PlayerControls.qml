@@ -42,6 +42,7 @@ Item {
 
     readonly property color labelColor: "white"
     readonly property color mutedLabelColor: Qt.rgba(1, 1, 1, 0.65)
+    property bool showTotalDuration: false
 
     signal menuRequested(string menuId, rect anchorRect)
 
@@ -511,13 +512,26 @@ Item {
                     id: remainingLabel
                     Layout.minimumWidth: Math.max(56, implicitWidth)
                     Layout.preferredWidth: Math.max(56, implicitWidth)
-                    text: root.controller.formatRemaining(root.controller.position)
+                    text: root.showTotalDuration
+                          ? root.controller.formatTime(root.controller.duration)
+                          : root.controller.formatRemaining(root.controller.position)
                     color: root.mutedLabelColor
                     font.pixelSize: 12
                     font.features: ({ "tnum": 1 })
                     horizontalAlignment: Text.AlignRight
-                    Accessible.role: Accessible.StaticText
-                    Accessible.name: qsTr("Remaining time")
+                    Accessible.role: Accessible.Button
+                    Accessible.name: root.showTotalDuration
+                                     ? qsTr("Total duration (click for remaining time)")
+                                     : qsTr("Remaining time (click for total duration)")
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            root.controller.noteUserActivity()
+                            root.showTotalDuration = !root.showTotalDuration
+                        }
+                    }
                 }
             }
         }
