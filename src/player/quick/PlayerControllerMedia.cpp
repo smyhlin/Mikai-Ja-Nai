@@ -547,9 +547,26 @@ void PlayerController::offerResume(double seconds) {
     raiseResumeSheet(seconds);
 }
 
+bool PlayerController::alwaysResume() const {
+    return QSettings().value(QStringLiteral("playback/alwaysResume"), false).toBool();
+}
+
+void PlayerController::setAlwaysResume(bool enabled) {
+    if (alwaysResume() == enabled) return;
+    QSettings().setValue(QStringLiteral("playback/alwaysResume"), enabled);
+    emit resumeSheetChanged();
+}
+
 void PlayerController::raiseResumeSheet(double seconds) {
     if (closed_ || resumeSheetVisible_) return;
     if (!std::isfinite(seconds) || seconds <= 0.0) return;
+    if (alwaysResume() && session_ != nullptr) {
+        session_->seekExact(seconds);
+        position_ = seconds;
+        emit positionChanged();
+        flashStatus(tr("Continued from %1").arg(formatTime(seconds)));
+        return;
+    }
     resumeSheetToken_ = episodeMediaToken();
     resumeSheetSeconds_ = seconds;
     resumeSheetLabel_ = formatTime(seconds);

@@ -357,7 +357,10 @@ public:
     Q_INVOKABLE void activateSkipOffer(int row);
 
     /// Stale generation/token is a no-op; there is no nested exec().
+    Q_PROPERTY(bool alwaysResume READ alwaysResume WRITE setAlwaysResume NOTIFY resumeSheetChanged)
     Q_INVOKABLE void answerResume(quint64 generation, ResumeChoice choice);
+    bool alwaysResume() const;
+    void setAlwaysResume(bool enabled);
     Q_INVOKABLE void openSubtitleSearch();
     Q_INVOKABLE void setSubtitleSearchQuery(const QString& query);
     /// The OpenSubtitles provider's own language code (the same choices the

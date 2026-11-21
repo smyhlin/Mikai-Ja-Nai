@@ -211,6 +211,20 @@ Item {
                     }
                 }
 
+                CheckBox {
+                    id: alwaysResumeCheck
+                    text: qsTr("Always resume automatically")
+                    checked: root.controller.alwaysResume
+                    onToggled: root.controller.alwaysResume = checked
+                    contentItem: Text {
+                        text: alwaysResumeCheck.text
+                        color: root.mutedColor
+                        font.pixelSize: 12
+                        verticalAlignment: Text.AlignVCenter
+                        leftPadding: alwaysResumeCheck.indicator.width + alwaysResumeCheck.spacing
+                    }
+                }
+
                 Flow {
                     Layout.fillWidth: true
                     layoutDirection: Qt.RightToLeft
