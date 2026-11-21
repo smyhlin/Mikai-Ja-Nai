@@ -140,6 +140,7 @@ Item {
             acceptedButtons: Qt.AllButtons
             onPressed: mouse => {
                 root.controller.noteUserActivity()
+                if (mouse.button === Qt.LeftButton) root.dismissTop()
                 mouse.accepted = true
             }
             onWheel: wheel => {
@@ -288,6 +289,7 @@ Item {
             acceptedButtons: Qt.AllButtons
             onPressed: mouse => {
                 root.controller.noteUserActivity()
+                if (mouse.button === Qt.LeftButton) root.dismissTop()
                 mouse.accepted = true
             }
             onWheel: wheel => {

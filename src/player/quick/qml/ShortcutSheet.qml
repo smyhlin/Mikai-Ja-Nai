@@ -63,6 +63,7 @@ FocusScope {
         acceptedButtons: Qt.AllButtons
         onPressed: mouse => {
             root.controller.noteUserActivity()
+            if (mouse.button === Qt.LeftButton) root.close()
             mouse.accepted = true
         }
         onWheel: wheel => {
