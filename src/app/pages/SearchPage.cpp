@@ -3918,6 +3918,7 @@ void SearchPage::openTeamPicker() {
     auto totalPages = std::make_shared<int>(1);
     auto currentTerm = std::make_shared<QString>();
     auto request = std::make_shared<int>(0);
+    auto inFlight = std::make_shared<bool>(false);
     auto selected = std::make_shared<backend::Team>();
     auto pickedTeamIds = std::make_shared<QSet<qint64>>();
     auto pickedTeamNames = std::make_shared<QHash<qint64, QString>>();
@@ -3973,8 +3974,8 @@ void SearchPage::openTeamPicker() {
     const QPointer<QLabel> guardedState(state);
     backend::MikaiClient* client = &client_;
     auto fetch = [this, client, guardedRows, guardedMore, guardedState, paging, totalPages,
-                  currentTerm, request, pickedTeamIds, voiceFilter, subsFilter, teamSortBox,
-                  teamOrderBtn]
+                  currentTerm, request, inFlight, pickedTeamIds, voiceFilter, subsFilter,
+                  teamSortBox, teamOrderBtn]
                  (const QString& term, int page) {
         *currentTerm = term;
         if (page == 1) {
@@ -3983,8 +3984,12 @@ void SearchPage::openTeamPicker() {
             *totalPages = 1;
         }
         const int seq = ++*request;
+        *inFlight = true;
         if (guardedState) guardedState->setText(tr("Loading…"));
-        if (guardedMore) guardedMore->setEnabled(false);
+        if (guardedMore) {
+            guardedMore->setEnabled(false);
+            guardedMore->setText(tr("Loading…"));
+        }
         const std::optional<bool> haveVoice =
             voiceFilter->isChecked() ? std::optional<bool>(true) : std::nullopt;
         const std::optional<bool> haveSubs =
@@ -3997,10 +4002,12 @@ void SearchPage::openTeamPicker() {
         runner_.run([client, term, page, haveVoice, haveSubs, sortKey, orderKey] {
             return QVariant::fromValue(
                 client->getTeams(term, page, 50, haveVoice, haveSubs, sortKey, orderKey));
-        }, [guardedRows, guardedMore, guardedState, paging, totalPages, request, seq, page,
-            pickedTeamIds]
+        }, [guardedRows, guardedMore, guardedState, paging, totalPages, request, inFlight, seq,
+            page, pickedTeamIds]
              (const QVariant& v) {
             if (seq != *request || !guardedRows) return;
+            *inFlight = false;
+            if (guardedMore) guardedMore->setText(QObject::tr("Load more"));
             const backend::TeamsResult result = v.value<backend::TeamsResult>();
             const auto formatCompact = [](qint64 n) -> QString {
                 if (n >= 1000000) return QStringLiteral("%1M").arg(n / 1000000.0, 0, 'f', 1);
@@ -4046,10 +4053,14 @@ void SearchPage::openTeamPicker() {
                 guardedState->setText(QObject::tr("%1 teams · page %2 of %3")
                                           .arg(total).arg(page).arg(*totalPages));
             if (guardedMore) guardedMore->setEnabled(page < *totalPages);
-        }, [guardedState, guardedMore, request, seq](const backend::Failure& failure) {
+        }, [guardedState, guardedMore, request, inFlight, seq](const backend::Failure& failure) {
             if (seq != *request) return;
+            *inFlight = false;
             if (guardedState) guardedState->setText(failure.message);
-            if (guardedMore) guardedMore->setEnabled(true);
+            if (guardedMore) {
+                guardedMore->setText(QObject::tr("Retry"));
+                guardedMore->setEnabled(true);
+            }
         });
     };
     auto* teamSearchTimer = new QTimer(&dialog);
@@ -4077,6 +4088,15 @@ void SearchPage::openTeamPicker() {
     connect(more, &QPushButton::clicked, &dialog, [fetch, paging, totalPages, currentTerm] {
         if (*paging < *totalPages) fetch(*currentTerm, *paging + 1);
     });
+    if (QScrollBar* vbar = rows->verticalScrollBar()) {
+        connect(vbar, &QScrollBar::valueChanged, &dialog,
+                [fetch, paging, totalPages, currentTerm, inFlight, vbar](int value) {
+                    if (*inFlight || *paging >= *totalPages || vbar->maximum() <= 0) return;
+                    if (value >= vbar->maximum() - 120) {
+                        fetch(*currentTerm, *paging + 1);
+                    }
+                });
+    }
     const auto syncSelectedFromItem = [selected, browse](QListWidgetItem* item) {
         *selected = backend::Team{};
         browse->setEnabled(item != nullptr);
