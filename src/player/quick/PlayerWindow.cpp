@@ -145,6 +145,14 @@ PlayerWindow::PlayerWindow(PlayerController* controller, QWindow* transientParen
 }
 
 PlayerWindow::~PlayerWindow() {
+    // Detach scene/controller signal connections before ~QQuickView tears down
+    // the QML tree: otherwise QObject::destroyed fires back into a partially
+    // destroyed PlayerWindow whose derived members are already gone.
+    setVideoItem(nullptr);
+    if (controller_ != nullptr) {
+        disconnect(controller_, nullptr, this, nullptr);
+        controller_ = nullptr;
+    }
     mikai::gui::idleInhibitor().release(this);
     if (auto* provider = static_cast<HoverPreviewImageProvider*>(hoverPreviewProvider_)) {
         provider->detachWindow();
@@ -262,8 +270,7 @@ void PlayerWindow::loadPlayerScene() {
 void PlayerWindow::setVideoItem(MpvVideoItem* item) {
     if (videoItem_ == item) return;
     if (videoItem_ != nullptr) {
-        disconnect(videoItem_, &MpvVideoItem::videoFramePresented, this,
-                   &PlayerWindow::noteFramePresented);
+        disconnect(videoItem_, nullptr, this, nullptr);
     }
     videoItem_ = item;
     if (item == nullptr) return;
