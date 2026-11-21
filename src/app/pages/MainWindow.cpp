@@ -44,6 +44,7 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QDesktopServices>
+#include <QClipboard>
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QKeyEvent>
@@ -470,8 +471,15 @@ void MainWindow::chooseMediaUrl() {
     promptLabel->setBuddy(combo);
     layout->addWidget(combo);
 
+    auto* validationLabel = new QLabel(&dialog);
+    validationLabel->setProperty("textRole", QStringLiteral("danger"));
+    validationLabel->setWordWrap(true);
+    validationLabel->hide();
+    layout->addWidget(validationLabel);
+
     auto* footer = new QHBoxLayout();
     auto* clearButton = new QPushButton(tr("Clear history"), &dialog);
+    theme::applyActionRole(clearButton, theme::ActionRole::Ghost);
     clearButton->setEnabled(!history.isEmpty());
     footer->addWidget(clearButton);
     footer->addStretch(1);
@@ -480,15 +488,41 @@ void MainWindow::chooseMediaUrl() {
     QPushButton* okButton = buttons->button(QDialogButtonBox::Ok);
     if (okButton != nullptr) {
         okButton->setEnabled(false);
+        theme::applyActionRole(okButton, theme::ActionRole::Primary);
+    }
+    if (QPushButton* cancelButton = buttons->button(QDialogButtonBox::Cancel)) {
+        theme::applyActionRole(cancelButton, theme::ActionRole::Secondary);
     }
     footer->addWidget(buttons);
     layout->addLayout(footer);
 
-    connect(combo, &QComboBox::editTextChanged, &dialog, [okButton](const QString& text) {
-        if (okButton != nullptr) {
-            okButton->setEnabled(!text.trimmed().isEmpty());
+    const auto validateInput = [okButton, validationLabel](const QString& rawText) {
+        const QString text = rawText.trimmed();
+        if (text.isEmpty()) {
+            validationLabel->hide();
+            if (okButton != nullptr) okButton->setEnabled(false);
+            return;
         }
-    });
+        const QUrl parsed = QUrl::fromUserInput(text);
+        const bool valid = parsed.isValid() && !parsed.scheme().isEmpty() && !parsed.host().isEmpty();
+        if (!valid) {
+            validationLabel->setText(tr("Enter a valid http:// or https:// stream URL."));
+            validationLabel->show();
+        } else {
+            validationLabel->hide();
+        }
+        if (okButton != nullptr) okButton->setEnabled(valid);
+    };
+    connect(combo, &QComboBox::editTextChanged, &dialog, validateInput);
+    if (const QClipboard* cb = QGuiApplication::clipboard()) {
+        const QString clip = cb->text().trimmed();
+        if (clip.startsWith(QLatin1String("http://"), Qt::CaseInsensitive) ||
+            clip.startsWith(QLatin1String("https://"), Qt::CaseInsensitive)) {
+            combo->setEditText(clip);
+            if (QLineEdit* edit = combo->lineEdit()) edit->selectAll();
+            validateInput(clip);
+        }
+    }
     connect(clearButton, &QPushButton::clicked, &dialog, [&history, combo, clearButton, historyKey] {
         const QString current = combo->currentText();
         history.clear();
@@ -511,8 +545,13 @@ void MainWindow::chooseMediaUrl() {
         return;
     }
     if (openMedia(source)) {
-        history.removeAll(source);
-        history.prepend(source);
+        // Strip userinfo and query tokens before persisting URL history.
+        QUrl sanitized = QUrl::fromUserInput(source);
+        sanitized.setUserInfo({});
+        sanitized.setQuery({});
+        const QString storedUrl = sanitized.isValid() ? sanitized.toString() : source;
+        history.removeAll(storedUrl);
+        history.prepend(storedUrl);
         while (history.size() > kMaxUrlHistory) {
             history.removeLast();
         }
