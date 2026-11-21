@@ -36,9 +36,19 @@ QString errorText(const char* where, int code, mplayer::MpvApi& api) {
 }
 
 bool outputSize(const ClipExportRequest& request, QSize& size, QString& error) {
-    if (request.maximumHeight != 480 && request.maximumHeight != 720 && request.maximumHeight != 1080) {
+    if (request.maximumHeight != 0 && request.maximumHeight != 480 &&
+        request.maximumHeight != 720 && request.maximumHeight != 1080 &&
+        request.maximumHeight != 1440 && request.maximumHeight != 2160) {
         error = QObject::tr("The selected output quality is not supported.");
         return false;
+    }
+    if (request.maximumHeight == 0) {
+        if (request.sourceSize.width() < 2 || request.sourceSize.height() < 2) {
+            error = QObject::tr("The source video dimensions are unavailable.");
+            return false;
+        }
+        size = QSize(request.sourceSize.width() & ~1, request.sourceSize.height() & ~1);
+        return true;
     }
     if (request.sourceSize.width() < 2 || request.sourceSize.height() < 2) {
         error = QObject::tr("The source video dimensions are unavailable.");
