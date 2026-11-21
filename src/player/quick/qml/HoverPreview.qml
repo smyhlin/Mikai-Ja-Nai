@@ -18,11 +18,15 @@ Item {
                                                               : Qt.rgba(0, 0, 0, 0.14)
 
     readonly property real cardRadius: Math.max(2, controller.cornerRadius)
+    readonly property real videoAspect: (controller.sourceWidth > 0 && controller.sourceHeight > 0)
+                                        ? Math.max(0.75, Math.min(2.4, controller.sourceWidth / controller.sourceHeight))
+                                        : (16 / 9)
+    readonly property bool hasFrameArea: frame.status !== Image.Error
     objectName: "player.timeline.preview"
     visible: shown
     width: Math.min(208, Math.max(0, parent.width - 16))
     height: Math.min(Math.max(0, parent.height - 16),
-                     Math.round(width * 9 / 16) + labelBar.height)
+                     (hasFrameArea ? Math.round(width / videoAspect) : 0) + labelBar.height)
     x: Math.max(8, Math.min(parent.width - width - 8, anchor.x - width / 2))
     y: Math.max(8, Math.min(parent.height - height - 8, anchor.y - height - 10))
     z: 15
@@ -44,10 +48,13 @@ Item {
 
         Rectangle {
             id: imageFrame
+            visible: root.hasFrameArea
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            height: Math.min(Math.round(width * 9 / 16), Math.max(0, root.height - labelBar.height))
+            height: root.hasFrameArea
+                    ? Math.min(Math.round(width / root.videoAspect), Math.max(0, root.height - labelBar.height))
+                    : 0
             color: Qt.rgba(0, 0, 0, 0.35)
             clip: true
 
@@ -64,7 +71,7 @@ Item {
 
             Label {
                 anchors.centerIn: parent
-                visible: frame.status !== Image.Ready
+                visible: frame.status === Image.Loading || frame.status === Image.Null
                 text: qsTr("Loading preview…")
                 color: root.mutedColor
                 font.pixelSize: 11
