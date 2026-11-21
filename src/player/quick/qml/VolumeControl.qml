@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Mikai.Player
 
@@ -110,14 +111,31 @@ Item {
             }
 
             Rectangle {
+                anchors.fill: parent
+                anchors.margins: -2
+                visible: railHost.activeFocus
+                radius: 6
+                color: "transparent"
+                border.width: 1.5
+                border.color: root.controller.accentColor
+            }
+
+            Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
-                x: root.level * rail.width - width / 2
+                x: Math.max(0, Math.min(rail.width - width, root.level * rail.width - width / 2))
                 width: 10
                 height: 10
                 radius: width / 2
                 color: "white"
                 border.width: 1
                 border.color: Qt.rgba(0, 0, 0, 0.25)
+            }
+
+            ToolTip {
+                visible: trackArea.containsMouse || trackArea.pressed
+                text: root.controller.muted
+                      ? qsTr("Muted (%1)").arg(root.volumeText())
+                      : root.volumeText()
             }
 
             MouseArea {
