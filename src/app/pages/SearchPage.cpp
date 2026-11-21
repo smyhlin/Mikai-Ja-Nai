@@ -3194,12 +3194,20 @@ void SearchPage::showCatalogueFilters() {
     auto* ordering = addSection(tr("Sorting"));
     addField(ordering, tr("Sort by"), sort);
     addField(ordering, tr("Order"), order);
-    auto* relevance = new QLabel(tr("Text search uses relevance ranking; sort selection is retained but may be overridden."), &dialog);
+    auto* relevanceBanner = new QFrame(ordering->parentWidget());
+    relevanceBanner->setObjectName(QStringLiteral("settingsCard"));
+    auto* relLayout = new QHBoxLayout(relevanceBanner);
+    relLayout->setContentsMargins(theme::kSpacingMedium, theme::kSpacingSmall,
+                                  theme::kSpacingMedium, theme::kSpacingSmall);
+    auto* relevance = new QLabel(
+        tr("Text search uses relevance ranking; sort selection is retained and applies once the search box is cleared."),
+        relevanceBanner);
     relevance->setObjectName(QStringLiteral("catalogueRelevanceHint"));
     relevance->setWordWrap(true);
-    layout->addWidget(relevance);
+    relLayout->addWidget(relevance, 1);
+    ordering->addWidget(relevanceBanner);
     const auto* currentSearch = query_;
-    relevance->setVisible(!currentSearch->text().trimmed().isEmpty());
+    relevanceBanner->setVisible(!currentSearch->text().trimmed().isEmpty());
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Apply | QDialogButtonBox::Reset |
                                           QDialogButtonBox::Cancel, &dialog);
