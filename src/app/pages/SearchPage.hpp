@@ -236,6 +236,7 @@ private:
     /// rather than from a widget's visibility: an ancestor stack hides the
     /// whole page without telling the rail anything.
     void updateHomeIndicator();
+    void updateResultsHeading();
     void retranslateUi();
     /// The heading of the block `key` names, in the active language. Both the
     /// constructor and a retranslate pass take it from here, so the two can

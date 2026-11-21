@@ -945,6 +945,27 @@ void SearchPage::updateSidebarPresentation(bool force) {
     }
 }
 
+void SearchPage::updateResultsHeading() {
+    if (resultsHeading_ == nullptr) return;
+    if (homeCurrent_) {
+        resultsHeading_->setText(tr("Currently airing · sorted by newest episode"));
+        return;
+    }
+    const QString countSuffix =
+        total_ > 0 ? QStringLiteral(" · ") + tr("%n title(s)", nullptr, total_) : QString();
+    if (teamBrowseMode_) {
+        resultsHeading_->setText(tr("Anime from %1").arg(activeTeam_.name) + countSuffix);
+    } else if (!currentQuery_.isEmpty()) {
+        const QString elided =
+            currentQuery_.size() > 40 ? currentQuery_.left(39) + QStringLiteral("…") : currentQuery_;
+        resultsHeading_->setText(tr("Results for \"%1\"").arg(elided) + countSuffix);
+    } else if (hasExplicitCatalogueCriteria(catalogueQuery_)) {
+        resultsHeading_->setText(tr("Filtered catalogue") + countSuffix);
+    } else {
+        resultsHeading_->setText(tr("Recommendations") + countSuffix);
+    }
+}
+
 void SearchPage::updateHomeIndicator() {
     // Synchronize primary sidebar navigation states across Home, Filtered
     // Catalogue, Search Results, and Teams browse modes.
@@ -1025,9 +1046,7 @@ void SearchPage::retranslateUi() {
     if (resultsHeading_ != nullptr) {
         // The heading names the mode the page is in, never the request that is
         // running: browse shows a recommendation set, everything else a search.
-        resultsHeading_->setText(teamBrowseMode_
-                                     ? tr("Anime from %1").arg(activeTeam_.name)
-                                     : browseMode_ ? tr("Recommendations") : tr("Search results"));
+        updateResultsHeading();
     }
     if (teamBackButton_ != nullptr) teamBackButton_->setText(tr("All catalogue"));
     if (teamBrowseMode_) renderTeamProfile();
@@ -3093,7 +3112,7 @@ void SearchPage::search() {
     entries_.clear();
     results_->clear();
     pager_->hide();
-    resultsHeading_->setText(tr("Search results"));
+    updateResultsHeading();
     showSearchResults();
     fetchPage(1);
 }
@@ -3141,6 +3160,7 @@ void SearchPage::onResults(const backend::SearchResult& result, int requestedPag
         formatTotalsQuery_ = currentQuery_;
     }
     statusLine_ = Status::Results;
+    updateResultsHeading();
     renderStatus();
     if (teamBrowseMode_) {
         formatBar_->hide();
