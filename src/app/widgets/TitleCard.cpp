@@ -58,6 +58,10 @@ TitleCard::TitleCard(const backend::AnimeSummary& summary, QWidget* parent)
     if (summary.episodes.has_value()) {
         planned_ = *summary.episodes;
     }
+    formatRaw_ = summary.format.trimmed();
+    if (summary.year.has_value()) {
+        year_ = *summary.year;
+    }
 
     setObjectName(QStringLiteral("animeCard"));
     setFixedSize(theme::kHomeCardWidth, theme::kHomeCardHeight);
@@ -100,6 +104,34 @@ TitleCard::TitleCard(const backend::AnimeSummary& summary, QWidget* parent)
     title_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     status_ = makeLabel(QStringLiteral("carouselStatus"), QString());
     status_->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+
+    meta_ = makeLabel(QStringLiteral("carouselStatus"), QString());
+    meta_->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+    QStringList metaParts;
+    if (!formatRaw_.isEmpty()) {
+        metaParts << formatRaw_.toUpper();
+    }
+    if (year_ > 0) {
+        metaParts << QString::number(year_);
+    }
+    if (!metaParts.isEmpty()) {
+        meta_->setText(metaParts.join(QStringLiteral(" · ")));
+    } else {
+        meta_->hide();
+    }
+
+    scoreLabel_ = makeLabel(QStringLiteral("carouselStatusLive"), QString());
+    scoreLabel_->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+    scoreLabel_->hide();
+
+    auto* badgesRow = new QHBoxLayout();
+    badgesRow->setContentsMargins(0, 0, 0, 0);
+    badgesRow->setSpacing(theme::kSpacingXs);
+    badgesRow->addWidget(status_, 0, Qt::AlignVCenter);
+    badgesRow->addWidget(meta_, 0, Qt::AlignVCenter);
+    badgesRow->addWidget(scoreLabel_, 0, Qt::AlignVCenter);
+    badgesRow->addStretch(1);
+
     episodes_ = makeLabel(QStringLiteral("carouselEpisodes"), QString());
     episodes_->setWordWrap(true);
     episodes_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
@@ -109,7 +141,7 @@ TitleCard::TitleCard(const backend::AnimeSummary& summary, QWidget* parent)
     // two-line one. Top-aligning the stack puts every card's facts on the
     // same line whichever way the title happens to wrap.
     text->addWidget(title_, 0, Qt::AlignTop);
-    text->addWidget(status_, 0, Qt::AlignTop);
+    text->addLayout(badgesRow);
     text->addWidget(episodes_, 0, Qt::AlignTop);
     text->addStretch(1);
     row->addLayout(text, 1);  // the text column takes everything the poster does not
@@ -301,6 +333,30 @@ void TitleCard::applyDetail(const backend::AnimeDetail& detail) {
     localized_ = detail.episodes.localized;
     planned_ = detail.episodes.total.value_or(0);
     hasDetailStats_ = true;
+    if (detail.scores.mal.has_value() && *detail.scores.mal > 0.0) {
+        score_ = *detail.scores.mal;
+    } else if (detail.scores.mikai.has_value() && *detail.scores.mikai > 0.0) {
+        score_ = *detail.scores.mikai;
+    } else if (detail.scores.hikka.has_value() && *detail.scores.hikka > 0.0) {
+        score_ = *detail.scores.hikka;
+    }
+    if (score_ > 0.0 && scoreLabel_ != nullptr) {
+        scoreLabel_->setText(QStringLiteral("★ %1").arg(score_, 0, 'f', 1));
+        scoreLabel_->show();
+    }
+    if (meta_ != nullptr && meta_->isHidden()) {
+        QStringList metaParts;
+        if (!detail.format.trimmed().isEmpty()) {
+            metaParts << detail.format.trimmed().toUpper();
+        }
+        if (year_ > 0) {
+            metaParts << QString::number(year_);
+        }
+        if (!metaParts.isEmpty()) {
+            meta_->setText(metaParts.join(QStringLiteral(" · ")));
+            meta_->show();
+        }
+    }
     retranslateUi();
 }
 

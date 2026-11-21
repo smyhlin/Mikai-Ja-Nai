@@ -72,10 +72,15 @@ private:
     /// Whether `status_` currently carries the live-status object name; the
     /// label starts out with the non-live name, matching statusLive_'s zero.
     bool statusLive_ = false;
+    QString formatRaw_;
+    int year_ = 0;
+    double score_ = 0.0;
 
     QLabel* poster_ = nullptr;
     QLabel* title_ = nullptr;
     QLabel* status_ = nullptr;
+    QLabel* meta_ = nullptr;
+    QLabel* scoreLabel_ = nullptr;
     QLabel* episodes_ = nullptr;
 };
 
