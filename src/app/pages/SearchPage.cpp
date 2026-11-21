@@ -3869,6 +3869,23 @@ void SearchPage::openTeamPicker() {
     teamControlsRow->addWidget(subsFilter);
     teamControlsRow->addStretch(1);
 
+    auto* teamSortBox = new QComboBox(&dialog);
+    teamSortBox->setObjectName(QStringLiteral("teamSortCombo"));
+    teamSortBox->setToolTip(tr("Sort teams"));
+    teamSortBox->addItem(tr("Default order"), QString());
+    teamSortBox->addItem(tr("Most anime"), QStringLiteral("anime_count"));
+    teamSortBox->addItem(tr("Total views"), QStringLiteral("views_total"));
+    teamSortBox->addItem(tr("Monthly views"), QStringLiteral("views_last_30_days"));
+    teamSortBox->addItem(tr("Name"), QStringLiteral("name"));
+    teamControlsRow->addWidget(teamSortBox);
+
+    auto* teamOrderBtn = new QPushButton(tr("↓ Desc"), &dialog);
+    teamOrderBtn->setObjectName(QStringLiteral("teamOrderButton"));
+    teamOrderBtn->setCheckable(true);
+    teamOrderBtn->setToolTip(tr("Toggle ascending / descending order"));
+    theme::applyActionRole(teamOrderBtn, theme::ActionRole::Secondary);
+    teamControlsRow->addWidget(teamOrderBtn);
+
     auto* state = new QLabel(&dialog);
     state->setObjectName(QStringLiteral("muted"));
     layout->addWidget(search);
@@ -3894,7 +3911,8 @@ void SearchPage::openTeamPicker() {
     const QPointer<QLabel> guardedState(state);
     backend::MikaiClient* client = &client_;
     auto fetch = [this, client, guardedRows, guardedMore, guardedState, paging, totalPages,
-                  currentTerm, request, pickedTeamIds, voiceFilter, subsFilter]
+                  currentTerm, request, pickedTeamIds, voiceFilter, subsFilter, teamSortBox,
+                  teamOrderBtn]
                  (const QString& term, int page) {
         *currentTerm = term;
         if (page == 1) {
@@ -3909,8 +3927,14 @@ void SearchPage::openTeamPicker() {
             voiceFilter->isChecked() ? std::optional<bool>(true) : std::nullopt;
         const std::optional<bool> haveSubs =
             subsFilter->isChecked() ? std::optional<bool>(true) : std::nullopt;
-        runner_.run([client, term, page, haveVoice, haveSubs] {
-            return QVariant::fromValue(client->getTeams(term, page, 50, haveVoice, haveSubs));
+        const QString sortKey = teamSortBox->currentData().toString();
+        const QString orderKey =
+            sortKey.isEmpty() ? QString()
+                              : (teamOrderBtn->isChecked() ? QStringLiteral("asc")
+                                                           : QStringLiteral("desc"));
+        runner_.run([client, term, page, haveVoice, haveSubs, sortKey, orderKey] {
+            return QVariant::fromValue(
+                client->getTeams(term, page, 50, haveVoice, haveSubs, sortKey, orderKey));
         }, [guardedRows, guardedMore, guardedState, paging, totalPages, request, seq, page,
             pickedTeamIds]
              (const QVariant& v) {
@@ -3958,6 +3982,13 @@ void SearchPage::openTeamPicker() {
             [fetch, search](bool) { fetch(search->text().trimmed(), 1); });
     connect(subsFilter, &QPushButton::toggled, &dialog,
             [fetch, search](bool) { fetch(search->text().trimmed(), 1); });
+    connect(teamSortBox, &QComboBox::currentIndexChanged, &dialog,
+            [fetch, search](int) { fetch(search->text().trimmed(), 1); });
+    connect(teamOrderBtn, &QPushButton::toggled, &dialog,
+            [fetch, search, teamOrderBtn](bool asc) {
+                teamOrderBtn->setText(asc ? tr("↑ Asc") : tr("↓ Desc"));
+                fetch(search->text().trimmed(), 1);
+            });
     connect(more, &QPushButton::clicked, &dialog, [fetch, paging, totalPages, currentTerm] {
         if (*paging < *totalPages) fetch(*currentTerm, *paging + 1);
     });
