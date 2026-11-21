@@ -490,22 +490,23 @@ void TestThemeIcons::toggleAndSwatchPaintOnceAtEveryRatio() {
     const QRect knob = colorBounds(track, QColor(palette.muted));
     QVERIFY2(knob.isValid(), "the knob was not painted");
     const qreal knobX = centroidX(track, QColor(palette.muted));
-    const qreal expected = 10.5 * ratio;
+    const qreal expected = 11.0 * ratio;
     QVERIFY2(qAbs(knobX - expected) <= 2.5,
              qPrintable(QStringLiteral("knob at %1, expected %2 at %3")
                             .arg(knobX)
                             .arg(expected)
                             .arg(ratio)));
-    // The knob is height - 6 logical pixels across; a disc's fully covered
-    // interior is ~1 px smaller than its bounding box on each side.
-    QVERIFY2(qAbs(knob.width() - (mikai::app::theme::kSettingsSwitchHeight - 6) * ratio) <= 3.0,
+    // Track is inset 2 px for the focus ring (height - 4), and the knob is
+    // track.height() - 4 = height - 8 logical pixels across; a disc's fully
+    // covered interior is ~1 px smaller than its bounding box on each side.
+    QVERIFY2(qAbs(knob.width() - (mikai::app::theme::kSettingsSwitchHeight - 8) * ratio) <= 3.0,
              qPrintable(QStringLiteral("knob spans %1 px at %2")
                             .arg(knob.width())
                             .arg(ratio)));
-    QVERIFY2(qAbs(knob.left() - 2.5 * ratio) <= 2.0,
+    QVERIFY2(qAbs(knob.left() - 4.0 * ratio) <= 2.0,
              qPrintable(QStringLiteral("knob starts at %1 instead of %2")
                             .arg(knob.left())
-                            .arg(2.5 * ratio)));
+                            .arg(4.0 * ratio)));
 
     // The settings tab fixed-sizes every swatch: a plain resize() would be
     // clamped to QPushButton's sizeHint (its minimumSizeHint), which is wider
