@@ -9,6 +9,9 @@
 #  include <QDBusConnection>
 #  include <QDBusInterface>
 #  include <QDBusMessage>
+#  include <QDBusPendingCall>
+#  include <QDBusPendingCallWatcher>
+#  include <QDBusPendingReply>
 #  include <QDBusUnixFileDescriptor>
 
 #  include <utility>
@@ -34,6 +37,7 @@ struct IdleInhibitor::Platform {
     bool kdeScreenSaver = false;
     quint32 powerManagementCookie = 0;
     quint32 gnomeSessionCookie = 0;
+    bool desiredActive = false;
 #endif
 };
 
@@ -60,22 +64,24 @@ bool IdleInhibitor::active() const { return !owners_.empty(); }
 // logind blocks idle (screen blanking, automatic suspend) for as long as the
 // returned descriptor stays open.
 bool IdleInhibitor::inhibitThroughLogind() {
-    QDBusInterface manager(QStringLiteral("org.freedesktop.login1"),
-                           QStringLiteral("/org/freedesktop/login1"),
-                           QStringLiteral("org.freedesktop.login1.Manager"),
-                           QDBusConnection::systemBus());
-    if (!manager.isValid()) return false;
-    // X-M7: the default DBus timeout is 25 s; a wedged logind must not
-    // freeze the GUI thread on every playback start/stop.
-    manager.setTimeout(250);
-    const QDBusMessage reply =
-        manager.call(QStringLiteral("Inhibit"), QStringLiteral("idle:sleep"),
-                     QStringLiteral("Mikai Ja Nai"), QString::fromLatin1(kInhibitReason),
-                     QStringLiteral("block"));
-    if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty()) return false;
-    const QDBusUnixFileDescriptor fd = reply.arguments().first().value<QDBusUnixFileDescriptor>();
-    if (!fd.isValid()) return false;
-    platform_->logindFd = fd;
+    QDBusMessage msg = QDBusMessage::createMethodCall(
+        QStringLiteral("org.freedesktop.login1"),
+        QStringLiteral("/org/freedesktop/login1"),
+        QStringLiteral("org.freedesktop.login1.Manager"),
+        QStringLiteral("Inhibit"));
+    msg << QStringLiteral("idle:sleep") << QStringLiteral("Mikai Ja Nai")
+        << QString::fromLatin1(kInhibitReason) << QStringLiteral("block");
+    auto* watcher = new QDBusPendingCallWatcher(
+        QDBusConnection::systemBus().asyncCall(msg, 500));
+    QObject::connect(watcher, &QDBusPendingCallWatcher::finished, watcher,
+                     [this, watcher]() {
+                         QDBusPendingReply<QDBusUnixFileDescriptor> reply = *watcher;
+                         if (reply.isValid() && platform_->desiredActive) {
+                             const QDBusUnixFileDescriptor fd = reply.value();
+                             if (fd.isValid()) platform_->logindFd = fd;
+                         }
+                         watcher->deleteLater();
+                     });
     return true;
 }
 
@@ -83,93 +89,132 @@ bool IdleInhibitor::inhibitThroughLogind() {
 bool IdleInhibitor::inhibitThroughScreenSaver() {
     for (const auto& [service, kde] : {std::pair{QStringLiteral("org.freedesktop.ScreenSaver"), false},
                                        std::pair{QStringLiteral("org.kde.screensaver"), true}}) {
-        QDBusInterface screensaver(service, QStringLiteral("/ScreenSaver"),
-                                   QStringLiteral("org.freedesktop.ScreenSaver"),
-                                   QDBusConnection::sessionBus());
-        if (!screensaver.isValid()) continue;
-        screensaver.setTimeout(250);
-        const QDBusMessage reply = screensaver.call(QStringLiteral("Inhibit"),
-                                                    QStringLiteral("mikai"),
-                                                    QString::fromLatin1(kInhibitReason));
-        if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty()) continue;
-        platform_->screenSaverCookie = reply.arguments().first().toUInt();
-        platform_->kdeScreenSaver = kde;
-        return platform_->screenSaverCookie != 0;
+        QDBusMessage msg = QDBusMessage::createMethodCall(
+            service, QStringLiteral("/ScreenSaver"),
+            QStringLiteral("org.freedesktop.ScreenSaver"),
+            QStringLiteral("Inhibit"));
+        msg << QStringLiteral("mikai") << QString::fromLatin1(kInhibitReason);
+        auto* watcher = new QDBusPendingCallWatcher(
+            QDBusConnection::sessionBus().asyncCall(msg, 500));
+        QObject::connect(watcher, &QDBusPendingCallWatcher::finished, watcher,
+                         [this, service, kde, watcher]() {
+                             QDBusPendingReply<quint32> reply = *watcher;
+                             if (reply.isValid() && reply.value() != 0) {
+                                 if (platform_->desiredActive && platform_->screenSaverCookie == 0) {
+                                     platform_->screenSaverCookie = reply.value();
+                                     platform_->kdeScreenSaver = kde;
+                                 } else {
+                                     QDBusMessage uninhibit = QDBusMessage::createMethodCall(
+                                         service, QStringLiteral("/ScreenSaver"),
+                                         QStringLiteral("org.freedesktop.ScreenSaver"),
+                                         QStringLiteral("UnInhibit"));
+                                     uninhibit << reply.value();
+                                     QDBusConnection::sessionBus().asyncCall(uninhibit, 250);
+                                 }
+                             }
+                             watcher->deleteLater();
+                         });
     }
-    return false;
+    return true;
 }
 
 void IdleInhibitor::releaseScreenSaver() {
     if (platform_->screenSaverCookie == 0) return;
     const QString service = platform_->kdeScreenSaver ? QStringLiteral("org.kde.screensaver")
                                                       : QStringLiteral("org.freedesktop.ScreenSaver");
-    QDBusInterface screensaver(service, QStringLiteral("/ScreenSaver"),
-                               QStringLiteral("org.freedesktop.ScreenSaver"),
-                               QDBusConnection::sessionBus());
-    if (screensaver.isValid()) {
-        screensaver.setTimeout(250);
-        screensaver.call(QStringLiteral("UnInhibit"), platform_->screenSaverCookie);
-    }
+    QDBusMessage msg = QDBusMessage::createMethodCall(
+        service, QStringLiteral("/ScreenSaver"),
+        QStringLiteral("org.freedesktop.ScreenSaver"),
+        QStringLiteral("UnInhibit"));
+    msg << platform_->screenSaverCookie;
+    QDBusConnection::sessionBus().asyncCall(msg, 250);
     platform_->screenSaverCookie = 0;
 }
 
 bool IdleInhibitor::inhibitThroughPowerManagement() {
-    QDBusInterface power(QStringLiteral("org.freedesktop.PowerManagement.Inhibit"),
-                         QStringLiteral("/org/freedesktop/PowerManagement/Inhibit"),
-                         QStringLiteral("org.freedesktop.PowerManagement.Inhibit"),
-                         QDBusConnection::sessionBus());
-    if (!power.isValid()) return false;
-    power.setTimeout(250);
-    const QDBusMessage reply = power.call(QStringLiteral("Inhibit"),
-                                          QStringLiteral("Mikai Ja Nai"),
-                                          QString::fromLatin1(kInhibitReason));
-    if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty()) return false;
-    platform_->powerManagementCookie = reply.arguments().first().toUInt();
-    return platform_->powerManagementCookie != 0;
+    QDBusMessage msg = QDBusMessage::createMethodCall(
+        QStringLiteral("org.freedesktop.PowerManagement.Inhibit"),
+        QStringLiteral("/org/freedesktop/PowerManagement/Inhibit"),
+        QStringLiteral("org.freedesktop.PowerManagement.Inhibit"),
+        QStringLiteral("Inhibit"));
+    msg << QStringLiteral("Mikai Ja Nai") << QString::fromLatin1(kInhibitReason);
+    auto* watcher = new QDBusPendingCallWatcher(
+        QDBusConnection::sessionBus().asyncCall(msg, 500));
+    QObject::connect(watcher, &QDBusPendingCallWatcher::finished, watcher,
+                     [this, watcher]() {
+                         QDBusPendingReply<quint32> reply = *watcher;
+                         if (reply.isValid() && reply.value() != 0) {
+                             if (platform_->desiredActive && platform_->powerManagementCookie == 0) {
+                                 platform_->powerManagementCookie = reply.value();
+                             } else {
+                                 QDBusMessage uninhibit = QDBusMessage::createMethodCall(
+                                     QStringLiteral("org.freedesktop.PowerManagement.Inhibit"),
+                                     QStringLiteral("/org/freedesktop/PowerManagement/Inhibit"),
+                                     QStringLiteral("org.freedesktop.PowerManagement.Inhibit"),
+                                     QStringLiteral("UnInhibit"));
+                                 uninhibit << reply.value();
+                                 QDBusConnection::sessionBus().asyncCall(uninhibit, 250);
+                             }
+                         }
+                         watcher->deleteLater();
+                     });
+    return true;
 }
 
 void IdleInhibitor::releasePowerManagement() {
     if (platform_->powerManagementCookie == 0) return;
-    QDBusInterface power(QStringLiteral("org.freedesktop.PowerManagement.Inhibit"),
-                         QStringLiteral("/org/freedesktop/PowerManagement/Inhibit"),
-                         QStringLiteral("org.freedesktop.PowerManagement.Inhibit"),
-                         QDBusConnection::sessionBus());
-    if (power.isValid()) {
-        power.setTimeout(250);
-        power.call(QStringLiteral("UnInhibit"), platform_->powerManagementCookie);
-    }
+    QDBusMessage msg = QDBusMessage::createMethodCall(
+        QStringLiteral("org.freedesktop.PowerManagement.Inhibit"),
+        QStringLiteral("/org/freedesktop/PowerManagement/Inhibit"),
+        QStringLiteral("org.freedesktop.PowerManagement.Inhibit"),
+        QStringLiteral("UnInhibit"));
+    msg << platform_->powerManagementCookie;
+    QDBusConnection::sessionBus().asyncCall(msg, 250);
     platform_->powerManagementCookie = 0;
 }
 
 bool IdleInhibitor::inhibitThroughGnomeSession() {
-    QDBusInterface session(QStringLiteral("org.gnome.SessionManager"),
-                           QStringLiteral("/org/gnome/SessionManager"),
-                           QStringLiteral("org.gnome.SessionManager"),
-                           QDBusConnection::sessionBus());
-    if (!session.isValid()) return false;
-    session.setTimeout(250);
     // Flags: 4 = suspend, 8 = idle (screen blanking / lock).
     constexpr quint32 kInhibitSuspendAndIdle = 4U | 8U;
-    const QDBusMessage reply = session.call(QStringLiteral("Inhibit"),
-                                            QStringLiteral("Mikai Ja Nai"),
-                                            quint32(0),
-                                            QString::fromLatin1(kInhibitReason),
-                                            kInhibitSuspendAndIdle);
-    if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty()) return false;
-    platform_->gnomeSessionCookie = reply.arguments().first().toUInt();
-    return platform_->gnomeSessionCookie != 0;
+    QDBusMessage msg = QDBusMessage::createMethodCall(
+        QStringLiteral("org.gnome.SessionManager"),
+        QStringLiteral("/org/gnome/SessionManager"),
+        QStringLiteral("org.gnome.SessionManager"),
+        QStringLiteral("Inhibit"));
+    msg << QStringLiteral("Mikai Ja Nai") << quint32(0)
+        << QString::fromLatin1(kInhibitReason) << kInhibitSuspendAndIdle;
+    auto* watcher = new QDBusPendingCallWatcher(
+        QDBusConnection::sessionBus().asyncCall(msg, 500));
+    QObject::connect(watcher, &QDBusPendingCallWatcher::finished, watcher,
+                     [this, watcher]() {
+                         QDBusPendingReply<quint32> reply = *watcher;
+                         if (reply.isValid() && reply.value() != 0) {
+                             if (platform_->desiredActive && platform_->gnomeSessionCookie == 0) {
+                                 platform_->gnomeSessionCookie = reply.value();
+                             } else {
+                                 QDBusMessage uninhibit = QDBusMessage::createMethodCall(
+                                     QStringLiteral("org.gnome.SessionManager"),
+                                     QStringLiteral("/org/gnome/SessionManager"),
+                                     QStringLiteral("org.gnome.SessionManager"),
+                                     QStringLiteral("Uninhibit"));
+                                 uninhibit << reply.value();
+                                 QDBusConnection::sessionBus().asyncCall(uninhibit, 250);
+                             }
+                         }
+                         watcher->deleteLater();
+                     });
+    return true;
 }
 
 void IdleInhibitor::releaseGnomeSession() {
     if (platform_->gnomeSessionCookie == 0) return;
-    QDBusInterface session(QStringLiteral("org.gnome.SessionManager"),
-                           QStringLiteral("/org/gnome/SessionManager"),
-                           QStringLiteral("org.gnome.SessionManager"),
-                           QDBusConnection::sessionBus());
-    if (session.isValid()) {
-        session.setTimeout(250);
-        session.call(QStringLiteral("Uninhibit"), platform_->gnomeSessionCookie);
-    }
+    QDBusMessage msg = QDBusMessage::createMethodCall(
+        QStringLiteral("org.gnome.SessionManager"),
+        QStringLiteral("/org/gnome/SessionManager"),
+        QStringLiteral("org.gnome.SessionManager"),
+        QStringLiteral("Uninhibit"));
+    msg << platform_->gnomeSessionCookie;
+    QDBusConnection::sessionBus().asyncCall(msg, 250);
     platform_->gnomeSessionCookie = 0;
 }
 
@@ -216,6 +261,9 @@ void IdleInhibitor::apply(bool active) {
         SetThreadExecutionState(ES_CONTINUOUS);
     }
     return;
+#endif
+#ifdef Q_OS_LINUX
+    platform_->desiredActive = active;
 #endif
     if (active) {
         // Acquire all available session & system inhibitors together: logind
