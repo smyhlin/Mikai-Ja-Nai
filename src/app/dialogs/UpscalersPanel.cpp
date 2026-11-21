@@ -67,17 +67,17 @@ void UpscalersPanel::buildUi() {
     headerLayout->setContentsMargins(theme::kSpacingMedium, theme::kSpacingMedium,
                                      theme::kSpacingMedium, theme::kSpacingMedium);
     headerLayout->setSpacing(theme::kSpacingXs);
-    auto* title = new QLabel(tr("Upscale models"), header);
-    title->setObjectName(QStringLiteral("heading"));
-    headerLayout->addWidget(title);
-    auto* description = new QLabel(
+    titleLabel_ = new QLabel(tr("Upscale models"), header);
+    titleLabel_->setObjectName(QStringLiteral("heading"));
+    headerLayout->addWidget(titleLabel_);
+    descriptionLabel_ = new QLabel(
         tr("Optional ONNX upscalers applied as an AnimeJaNai chain step. Nothing here is "
            "bundled: a model is downloaded only when you ask for it, then stored under the "
            "app-owned model folder. Anime4K presets do not need any of them."),
         header);
-    description->setProperty("textRole", QStringLiteral("muted"));
-    description->setWordWrap(true);
-    headerLayout->addWidget(description);
+    descriptionLabel_->setProperty("textRole", QStringLiteral("muted"));
+    descriptionLabel_->setWordWrap(true);
+    headerLayout->addWidget(descriptionLabel_);
     countLabel_ = new QLabel(header);
     countLabel_->setObjectName(QStringLiteral("upscalersCount"));
     countLabel_->setProperty("textRole", QStringLiteral("muted"));
@@ -122,15 +122,15 @@ void UpscalersPanel::buildUi() {
         line->addWidget(row.action, 0);
         cardLayout->addLayout(line);
 
-        auto* meta = new QLabel(
+        row.meta = new QLabel(
             tr("%1× upscale · %2 · publisher: %3")
                 .arg(model.scale)
                 .arg(model.precision, model.sourceCard.section(QLatin1Char('/'), -1)),
             card);
-        meta->setObjectName(QStringLiteral("upscalerMeta_%1").arg(model.fileName));
-        meta->setProperty("textRole", QStringLiteral("muted"));
-        meta->setWordWrap(true);
-        cardLayout->addWidget(meta);
+        row.meta->setObjectName(QStringLiteral("upscalerMeta_%1").arg(model.fileName));
+        row.meta->setProperty("textRole", QStringLiteral("muted"));
+        row.meta->setWordWrap(true);
+        cardLayout->addWidget(row.meta);
 
         row.progress = new QProgressBar(card);
         row.progress->setObjectName(QStringLiteral("upscalerProgress_%1").arg(model.fileName));
@@ -163,16 +163,47 @@ void UpscalersPanel::buildUi() {
         root->addWidget(card);
     }
 
-    auto* note = new QLabel(
+    noteLabel_ = new QLabel(
         tr("The publisher's model card is the licence record for these bytes; this project "
            "does not redistribute them. Downloaded graphs stay on this machine."),
         content);
-    note->setProperty("textRole", QStringLiteral("muted"));
-    note->setWordWrap(true);
-    root->addWidget(note);
+    noteLabel_->setProperty("textRole", QStringLiteral("muted"));
+    noteLabel_->setWordWrap(true);
+    root->addWidget(noteLabel_);
     root->addStretch();
     scroll->setWidget(content);
     outer->addWidget(scroll);
+}
+
+void UpscalersPanel::changeEvent(QEvent* event) {
+    QWidget::changeEvent(event);
+    if (event != nullptr && event->type() == QEvent::LanguageChange) {
+        retranslateUi();
+    }
+}
+
+void UpscalersPanel::retranslateUi() {
+    if (titleLabel_ != nullptr) titleLabel_->setText(tr("Upscale models"));
+    if (descriptionLabel_ != nullptr) {
+        descriptionLabel_->setText(
+            tr("Optional ONNX upscalers applied as an AnimeJaNai chain step. Nothing here is "
+               "bundled: a model is downloaded only when you ask for it, then stored under the "
+               "app-owned model folder. Anime4K presets do not need any of them."));
+    }
+    if (noteLabel_ != nullptr) {
+        noteLabel_->setText(
+            tr("The publisher's model card is the licence record for these bytes; this project "
+               "does not redistribute them. Downloaded graphs stay on this machine."));
+    }
+    for (Row& row : rows_) {
+        if (row.meta != nullptr) {
+            row.meta->setText(
+                tr("%1× upscale · %2 · publisher: %3")
+                    .arg(row.model.scale)
+                    .arg(row.model.precision, row.model.sourceCard.section(QLatin1Char('/'), -1)));
+        }
+    }
+    refresh();
 }
 
 void UpscalersPanel::refresh() {

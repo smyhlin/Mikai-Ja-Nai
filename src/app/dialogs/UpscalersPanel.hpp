@@ -47,9 +47,13 @@ public:
 signals:
     void modelsChanged();
 
+protected:
+    void changeEvent(QEvent* event) override;
+
 private:
     struct Row {
         mplayer::native::UpscalerModel model;
+        QLabel* meta = nullptr;
         QLabel* state = nullptr;
         QLabel* status = nullptr;
         QProgressBar* progress = nullptr;
@@ -59,6 +63,7 @@ private:
     };
 
     void buildUi();
+    void retranslateUi();
     void renderRow(Row& row);
     void startDownload(Row& row);
     void startRemoval(Row& row);
@@ -69,7 +74,10 @@ private:
     backend::MikaiClient* client_ = nullptr;
     std::shared_ptr<std::atomic_bool> alive_ = std::make_shared<std::atomic_bool>(true);
     QVector<Row> rows_;
+    QLabel* titleLabel_ = nullptr;
+    QLabel* descriptionLabel_ = nullptr;
     QLabel* countLabel_ = nullptr;
+    QLabel* noteLabel_ = nullptr;
 };
 
 }  // namespace mikai::app
