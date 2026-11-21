@@ -470,6 +470,8 @@ private:
     QWidget* searchField_ = nullptr;
     QLabel* searchGlyph_ = nullptr;
     QLabel* searchKeycap_ = nullptr;
+    QFrame* teamHeroCard_ = nullptr;
+    QLabel* teamMonogram_ = nullptr;
     QPushButton* teamBackButton_ = nullptr;
     QLabel* teamDetailLabel_ = nullptr;
     QLabel* resultsHeading_ = nullptr;

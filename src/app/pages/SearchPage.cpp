@@ -2469,6 +2469,7 @@ void SearchPage::loadOngoing() {
     ++catalogueRequestSeq_;
     ++teamRequestSeq_;
     ++formatTotalsSeq_;
+    if (teamHeroCard_ != nullptr) teamHeroCard_->hide();
     if (teamBackButton_ != nullptr) teamBackButton_->hide();
     if (teamDetailLabel_ != nullptr) teamDetailLabel_->hide();
     query_->clear();
@@ -3819,6 +3820,7 @@ void SearchPage::applyCatalogueFilters() {
     catalogueQuery_.limit = pageSize_;
     currentQuery_ = catalogueQuery_.search;
     teamBrowseMode_ = false;
+    if (teamHeroCard_ != nullptr) teamHeroCard_->hide();
     if (teamBackButton_ != nullptr) teamBackButton_->hide();
     if (teamDetailLabel_ != nullptr) teamDetailLabel_->hide();
     browseMode_ = currentQuery_.isEmpty() && !hasExplicitCatalogueCriteria(catalogueQuery_);
@@ -4216,9 +4218,39 @@ void SearchPage::browseSelectedTeam(const backend::Team& team) {
     resultsHeading_->setText(tr("Anime from %1").arg(team.name));
     showSearchResults();
     if (teamBackButton_ == nullptr) {
-        teamBackButton_ = new QPushButton(tr("All catalogue"), this);
+        teamHeroCard_ = new QFrame(this);
+        teamHeroCard_->setObjectName(QStringLiteral("settingsCard"));
+        auto* heroV = new QVBoxLayout(teamHeroCard_);
+        heroV->setContentsMargins(theme::kSpacingLarge, theme::kSpacingMedium,
+                                  theme::kSpacingLarge, theme::kSpacingMedium);
+        heroV->setSpacing(theme::kSpacingSmall);
+
+        auto* topRow = new QHBoxLayout();
+        topRow->setContentsMargins(0, 0, 0, 0);
+        topRow->setSpacing(theme::kSpacingMedium);
+
+        teamBackButton_ = new QPushButton(tr("All catalogue"), teamHeroCard_);
         teamBackButton_->setObjectName(QStringLiteral("teamBackButton"));
-        teamDetailLabel_ = new QLabel(this);
+        theme::applyActionRole(teamBackButton_, theme::ActionRole::Ghost);
+        topRow->addWidget(teamBackButton_, 0, Qt::AlignLeft);
+        topRow->addStretch(1);
+        heroV->addLayout(topRow);
+
+        auto* bodyRow = new QHBoxLayout();
+        bodyRow->setContentsMargins(0, 0, 0, 0);
+        bodyRow->setSpacing(theme::kSpacingMedium);
+
+        teamMonogram_ = new QLabel(teamHeroCard_);
+        teamMonogram_->setObjectName(QStringLiteral("carouselStatusLive"));
+        teamMonogram_->setFixedSize(48, 48);
+        teamMonogram_->setAlignment(Qt::AlignCenter);
+        QFont monoFont = teamMonogram_->font();
+        monoFont.setPixelSize(18);
+        monoFont.setWeight(QFont::Bold);
+        teamMonogram_->setFont(monoFont);
+        bodyRow->addWidget(teamMonogram_, 0, Qt::AlignTop);
+
+        teamDetailLabel_ = new QLabel(teamHeroCard_);
         teamDetailLabel_->setObjectName(QStringLiteral("teamDetailLabel"));
         teamDetailLabel_->setWordWrap(true);
         teamDetailLabel_->setTextFormat(Qt::RichText);
@@ -4238,23 +4270,28 @@ void SearchPage::browseSelectedTeam(const backend::Team& team) {
                 reportFailure(Notice::Browser);
             }
         });
-        // The profile's own controls sit between the heading and the status
-        // line, the order they had when they opened the page's fixed column.
+        bodyRow->addWidget(teamDetailLabel_, 1);
+        heroV->addLayout(bodyRow);
+
         if (pageIntro_ != nullptr) {
             if (auto* intro = qobject_cast<QVBoxLayout*>(pageIntro_->layout())) {
-                intro->insertWidget(1, teamBackButton_);
-                intro->insertWidget(2, teamDetailLabel_);
+                intro->insertWidget(1, teamHeroCard_);
             }
         }
         connect(teamBackButton_, &QPushButton::clicked, this, [this] {
             teamBrowseMode_ = false;
             ++requestSeq_;
             ++catalogueRequestSeq_;
+            if (teamHeroCard_ != nullptr) teamHeroCard_->hide();
             teamBackButton_->hide();
             teamDetailLabel_->hide();
             applyCatalogueFilters();
         });
     }
+    if (teamMonogram_ != nullptr) {
+        teamMonogram_->setText(team.name.trimmed().left(2).toUpper());
+    }
+    if (teamHeroCard_ != nullptr) teamHeroCard_->show();
     teamBackButton_->setText(tr("All catalogue"));
     teamBackButton_->show();
     teamDetailLabel_->show();
@@ -4554,6 +4591,7 @@ void SearchPage::search() {
     browseMode_ = false;
     ++teamRequestSeq_;
     teamBrowseMode_ = false;
+    if (teamHeroCard_ != nullptr) teamHeroCard_->hide();
     if (teamBackButton_ != nullptr) teamBackButton_->hide();
     if (teamDetailLabel_ != nullptr) teamDetailLabel_->hide();
     currentQuery_ = query;
