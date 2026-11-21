@@ -12,6 +12,16 @@ namespace mikai::backend {
 
 enum class UpdateCheckStatus { UpdateAvailable, UpToDate, Failed };
 
+enum class UpdateCheckErrorKind {
+    None,
+    Offline,
+    Timeout,
+    RateLimited,
+    NoReleasePublished,
+    HttpError,
+    InvalidResponse,
+};
+
 enum class UpdateChannel { Stable, Nightly };
 
 UpdateChannel parseUpdateChannel(const QString& value);
@@ -34,6 +44,8 @@ struct UpdateAsset {
 
 struct UpdateCheckResult {
     UpdateCheckStatus status = UpdateCheckStatus::Failed;
+    UpdateCheckErrorKind errorKind = UpdateCheckErrorKind::None;
+    QString errorDetail;
     QString version;
     QUrl releaseUrl;
     QString tagName;

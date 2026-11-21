@@ -905,6 +905,8 @@ void MainWindow::checkForUpdates(bool manual, bool forceChannelSwitch) {
                 QStringLiteral(MIKAI_BUILD_REVISION), forceChannelSwitch);
             QVariantMap value;
             value.insert(QStringLiteral("status"), static_cast<int>(checked.status));
+            value.insert(QStringLiteral("errorKind"), static_cast<int>(checked.errorKind));
+            value.insert(QStringLiteral("errorDetail"), checked.errorDetail);
             value.insert(QStringLiteral("version"), checked.version);
             value.insert(QStringLiteral("url"), checked.releaseUrl);
             value.insert(QStringLiteral("forceSwitch"), forceChannelSwitch);
@@ -944,9 +946,39 @@ void MainWindow::checkForUpdates(bool manual, bool forceChannelSwitch) {
                     }
                 }
             } else if (manual) {
+                QString detail;
+                if (status != backend::UpdateCheckStatus::UpToDate) {
+                    const auto errorKind = static_cast<backend::UpdateCheckErrorKind>(
+                        value.toMap().value(QStringLiteral("errorKind")).toInt());
+                    const QString rawDetail = value.toMap().value(QStringLiteral("errorDetail")).toString();
+                    switch (errorKind) {
+                        case backend::UpdateCheckErrorKind::Offline:
+                            detail = tr("Could not reach GitHub. Check your internet connection and try again.");
+                            break;
+                        case backend::UpdateCheckErrorKind::Timeout:
+                            detail = tr("The update check timed out while contacting GitHub. Please try again.");
+                            break;
+                        case backend::UpdateCheckErrorKind::RateLimited:
+                            detail = tr("GitHub API rate limit reached. Please wait a few minutes and try again.");
+                            break;
+                        case backend::UpdateCheckErrorKind::NoReleasePublished:
+                            detail = tr("No release is currently published for the selected update channel.");
+                            break;
+                        case backend::UpdateCheckErrorKind::InvalidResponse:
+                            detail = tr("Received an unexpected release response from GitHub.");
+                            break;
+                        case backend::UpdateCheckErrorKind::HttpError:
+                            detail = rawDetail.isEmpty()
+                                         ? tr("GitHub returned an error while checking for updates.")
+                                         : tr("GitHub returned %1 while checking for updates.").arg(rawDetail);
+                            break;
+                        default:
+                            break;
+                    }
+                }
                 showUpdateResult(status == backend::UpdateCheckStatus::UpToDate
                                      ? QStringLiteral("current") : QStringLiteral("failed"),
-                                 version, url, true);
+                                 version, url, true, detail);
             }
         },
         [this, alive](const backend::Failure&) {
@@ -965,7 +997,8 @@ void MainWindow::checkForUpdates(bool manual, bool forceChannelSwitch) {
 }
 
 void MainWindow::showUpdateResult(const QString& status, const QString& version,
-                                  const QUrl& releaseUrl, bool manual) {
+                                  const QUrl& releaseUrl, bool manual,
+                                  const QString& detail) {
     auto* dialog = new QMessageBox(this);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     dialog->setIcon(status == QStringLiteral("available") ? QMessageBox::Information
@@ -1006,7 +1039,9 @@ void MainWindow::showUpdateResult(const QString& status, const QString& version,
                             .arg(QStringLiteral(MIKAI_PROJECT_VERSION)));
     } else {
         dialog->setWindowTitle(tr("Update check failed"));
-        dialog->setText(tr("Could not check for updates. Please try again later."));
+        dialog->setText(detail.isEmpty()
+                            ? tr("Could not check for updates. Please try again later.")
+                            : detail);
     }
     dialog->addButton(tr("Dismiss"), QMessageBox::RejectRole);
     Q_UNUSED(manual);

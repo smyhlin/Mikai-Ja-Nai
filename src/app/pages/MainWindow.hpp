@@ -96,7 +96,8 @@ private:
 
     void checkForUpdates(bool manual, bool forceChannelSwitch = false);
     void showUpdateResult(const QString& status, const QString& version,
-                          const QUrl& releaseUrl, bool manual);
+                          const QUrl& releaseUrl, bool manual,
+                          const QString& detail = {});
     void startUpdateDownload(const QString& version, const QUrl& releaseUrl,
                              bool forceChannelSwitch = false);
     void openSettings();

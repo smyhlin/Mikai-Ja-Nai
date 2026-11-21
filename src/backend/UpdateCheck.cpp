@@ -229,15 +229,35 @@ UpdateCheckResult checkForUpdates(const QString& currentVersion, UpdateChannel c
     options.timeoutMs = kTimeoutMs;
     options.maxResponseBytes = 256 * 1024;
     const HttpFetchResult response = runBlockingFetch(transportManagerForThread(), request, options);
-    if (response.cancelled || response.timedOut || response.responseTooLarge || response.status != 200) return {};
-    if (channel == UpdateChannel::Nightly) {
-        return parseNightlyReleaseResponse(response.body, currentBuildRevision, allowChannelSwitch);
+    if (response.cancelled || response.timedOut || response.responseTooLarge || response.status != 200) {
+        UpdateCheckResult failed;
+        failed.status = UpdateCheckStatus::Failed;
+        if (response.timedOut) {
+            failed.errorKind = UpdateCheckErrorKind::Timeout;
+        } else if (response.status == 404) {
+            failed.errorKind = UpdateCheckErrorKind::NoReleasePublished;
+        } else if (response.status == 403 || response.status == 429) {
+            failed.errorKind = UpdateCheckErrorKind::RateLimited;
+        } else if (response.status == 0) {
+            failed.errorKind = UpdateCheckErrorKind::Offline;
+            failed.errorDetail = response.networkError;
+        } else {
+            failed.errorKind = UpdateCheckErrorKind::HttpError;
+            failed.errorDetail = QStringLiteral("HTTP %1").arg(response.status);
+        }
+        return failed;
     }
-    UpdateCheckResult stable = parseLatestReleaseResponse(response.body, currentVersion);
-    if (allowChannelSwitch && stable.status == UpdateCheckStatus::UpToDate) {
-        stable.status = UpdateCheckStatus::UpdateAvailable;
+    UpdateCheckResult parsed = channel == UpdateChannel::Nightly
+                                   ? parseNightlyReleaseResponse(response.body, currentBuildRevision, allowChannelSwitch)
+                                   : parseLatestReleaseResponse(response.body, currentVersion);
+    if (parsed.status == UpdateCheckStatus::Failed && parsed.errorKind == UpdateCheckErrorKind::None) {
+        parsed.errorKind = UpdateCheckErrorKind::InvalidResponse;
     }
-    return stable;
+    if (channel == UpdateChannel::Stable && allowChannelSwitch &&
+        parsed.status == UpdateCheckStatus::UpToDate) {
+        parsed.status = UpdateCheckStatus::UpdateAvailable;
+    }
+    return parsed;
 }
 
 InstallKind detectInstallKind(const QString& applicationFilePath, const QString& appImageEnv) {
