@@ -631,9 +631,27 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     results_->hide();
     rootLayout_->addWidget(results_, 1);
 
-    pager_ = new RangePager(theme::kSearchResultsPerPage, this);
+    {
+        QSettings settings;
+        const int savedSize = settings.value(QStringLiteral("search/pageSize"),
+                                             theme::kSearchResultsPerPage).toInt();
+        if (savedSize == 20 || savedSize == 40 || savedSize == 60) {
+            pageSize_ = savedSize;
+        }
+    }
+    pager_ = new RangePager(pageSize_, this);
     pager_->setCompactPageNumbers(true);
+    pager_->setPageSizeOptions({20, 40, 60}, pageSize_);
     connect(pager_, &RangePager::pageRequested, this, &SearchPage::goToPage);
+    connect(pager_, &RangePager::pageSizeChanged, this, [this](int newSize) {
+        pageSize_ = newSize;
+        QSettings settings;
+        settings.setValue(QStringLiteral("search/pageSize"), newSize);
+        if (!homeCurrent_) {
+            page_ = 1;
+            fetchPage(1);
+        }
+    });
     pager_->hide();
     rootLayout_->addWidget(pager_);
 

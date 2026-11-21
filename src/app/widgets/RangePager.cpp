@@ -4,6 +4,7 @@
 #include "theme/Metrics.hpp"
 #include "widgets/FlowLayout.hpp"
 
+#include <QComboBox>
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QIcon>
@@ -151,6 +152,21 @@ RangePager::RangePager(int pageSize, QWidget* parent)
     row->addSpacing(theme::kSpacingSmall);
     row->addWidget(jumpLabel_);
     row->addWidget(jump_);
+
+    pageSizeBox_ = new QComboBox(this);
+    pageSizeBox_->setObjectName(QStringLiteral("pagerPageSize"));
+    pageSizeBox_->setToolTip(tr("Items per page"));
+    pageSizeBox_->setAccessibleName(tr("Items per page"));
+    pageSizeBox_->hide();
+    connect(pageSizeBox_, &QComboBox::currentIndexChanged, this, [this](int index) {
+        if (syncing_ || index < 0) return;
+        const int selected = pageSizeBox_->itemData(index).toInt();
+        if (selected > 0 && selected != pageSize_) {
+            pageSize_ = selected;
+            Q_EMIT pageSizeChanged(selected);
+        }
+    });
+    row->addWidget(pageSizeBox_);
 }
 
 RangePager::~RangePager() = default;
@@ -160,6 +176,45 @@ void RangePager::setCompactPageNumbers(bool enabled) {
         return;
     }
     compactPageNumbers_ = enabled;
+    if (rendered_) {
+        renderChips();
+    }
+}
+
+void RangePager::setPageSizeOptions(const QList<int>& sizes, int currentSize) {
+    if (pageSizeBox_ == nullptr) return;
+    syncing_ = true;
+    pageSizeBox_->clear();
+    int matchIndex = 0;
+    for (int i = 0; i < sizes.size(); ++i) {
+        const int sz = qMax(1, sizes.at(i));
+        pageSizeBox_->addItem(tr("%1 / page").arg(sz), sz);
+        if (sz == currentSize) {
+            matchIndex = i;
+        }
+    }
+    if (sizes.isEmpty()) {
+        pageSizeBox_->hide();
+    } else {
+        pageSize_ = qMax(1, sizes.at(matchIndex));
+        pageSizeBox_->setCurrentIndex(matchIndex);
+        pageSizeBox_->show();
+    }
+    syncing_ = false;
+}
+
+void RangePager::setPageSize(int pageSize) {
+    const int clamped = qMax(1, pageSize);
+    if (clamped == pageSize_) return;
+    pageSize_ = clamped;
+    if (pageSizeBox_ != nullptr && pageSizeBox_->count() > 0) {
+        const int idx = pageSizeBox_->findData(clamped);
+        if (idx >= 0) {
+            syncing_ = true;
+            pageSizeBox_->setCurrentIndex(idx);
+            syncing_ = false;
+        }
+    }
     if (rendered_) {
         renderChips();
     }
@@ -231,6 +286,16 @@ void RangePager::retranslateUi() {
 
     jump_->setToolTip(tr("Jump to page"));
     jump_->setAccessibleName(tr("Page number"));
+    if (pageSizeBox_ != nullptr && pageSizeBox_->count() > 0) {
+        pageSizeBox_->setToolTip(tr("Items per page"));
+        pageSizeBox_->setAccessibleName(tr("Items per page"));
+        syncing_ = true;
+        for (int i = 0; i < pageSizeBox_->count(); ++i) {
+            const int sz = pageSizeBox_->itemData(i).toInt();
+            pageSizeBox_->setItemText(i, tr("%1 / page").arg(sz));
+        }
+        syncing_ = false;
+    }
 
     if (!rendered_) {
         return;

@@ -4,6 +4,7 @@
 #include <QStringList>
 #include <QWidget>
 
+class QComboBox;
 class QEvent;
 class QLabel;
 class QPushButton;
@@ -41,6 +42,9 @@ public:
     /// Render compact page-number pills (`1 … 4 [5] 6 … 20`) instead of entry
     /// ranges, collapsing intermediate pills automatically on narrow viewports.
     void setCompactPageNumbers(bool enabled);
+    /// Show a compact "Per page" selector (`20 / 40 / 60`) beside the jump box.
+    void setPageSizeOptions(const QList<int>& sizes, int currentSize);
+    void setPageSize(int pageSize);
 
     /// Point the pager at `page` of `pages` over a result set of `entries` rows,
     /// labelling chips positionally.
@@ -56,6 +60,8 @@ Q_SIGNALS:
     /// The user asked for another page, 1-based. Never emitted for the page the
     /// pager is already showing.
     void pageRequested(int page);
+    /// The user picked a different page size from the optional per-page menu.
+    void pageSizeChanged(int pageSize);
 
 protected:
     void changeEvent(QEvent* event) override;
@@ -96,6 +102,7 @@ private:
     QPushButton* lastButton_ = nullptr;
     QLabel* jumpLabel_ = nullptr;
     QSpinBox* jump_ = nullptr;
+    QComboBox* pageSizeBox_ = nullptr;
 };
 
 }  // namespace mikai::app
