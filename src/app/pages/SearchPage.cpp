@@ -113,6 +113,17 @@ void syncArrows(QScrollBar* bar, QPushButton* previous, QPushButton* next) {
     next->setEnabled(bar->value() < bar->maximum());
 }
 
+int activeCatalogueFilterCount(const backend::AnimeQuery& query) {
+    int count = 0;
+    count += query.genres.size() + query.genres_exclude.size();
+    count += query.tags.size() + query.tags_exclude.size();
+    count += query.years.size();
+    if (query.year_from || query.year_to) count += 1;
+    count += query.seasons.size() + query.formats.size() + query.statuses.size();
+    count += query.studios.size() + query.teams.size();
+    if (query.sort != QStringLiteral("name") || !query.order.isEmpty()) count += 1;
+    return count;
+}
 bool hasExplicitCatalogueCriteria(const backend::AnimeQuery& query) {
     if (!query.genres.isEmpty() || !query.genres_exclude.isEmpty()) return true;
     if (!query.tags.isEmpty() || !query.tags_exclude.isEmpty()) return true;
@@ -940,8 +951,16 @@ void SearchPage::updateHomeIndicator() {
     if (homeButton_ != nullptr) homeButton_->setChecked(homeCurrent_);
     if (teamsButton_ != nullptr) teamsButton_->setChecked(!homeCurrent_ && teamBrowseMode_);
     if (filtersButton_ != nullptr) {
-        filtersButton_->setChecked(!homeCurrent_ && !teamBrowseMode_ &&
-                                   hasExplicitCatalogueCriteria(catalogueQuery_));
+        const int activeCount = activeCatalogueFilterCount(catalogueQuery_);
+        const bool active = !homeCurrent_ && !teamBrowseMode_ &&
+                            hasExplicitCatalogueCriteria(catalogueQuery_);
+        filtersButton_->setChecked(active);
+        const QString label = activeCount > 0 ? tr("Filters (%1)").arg(activeCount) : tr("Filters");
+        filtersButton_->setText(label);
+        filtersButton_->setToolTip(
+            activeCount > 0 ? tr("Filters — %n active criterion(s)", nullptr, activeCount)
+                            : tr("Filters"));
+        filtersButton_->setAccessibleName(label);
     }
 }
 
