@@ -1005,6 +1005,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
                 }
                 refreshHeaderLogo();
                 refreshHeaderIcons();
+                if (teamBrowseMode_) renderTeamProfile();
             });
 
     // The page may be built into a stack at its default size, so the rail's
@@ -1458,6 +1459,7 @@ void SearchPage::retranslateUi() {
         // running: browse shows a recommendation set, everything else a search.
         updateResultsHeading();
     }
+    if (teamDirectoryButton_ != nullptr) teamDirectoryButton_->setText(tr("← Teams"));
     if (teamBackButton_ != nullptr) teamBackButton_->setText(tr("All catalogue"));
     if (teamBrowseMode_) renderTeamProfile();
     // The bar's own "All (n)" caption is app wording; its counts, its tabs and
