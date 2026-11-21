@@ -2972,9 +2972,21 @@ void SearchPage::showCatalogueFilters() {
         search->setPlaceholderText(placeholder);
         search->setClearButtonEnabled(true);
         section->addWidget(search);
-        connect(search, &QLineEdit::textChanged, owner, [filterChoices, lists](const QString& term) {
-            for (QListWidget* list : lists) filterChoices(list, term);
-        });
+        auto* emptyLabel = new QLabel(tr("No matching options found."), owner);
+        emptyLabel->setObjectName(QStringLiteral("muted"));
+        emptyLabel->hide();
+        section->addWidget(emptyLabel);
+        connect(search, &QLineEdit::textChanged, owner,
+                [filterChoices, lists, emptyLabel](const QString& term) {
+                    int totalShown = 0;
+                    for (QListWidget* list : lists) {
+                        filterChoices(list, term);
+                        for (int r = 0; r < list->count(); ++r) {
+                            if (!list->item(r)->isHidden()) ++totalShown;
+                        }
+                    }
+                    emptyLabel->setVisible(!term.trimmed().isEmpty() && totalShown == 0);
+                });
         return search;
     };
     layout->addLayout(bodyRow, 1);
@@ -3219,13 +3231,9 @@ void SearchPage::showCatalogueFilters() {
     addField(release, tr("Formats"), formatList);
     addField(release, tr("Statuses"), statusList);
     addField(release, tr("Seasons"), seasonList);
+    addSectionSearch(release, QStringLiteral("studioFilterSearch"), tr("Search studios…"),
+                     {studioList});
     addField(release, tr("Studios"), studioList);
-    // The lists this field narrows are built after the year range, so the field
-    // is moved above them instead of being laid out where it was created.
-    QLineEdit* releaseSearch =
-        addSectionSearch(release, QStringLiteral("releaseFilterSearch"), tr("Search release options"),
-                         {formatList, statusList, seasonList, studioList});
-    release->insertWidget(0, releaseSearch);
     // Preserve selections when a newer API value is absent from the cached dictionary.
     QStringList sortFields = apiMeta_.anime_sort_fields;
     QStringList sortOrders = apiMeta_.sort_orders;
