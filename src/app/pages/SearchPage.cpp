@@ -3852,9 +3852,27 @@ void SearchPage::openTeamPicker() {
     auto* filterTeam = new QPushButton(tr("Filter catalogue"), &dialog);
     filterTeam->setObjectName(QStringLiteral("teamFilterButton"));
     theme::applyActionRole(filterTeam, theme::ActionRole::Primary);
+    auto* teamControlsRow = new QHBoxLayout();
+    teamControlsRow->setContentsMargins(0, 0, 0, 0);
+    teamControlsRow->setSpacing(theme::kSpacingSmall);
+    auto* voiceFilter = new QPushButton(tr("Voice"), &dialog);
+    voiceFilter->setObjectName(QStringLiteral("teamVoiceFilterButton"));
+    voiceFilter->setCheckable(true);
+    voiceFilter->setToolTip(tr("Show only teams with Ukrainian voice dubbing"));
+    theme::applyActionRole(voiceFilter, theme::ActionRole::Secondary);
+    auto* subsFilter = new QPushButton(tr("Subtitles"), &dialog);
+    subsFilter->setObjectName(QStringLiteral("teamSubsFilterButton"));
+    subsFilter->setCheckable(true);
+    subsFilter->setToolTip(tr("Show only teams with Ukrainian subtitles"));
+    theme::applyActionRole(subsFilter, theme::ActionRole::Secondary);
+    teamControlsRow->addWidget(voiceFilter);
+    teamControlsRow->addWidget(subsFilter);
+    teamControlsRow->addStretch(1);
+
     auto* state = new QLabel(&dialog);
     state->setObjectName(QStringLiteral("muted"));
     layout->addWidget(search);
+    layout->addLayout(teamControlsRow);
     layout->addWidget(state);
     layout->addWidget(rows, 1);
     auto* buttons = new QHBoxLayout();
@@ -3876,7 +3894,7 @@ void SearchPage::openTeamPicker() {
     const QPointer<QLabel> guardedState(state);
     backend::MikaiClient* client = &client_;
     auto fetch = [this, client, guardedRows, guardedMore, guardedState, paging, totalPages,
-                  currentTerm, request, pickedTeamIds]
+                  currentTerm, request, pickedTeamIds, voiceFilter, subsFilter]
                  (const QString& term, int page) {
         *currentTerm = term;
         if (page == 1) {
@@ -3887,8 +3905,12 @@ void SearchPage::openTeamPicker() {
         const int seq = ++*request;
         if (guardedState) guardedState->setText(tr("Loading…"));
         if (guardedMore) guardedMore->setEnabled(false);
-        runner_.run([client, term, page] {
-            return QVariant::fromValue(client->getTeams(term, page, 50));
+        const std::optional<bool> haveVoice =
+            voiceFilter->isChecked() ? std::optional<bool>(true) : std::nullopt;
+        const std::optional<bool> haveSubs =
+            subsFilter->isChecked() ? std::optional<bool>(true) : std::nullopt;
+        runner_.run([client, term, page, haveVoice, haveSubs] {
+            return QVariant::fromValue(client->getTeams(term, page, 50, haveVoice, haveSubs));
         }, [guardedRows, guardedMore, guardedState, paging, totalPages, request, seq, page,
             pickedTeamIds]
              (const QVariant& v) {
@@ -3932,6 +3954,10 @@ void SearchPage::openTeamPicker() {
         teamSearchTimer->stop();
         fetch(search->text().trimmed(), 1);
     });
+    connect(voiceFilter, &QPushButton::toggled, &dialog,
+            [fetch, search](bool) { fetch(search->text().trimmed(), 1); });
+    connect(subsFilter, &QPushButton::toggled, &dialog,
+            [fetch, search](bool) { fetch(search->text().trimmed(), 1); });
     connect(more, &QPushButton::clicked, &dialog, [fetch, paging, totalPages, currentTerm] {
         if (*paging < *totalPages) fetch(*currentTerm, *paging + 1);
     });
