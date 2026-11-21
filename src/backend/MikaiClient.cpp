@@ -28,6 +28,8 @@
 #include <QUrlQuery>
 #include <QVector>
 
+#include <chrono>
+
 #ifdef Q_OS_WIN
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -477,7 +479,7 @@ MikaiApiError apiErrorFromHttp(const HttpFetchResult& result, const QString& tra
 
 int RateLimiter::acquireSlot() {
     bool waiting = false;
-    QMutexLocker locker(&mutex_);
+    std::unique_lock<std::mutex> locker(mutex_);
     for (;;) {
         if (WorkCancellationScope::cancellationRequested()) {
             // A canceled waiter never consumes a request slot.
@@ -511,7 +513,7 @@ int RateLimiter::acquireSlot() {
                                 ? static_cast<int>(std::clamp(
                                       windowMs, 1.0, static_cast<double>(kCancelSliceMs)))
                                 : kCancelSliceMs;
-        condition_.wait(&mutex_, QDeadlineTimer(sliceMs));
+        condition_.wait_for(locker, std::chrono::milliseconds(sliceMs));
     }
 }
 
@@ -546,11 +548,11 @@ void RateLimiter::finishCall(const QMap<QString, QString>& headers, int generati
 void RateLimiter::applyQuota(std::optional<int> limit, std::optional<int> remaining,
                              std::optional<int> reset, std::optional<int> retryAfter, int generation,
                              int statusCode) {
-    QMutexLocker locker(&mutex_);
+    std::lock_guard<std::mutex> locker(mutex_);
     inFlight_ = std::max(0, inFlight_ - 1);
     if (generation != generation_) {
         // Ignore quota from an obsolete credential generation.
-        condition_.wakeOne();
+        condition_.notify_one();
         return;
     }
     if (limit.has_value()) {
@@ -578,7 +580,7 @@ void RateLimiter::applyQuota(std::optional<int> limit, std::optional<int> remain
         admissible = std::min(admissible, *remaining_ - inFlight_);
     }
     for (int i = 0; i < admissible; ++i) {
-        condition_.wakeOne();
+        condition_.notify_one();
     }
 }
 
@@ -592,7 +594,7 @@ void RateLimiter::forgetElapsedWindow() {
 }
 
 RateLimitState RateLimiter::state(bool keyed) const {
-    QMutexLocker locker(&mutex_);
+    std::lock_guard<std::mutex> locker(mutex_);
     const double now = monotonicSeconds();
     // Report elapsed windows as empty until the next mutator clears them.
     const bool windowElapsed = resetAt_ != 0.0 && now >= resetAt_;
@@ -613,12 +615,12 @@ RateLimitState RateLimiter::state(bool keyed) const {
 }
 
 int RateLimiter::generation() const {
-    QMutexLocker locker(&mutex_);
+    std::lock_guard<std::mutex> locker(mutex_);
     return generation_;
 }
 
 void RateLimiter::reset() {
-    QMutexLocker locker(&mutex_);
+    std::lock_guard<std::mutex> locker(mutex_);
     ++generation_;
     limit_.reset();
     remaining_.reset();
@@ -627,7 +629,7 @@ void RateLimiter::reset() {
     // Every parked caller is released, so the next one out of the queue takes
     // the credential snapshot of the new epoch rather than continuing with the
     // header it captured before the key changed.
-    condition_.wakeAll();
+    condition_.notify_all();
 }
 
 MikaiClient::MikaiClient(const QString& apiKey, const QString& baseUrl)

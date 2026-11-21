@@ -363,6 +363,11 @@ bool pointerFlipIsBlockedByReadOnly() {
 /// the environment will not make one, so the junction test skips instead of
 /// asserting something it could not set up.
 bool makeJunction(const QString& link, const QString& target) {
+#ifndef Q_OS_WIN
+    Q_UNUSED(link);
+    Q_UNUSED(target);
+    return false;
+#else
     QProcess process;
     process.start(QStringLiteral("cmd.exe"),
                   {QStringLiteral("/c"), QStringLiteral("mklink"), QStringLiteral("/J"), link,
@@ -370,6 +375,7 @@ bool makeJunction(const QString& link, const QString& target) {
     process.waitForFinished(20000);
     return process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0 &&
            QFileInfo(link).isDir();
+#endif
 }
 
 }  // namespace

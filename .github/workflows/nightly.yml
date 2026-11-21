@@ -102,7 +102,7 @@ jobs:
           mkdir -p "$soak_dir/mpv"
           cp "$RUNNER_TEMP/mikai-build/frame_order_soak_probe" "$soak_dir/"
           cp "$RUNNER_TEMP/mikai-build/hdr_playback_probe" "$soak_dir/"
-          cp -r "$GITHUB_WORKSPACE/shaders" "$soak_dir/shaders"
+          cp -r "$RUNNER_TEMP/mikai-build/shaders" "$soak_dir/shaders"
           receipt="$RUNNER_TEMP/mikai-build/mikai-runtime-Release.json"
           module="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["module"])' "$receipt")"
           root="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["dependencyRoot"])' "$receipt")"

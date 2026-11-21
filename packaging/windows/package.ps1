@@ -53,7 +53,7 @@ if ($metadata.configuration -ne 'Release' -or
     throw 'The build packaging metadata does not belong to this checkout/Release configuration.'
 }
 $version = [string]$metadata.version
-if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid project release version: $version" }
+if ($version -notmatch '^\d+\.\d+\.\d+(?:\.\d+)?$') { throw "Invalid project release version: $version" }
 $manifestPath = Join-Path $source 'packaging/third-party.json'
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 $profile = $manifest.profiles.'windows-x64'

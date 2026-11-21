@@ -1,0 +1,64 @@
+# ThreadSanitizer suppressions for uninstrumented prebuilt third-party runtimes.
+#
+# TSan suppression entries use substring/wildcard matching (not regex) against
+# function names and shared object filenames.
+#
+# CI links against the prebuilt Qt 6.12 SDK and Ubuntu 24.04 system libraries
+# (libQt6*, libglib-2.0, libdbus-1, libmpv, Mesa/llvmpipe, X11/xcb), none of
+# which are compiled with -fsanitize=thread. Because TSan cannot observe
+# synchronization primitives inside those uninstrumented binaries, it reports
+# false-positive data races and lock-order inversions across their boundaries.
+
+# Uninstrumented Qt 6 shared libraries
+race:libQt6Core.so
+race:libQt6Gui.so
+race:libQt6Widgets.so
+race:libQt6Network.so
+race:libQt6Qml.so
+race:libQt6Quick.so
+race:libQt6DBus.so
+race:libQt6OpenGL.so
+race:libQt6XcbQpa.so
+race:libqxcb.so
+deadlock:libQt6DBus.so
+
+# Uninstrumented system / display / media libraries
+race:libglib-2.0.so
+race:libgobject-2.0.so
+race:libgio-2.0.so
+race:libdbus-1.so
+deadlock:libdbus-1.so
+race:libmpv.so
+race:libavcodec.so
+race:libavformat.so
+race:libavutil.so
+race:libswscale.so
+race:libGL
+race:libEGL
+race:libgallium
+race:swrast_dri
+race:libLLVM
+race:libxcb
+race:libX11
+race:libfontconfig
+race:libfreetype
+race:libharfbuzz
+race:libpulse
+
+# Uninstrumented Qt queued event & thread-pool handoffs where QtCore's
+# internal mutex/event-queue synchronization is invisible to TSan
+race:QCoreApplication::postEvent
+race:QCoreApplicationPrivate::sendPostedEvents
+race:QMetaObject::invokeMethod
+race:QObject::event
+race:QThreadPool::start
+race:QThreadPoolPrivate::enqueueTask
+race:QWaitCondition::~QWaitCondition
+race:QWaitCondition::wait
+race:QFactoryLoader::update
+race:QArrayData::allocate
+race:QArrayData::reallocateUnaligned
+race:QVariant::moveConstruct
+race:QQueuedMetaCallEvent::~QQueuedMetaCallEvent
+race:QtPrivate::QCallableObject
+race:QtPrivate::FunctorCall

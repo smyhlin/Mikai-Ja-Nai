@@ -329,8 +329,15 @@ void ClipExport::start(const ClipExportRequest& request) {
                 *request.audioTrackId > 0)
                 clipOptions += ",aid=" + std::to_string(*request.audioTrackId);
             publishCodec(slot, codec == "libx264" ? QObject::tr("H.264") : QObject::tr("MPEG-4 Part 2"));
-            const char* command[] = {"loadfile", source.c_str(), "replace", "-1", clipOptions.c_str(), nullptr};
-            int rc = api.functions().command(handle->raw(), command);
+            const unsigned long apiVersion =
+                api.functions().clientApiVersion != nullptr ? api.functions().clientApiVersion() : 0;
+            const bool hasInsertIndex =
+                (apiVersion >> 16) > 2 || ((apiVersion >> 16) == 2 && (apiVersion & 0xffffu) >= 3);
+            std::vector<const char*> command{"loadfile", source.c_str(), "replace"};
+            if (hasInsertIndex) command.push_back("-1");
+            command.push_back(clipOptions.c_str());
+            command.push_back(nullptr);
+            int rc = api.functions().command(handle->raw(), command.data());
             if (rc < 0) throw std::runtime_error(errorText("mpv loadfile", rc, api).toStdString());
             publish(slot, 0.0, false, false, outputPath, {});
             bool ended = false;

@@ -7,10 +7,11 @@
 #include <QMutex>
 #include <QString>
 #include <QVariant>
-#include <QWaitCondition>
 
-#include <optional>
+#include <condition_variable>
 #include <functional>
+#include <mutex>
+#include <optional>
 
 #include "Cancellation.hpp"
 #include "Errors.hpp"
@@ -105,8 +106,8 @@ private:
     // writing.
     void forgetElapsedWindow();
 
-    mutable QMutex mutex_;
-    QWaitCondition condition_;
+    mutable std::mutex mutex_;
+    std::condition_variable condition_;
     std::optional<int> limit_;
     std::optional<int> remaining_;
     double resetAt_ = 0.0;

@@ -278,7 +278,7 @@ def main():
                         'Windows package metadata is missing or invalid: '
                         f"{build / 'mikai-package-Release.json'}") from error
                 if (not isinstance(package_version, str)
-                        or not re.fullmatch(r'\d+\.\d+\.\d+', package_version)):
+                        or not re.fullmatch(r'\d+\.\d+\.\d+(?:\.\d+)?', package_version)):
                     raise RuntimeError(
                         'Windows package metadata has no valid version: '
                         f"{build / 'mikai-package-Release.json'}")

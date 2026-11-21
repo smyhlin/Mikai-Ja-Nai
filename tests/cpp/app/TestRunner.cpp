@@ -399,8 +399,10 @@ void TestRunner::workPostedFromAWorkerThreadIsDeliveredOnTheGuiThread() {
       },
       okDelivery(&ledger), errDelivery(&ledger));
 
-  QVERIFY2(spinUntil([&bodies] { return bodies.load() >= 1; }),
-           "a body posted from a pool thread reached the GUI thread");
+  QVERIFY2(spinUntil([&bodies, &ledger] {
+             return bodies.load() >= 1 && ledger.deliveries.load() >= 1;
+           }),
+           "a body posted from a pool thread and the task delivery both reached the GUI thread");
   QCOMPARE(bodies.load(), 1);
   QCOMPARE(bodiesOffGui.load(), 0);
   QCOMPARE(ledger.deliveries.load(), 1);
