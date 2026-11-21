@@ -3458,6 +3458,145 @@ void SearchPage::showCatalogueFilters() {
     const auto* currentSearch = query_;
     relevanceBanner->setVisible(!currentSearch->text().trimmed().isEmpty());
 
+    auto* presetsSection = addSection(tr("Presets"));
+    auto* saveRow = new QHBoxLayout();
+    saveRow->setContentsMargins(0, 0, 0, 0);
+    saveRow->setSpacing(theme::kSpacingSmall);
+    auto* presetNameEdit = new QLineEdit(presetsSection->parentWidget());
+    presetNameEdit->setPlaceholderText(tr("Preset name (e.g. Completed 2020+ TV)…"));
+    auto* savePresetBtn = new QPushButton(tr("Save preset"), presetsSection->parentWidget());
+    theme::applyActionRole(savePresetBtn, theme::ActionRole::Secondary);
+    saveRow->addWidget(presetNameEdit, 1);
+    saveRow->addWidget(savePresetBtn, 0);
+    presetsSection->addLayout(saveRow);
+
+    auto* presetsList = new QListWidget(presetsSection->parentWidget());
+    presetsList->setObjectName(QStringLiteral("cataloguePresetsList"));
+    presetsList->setMaximumHeight(180);
+    presetsSection->addWidget(presetsList);
+
+    auto* presetActions = new QHBoxLayout();
+    presetActions->setContentsMargins(0, 0, 0, 0);
+    presetActions->setSpacing(theme::kSpacingSmall);
+    auto* loadPresetBtn = new QPushButton(tr("Load selected"), presetsSection->parentWidget());
+    theme::applyActionRole(loadPresetBtn, theme::ActionRole::Primary);
+    auto* deletePresetBtn = new QPushButton(tr("Delete"), presetsSection->parentWidget());
+    theme::applyActionRole(deletePresetBtn, theme::ActionRole::Ghost);
+    presetActions->addWidget(loadPresetBtn);
+    presetActions->addWidget(deletePresetBtn);
+    presetActions->addStretch(1);
+    presetsSection->addLayout(presetActions);
+
+    const auto reloadPresetsUi = [presetsList, loadPresetBtn, deletePresetBtn]() {
+        presetsList->clear();
+        QSettings s;
+        const QByteArray raw = s.value(QStringLiteral("catalogue/presets")).toByteArray();
+        const QJsonArray arr = QJsonDocument::fromJson(raw).array();
+        for (const QJsonValue& v : arr) {
+            const QJsonObject obj = v.toObject();
+            const QString name = obj.value(QStringLiteral("name")).toString();
+            if (name.isEmpty()) continue;
+            auto* item = new QListWidgetItem(name, presetsList);
+            item->setData(Qt::UserRole, obj);
+        }
+        const bool any = presetsList->count() > 0;
+        loadPresetBtn->setEnabled(any);
+        deletePresetBtn->setEnabled(any);
+    };
+    reloadPresetsUi();
+
+    connect(savePresetBtn, &QPushButton::clicked, &dialog,
+            [presetNameEdit, genreInclude, genreExclude, tagInclude, tagExclude, formatList,
+             statusList, seasonList, studioList, yearFrom, yearTo, years, sort, order,
+             reloadPresetsUi]() {
+                const QString name = presetNameEdit->text().trimmed();
+                if (name.isEmpty()) return;
+                auto toJsonArr = [](QListWidget* list) {
+                    QJsonArray a;
+                    for (int r = 0; r < list->count(); ++r) {
+                        if (list->item(r)->checkState() == Qt::Checked)
+                            a.append(list->item(r)->data(Qt::UserRole).toString());
+                    }
+                    return a;
+                };
+                QJsonObject obj;
+                obj.insert(QStringLiteral("name"), name);
+                obj.insert(QStringLiteral("genres"), toJsonArr(genreInclude));
+                obj.insert(QStringLiteral("genres_exclude"), toJsonArr(genreExclude));
+                obj.insert(QStringLiteral("tags"), toJsonArr(tagInclude));
+                obj.insert(QStringLiteral("tags_exclude"), toJsonArr(tagExclude));
+                obj.insert(QStringLiteral("formats"), toJsonArr(formatList));
+                obj.insert(QStringLiteral("statuses"), toJsonArr(statusList));
+                obj.insert(QStringLiteral("seasons"), toJsonArr(seasonList));
+                obj.insert(QStringLiteral("studios"), toJsonArr(studioList));
+                obj.insert(QStringLiteral("year_from"), yearFrom->value());
+                obj.insert(QStringLiteral("year_to"), yearTo->value());
+                obj.insert(QStringLiteral("years"), years->text().trimmed());
+                obj.insert(QStringLiteral("sort"), sort->currentData().toString());
+                obj.insert(QStringLiteral("order"), order->currentData().toString());
+                QSettings s;
+                QJsonArray arr = QJsonDocument::fromJson(
+                                     s.value(QStringLiteral("catalogue/presets")).toByteArray())
+                                     .array();
+                QJsonArray next;
+                for (const QJsonValue& v : arr) {
+                    if (v.toObject().value(QStringLiteral("name")).toString() != name)
+                        next.append(v);
+                }
+                next.append(obj);
+                s.setValue(QStringLiteral("catalogue/presets"),
+                           QJsonDocument(next).toJson(QJsonDocument::Compact));
+                presetNameEdit->clear();
+                reloadPresetsUi();
+            });
+
+    connect(loadPresetBtn, &QPushButton::clicked, &dialog,
+            [presetsList, genreInclude, genreExclude, tagInclude, tagExclude, formatList,
+             statusList, seasonList, studioList, yearFrom, yearTo, years, sort, order]() {
+                QListWidgetItem* item = presetsList->currentItem();
+                if (item == nullptr) return;
+                const QJsonObject obj = item->data(Qt::UserRole).toJsonObject();
+                auto applyArr = [](QListWidget* list, const QJsonArray& arr) {
+                    QSet<QString> vals;
+                    for (const QJsonValue& v : arr) vals.insert(v.toString());
+                    for (int r = 0; r < list->count(); ++r) {
+                        const bool hit = vals.contains(list->item(r)->data(Qt::UserRole).toString());
+                        list->item(r)->setCheckState(hit ? Qt::Checked : Qt::Unchecked);
+                    }
+                };
+                applyArr(genreInclude, obj.value(QStringLiteral("genres")).toArray());
+                applyArr(genreExclude, obj.value(QStringLiteral("genres_exclude")).toArray());
+                applyArr(tagInclude, obj.value(QStringLiteral("tags")).toArray());
+                applyArr(tagExclude, obj.value(QStringLiteral("tags_exclude")).toArray());
+                applyArr(formatList, obj.value(QStringLiteral("formats")).toArray());
+                applyArr(statusList, obj.value(QStringLiteral("statuses")).toArray());
+                applyArr(seasonList, obj.value(QStringLiteral("seasons")).toArray());
+                applyArr(studioList, obj.value(QStringLiteral("studios")).toArray());
+                yearFrom->setValue(obj.value(QStringLiteral("year_from")).toInt());
+                yearTo->setValue(obj.value(QStringLiteral("year_to")).toInt());
+                years->setText(obj.value(QStringLiteral("years")).toString());
+                const int sIdx = sort->findData(obj.value(QStringLiteral("sort")).toString());
+                if (sIdx >= 0) sort->setCurrentIndex(sIdx);
+                const int oIdx = order->findData(obj.value(QStringLiteral("order")).toString());
+                if (oIdx >= 0) order->setCurrentIndex(oIdx);
+            });
+
+    connect(deletePresetBtn, &QPushButton::clicked, &dialog, [presetsList, reloadPresetsUi]() {
+        QListWidgetItem* item = presetsList->currentItem();
+        if (item == nullptr) return;
+        const QString name = item->text();
+        QSettings s;
+        QJsonArray arr = QJsonDocument::fromJson(
+                             s.value(QStringLiteral("catalogue/presets")).toByteArray())
+                             .array();
+        QJsonArray next;
+        for (const QJsonValue& v : arr) {
+            if (v.toObject().value(QStringLiteral("name")).toString() != name) next.append(v);
+        }
+        s.setValue(QStringLiteral("catalogue/presets"),
+                   QJsonDocument(next).toJson(QJsonDocument::Compact));
+        reloadPresetsUi();
+    });
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Apply | QDialogButtonBox::Reset |
                                           QDialogButtonBox::Cancel, &dialog);
     buttons->setObjectName(QStringLiteral("catalogueFilterButtons"));
