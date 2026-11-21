@@ -177,6 +177,22 @@ Item {
                 Item { Layout.fillWidth: true }
 
                 PlayerButton {
+                    id: skipBackwardButton
+                    controller: root.controller
+                    text: "-10"
+                    toolTip: qsTr("Skip backward 10 seconds")
+                    Accessible.name: toolTip
+                    enabled: root.controller.hasMedia
+                    compact: true
+                    implicitWidth: 40
+                    implicitHeight: 40
+                    onClicked: {
+                        root.controller.noteUserActivity()
+                        root.controller.skipBackward()
+                    }
+                }
+
+                PlayerButton {
                     id: playButton
                     controller: root.controller
                     objectName: "player.playPause"
@@ -196,8 +212,8 @@ Item {
                 PlayerButton {
                     id: skipForwardButton
                     controller: root.controller
-                    text: "+85"
-                    toolTip: qsTr("Skip forward 85 seconds")
+                    text: "+" + root.controller.skipForwardSeconds
+                    toolTip: qsTr("Skip forward %1 seconds").arg(root.controller.skipForwardSeconds)
                     Accessible.name: toolTip
                     enabled: root.controller.hasMedia
                     compact: true
@@ -359,8 +375,22 @@ Item {
 
                 PlayerButton {
                     controller: root.controller
-                    text: "+85"
-                    toolTip: qsTr("Skip forward 85 seconds")
+                    text: "-10"
+                    toolTip: qsTr("Skip backward 10 seconds")
+                    enabled: root.controller.hasMedia
+                    compact: true
+                    implicitWidth: 36
+                    implicitHeight: 36
+                    onClicked: {
+                        root.controller.noteUserActivity()
+                        root.controller.skipBackward()
+                    }
+                }
+
+                PlayerButton {
+                    controller: root.controller
+                    text: "+" + root.controller.skipForwardSeconds
+                    toolTip: qsTr("Skip forward %1 seconds").arg(root.controller.skipForwardSeconds)
                     enabled: root.controller.hasMedia
                     compact: true
                     implicitWidth: 40

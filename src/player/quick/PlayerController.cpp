@@ -615,12 +615,25 @@ void PlayerController::seekBy(double seconds) {
     noteUserActivity();
 }
 
+int PlayerController::skipForwardSeconds() const {
+    const int configured = QSettings().value(QStringLiteral("playback/skipForwardSeconds"), 85).toInt();
+    return std::clamp(configured, 5, 300);
+}
+
 void PlayerController::skipForward() {
     if (session_ == nullptr || !session_->hasVideo()) {
         flashStatus(tr("No media loaded — drop a file to begin"));
         return;
     }
-    seekTo(position_ + 85.0);
+    seekTo(position_ + static_cast<double>(skipForwardSeconds()));
+}
+
+void PlayerController::skipBackward() {
+    if (session_ == nullptr || !session_->hasVideo()) {
+        flashStatus(tr("No media loaded — drop a file to begin"));
+        return;
+    }
+    seekTo(std::max(0.0, position_ - 10.0));
 }
 
 void PlayerController::setVolume(double volume) {

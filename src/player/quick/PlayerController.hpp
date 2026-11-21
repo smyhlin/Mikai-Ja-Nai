@@ -296,7 +296,10 @@ public:
     Q_INVOKABLE void togglePlayPause();
     Q_INVOKABLE void seekTo(double seconds);
     Q_INVOKABLE void seekBy(double seconds);
+    Q_PROPERTY(int skipForwardSeconds READ skipForwardSeconds CONSTANT)
     Q_INVOKABLE void skipForward();
+    Q_INVOKABLE void skipBackward();
+    int skipForwardSeconds() const;
     Q_INVOKABLE void setVolume(double volume);
     Q_INVOKABLE void adjustVolume(double delta);
     Q_INVOKABLE void toggleMute();
