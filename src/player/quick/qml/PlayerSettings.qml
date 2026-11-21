@@ -162,11 +162,20 @@ PlayerPanel {
             anchors.top: parent.top
             anchors.topMargin: 18
             from: 0.25
-            to: 2.0
+            to: 4.0
             stepSize: 0.05
             value: panel.controller.rate
+            activeFocusOnTab: true
             Accessible.name: qsTr("Playback speed")
             onMoved: panel.controller.setRate(value)
+            Keys.onTabPressed: event => {
+                list.forceActiveFocus()
+                event.accepted = true
+            }
+            Keys.onBacktabPressed: event => {
+                list.forceActiveFocus()
+                event.accepted = true
+            }
 
             background: Rectangle {
                 x: speedSlider.leftPadding
@@ -204,14 +213,14 @@ PlayerPanel {
             spacing: 4
 
             Repeater {
-                model: [0.5, 1.0, 1.2, 1.5, 1.7, 2.0]
+                model: [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
                 delegate: Button {
                     id: speedPreset
                     required property real modelData
                     objectName: "player.speed." + modelData
                     width: Math.max(1, (parent.width - 8) / 3)
                     height: 32
-                    text: Number(modelData).toFixed(1).replace(/\.0$/, "") + "×"
+                    text: Number(modelData).toFixed(2).replace(/0+$/, "").replace(/\.$/, "") + "×"
                     Accessible.name: text
                     onClicked: panel.controller.setRate(modelData)
 
@@ -291,7 +300,7 @@ PlayerPanel {
                 panel.dismissKey(); event.accepted = true; break;
             case Qt.Key_Tab:
             case Qt.Key_Backtab:
-                event.accepted = true; break;
+                speedSlider.forceActiveFocus(); event.accepted = true; break;
             }
         }
 
