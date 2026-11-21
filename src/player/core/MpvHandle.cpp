@@ -315,6 +315,9 @@ MpvHandle::~MpvHandle() {
     cancelAllAsync();
     observers_.clear();
     if (handle_ != nullptr) {
+        if (api_.setWakeupCallback != nullptr) {
+            api_.setWakeupCallback(handle_, nullptr, nullptr);
+        }
         api_.terminateDestroy(handle_);
         handle_ = nullptr;
     }
@@ -699,6 +702,16 @@ void MpvHandle::drainEvents() {
 void MpvHandle::setEventSink(std::function<void(mpv_event*)> sink) {
     ++sinkRevision_;
     sink_ = std::move(sink);
+}
+
+void MpvHandle::setWakeupCallback(void (*callback)(void*), void* userdata) {
+    if (handle_ == nullptr || api_.setWakeupCallback == nullptr) return;
+    api_.setWakeupCallback(handle_, callback, userdata);
+}
+
+void MpvHandle::wakeup() {
+    if (handle_ == nullptr || api_.wakeup == nullptr) return;
+    api_.wakeup(handle_);
 }
 
 uint64_t MpvHandle::observe(const std::string& name, mpv_format format,

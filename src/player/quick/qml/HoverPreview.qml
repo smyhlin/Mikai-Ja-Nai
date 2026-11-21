@@ -10,7 +10,6 @@ Item {
     property point anchor: Qt.point(0, 0)
 
     readonly property bool shown: controller.hoverPreviewVisible
-                                  && controller.hoverPreviewSource.toString() !== ""
     readonly property color textColor: controller.darkTheme ? "#f4f4f5" : "#18181b"
     readonly property color mutedColor: controller.darkTheme ? "#a1a1aa" : "#52525b"
     readonly property color surfaceColor: controller.darkTheme ? Qt.rgba(0.07, 0.08, 0.10, 0.96)
@@ -57,10 +56,18 @@ Item {
                 objectName: "player.timeline.preview.frame"
                 anchors.fill: parent
                 source: root.controller.hoverPreviewSource
-                asynchronous: true
+                asynchronous: false
                 cache: false
                 fillMode: Image.PreserveAspectFit
                 visible: status === Image.Ready
+            }
+
+            Label {
+                anchors.centerIn: parent
+                visible: frame.status !== Image.Ready
+                text: qsTr("Loading preview…")
+                color: root.mutedColor
+                font.pixelSize: 11
             }
         }
 

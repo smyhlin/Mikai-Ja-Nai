@@ -16,7 +16,8 @@
 namespace mplayer::quick {
 
 ClipWindow::ClipWindow(PlayerController* player, QWindow* transientParent)
-    : controller_(new ClipController(player->session(), player->caption(), this)) {
+    : controller_(new ClipController(player->session(), player->caption(), this,
+                                     player->previewService())) {
     setObjectName(QStringLiteral("clipWindow"));
     setFlags(Qt::Window | Qt::WindowTitleHint | Qt::WindowSystemMenuHint |
              Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint);

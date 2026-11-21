@@ -3,6 +3,9 @@
 #include "MpvApi.hpp"
 #include "MpvHandle.hpp"
 
+#include <QMutex>
+#include <QMutexLocker>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -56,16 +59,48 @@ bool finiteFeatures(const ClipContentFeatures& f) {
 } // namespace
 
 bool probeClipEncodingProfile(ClipEncodingProfile& profile, QString& error) {
+    struct CachedProbe {
+        QMutex mutex;
+        QString modulePath;
+        bool valid = false;
+        ClipEncodingProfile profile;
+    };
+    static CachedProbe cache;
+
+    mplayer::MpvApi& api = mplayer::MpvApi::instance();
+    const bool apiLoaded = api.loaded();
+    const QString currentModule = apiLoaded ? api.bundle().modulePath : QString();
+    if (apiLoaded && !currentModule.isEmpty()) {
+        QMutexLocker lock(&cache.mutex);
+        if (cache.valid && cache.modulePath == currentModule) {
+            profile = cache.profile;
+            error.clear();
+            return true;
+        }
+    }
+
     try {
         mplayer::MpvHandle probe({{"config", "no"}, {"vo", "null"}, {"audio", "no"}});
         if (encoderAvailable(probe, "libx264")) {
             profile = {ClipVideoEncoder::H264, "libx264", "preset=veryfast,crf=23,profile=high"};
             error.clear();
+            if (apiLoaded && !currentModule.isEmpty()) {
+                QMutexLocker lock(&cache.mutex);
+                cache.modulePath = currentModule;
+                cache.profile = profile;
+                cache.valid = true;
+            }
             return true;
         }
         if (encoderAvailable(probe, "mpeg4")) {
             profile = {ClipVideoEncoder::Mpeg4, "mpeg4", "flags=+qscale,global_quality=472"};
             error.clear();
+            if (apiLoaded && !currentModule.isEmpty()) {
+                QMutexLocker lock(&cache.mutex);
+                cache.modulePath = currentModule;
+                cache.profile = profile;
+                cache.valid = true;
+            }
             return true;
         }
         error = QStringLiteral("The selected mpv runtime provides neither libx264 nor the MPEG-4 Part 2 encoder.");

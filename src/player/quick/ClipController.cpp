@@ -93,7 +93,8 @@ void ClipThumbnailModel::setImage(int row, const QUrl& source) {
 }
 double ClipThumbnailModel::timeAt(int row) const { return rows_.at(row).time; }
 
-ClipController::ClipController(VideoSession* source, QString caption, QObject* parent)
+ClipController::ClipController(VideoSession* source, QString caption, QObject* parent,
+                               const shell::FramePreviewService* seedPreview)
     : QObject(parent), source_(source), preview_(new VideoSession(this)),
       caption_(std::move(caption)), frameStore_(std::make_shared<ClipFrameStore>()) {
     preview_->setDiagnosticsPolling(false);
@@ -191,6 +192,7 @@ ClipController::ClipController(VideoSession* source, QString caption, QObject* p
     sourceSize_ = QSize(source->videoWidth(), source->videoHeight());
     initializeSizeEstimator();
     frames_.setSource(sourceUrl_, sourceEpoch_);
+    if (seedPreview != nullptr) frames_.seedCacheFrom(*seedPreview);
     connect(source, &VideoSession::mediaInformationInvalidated, this, [this] {
         invalidate(QT_TR_NOOP("The video changed. Close this window and open Cut moment again."));
     });
@@ -285,7 +287,7 @@ void ClipController::initializeSelection(double duration) {
     emit stateChanged();
     stillRequestedTime_ = position_;
     stillTimer_.start(0);
-    thumbnailTimer_.start(100);
+    thumbnailTimer_.start(20);
     scheduleSizeEstimate();
     setStatus(QT_TR_NOOP("Drag the handles to trim. Drag between them to move the selection."));
 }
@@ -386,7 +388,7 @@ void ClipController::setFilmstripWidth(double width) {
     const int count = std::clamp(static_cast<int>(std::ceil(std::min(width, 4096.0) / 114.0)), 8, 28);
     if (count == tileCount_) return;
     tileCount_ = count;
-    if (selection_.valid() && !invalidated_ && !stopped_) thumbnailTimer_.start(80);
+    if (selection_.valid() && !invalidated_ && !stopped_) thumbnailTimer_.start(40);
 }
 void ClipController::rebuildThumbnails() {
     if (!selection_.valid() || invalidated_ || stopped_) return;
@@ -402,13 +404,12 @@ void ClipController::rebuildThumbnails() {
         frameStore_->tiles.fill({}, tileCount_);
     }
     thumbnails_.reset(tileCount_, windowStart(), windowEnd());
+    // Decode filmstrip tiles in ascending forward timestamp order so the
+    // demuxer walks sequentially rather than thrashing back and forth.
     QVector<TileRequest> requested;
     requested.reserve(tileCount_);
     for (int row = 0; row < tileCount_; ++row)
-        requested.append({row, thumbnails_.timeAt(row), tileGeneration_});
-    std::sort(requested.begin(), requested.end(), [this](const auto& left, const auto& right) {
-        return std::abs(left.seconds - selectionStart()) < std::abs(right.seconds - selectionStart());
-    });
+        requested.append({row, thumbnails_.timeAt(row), tileGeneration_, false});
     tileQueue_ += requested;
     pumpThumbnails();
 }
@@ -422,11 +423,15 @@ void ClipController::queueStill() {
 void ClipController::pumpThumbnails() {
     if (activeTile_ || tileQueue_.isEmpty() || invalidated_ || stopped_) return;
     activeTile_ = ActiveTile{tileQueue_.takeFirst(), ++tileToken_};
+    const int row = activeTile_->request.row;
+    const auto seekMode = (row == -1)
+        ? shell::FramePreviewService::SeekMode::Exact
+        : shell::FramePreviewService::SeekMode::FastKeyframe;
+    const QSize targetSize = (row >= 0) ? QSize(228, 128) : QSize();
     frames_.requestFrame(
         activeTile_->token, activeTile_->request.seconds,
-        activeTile_->request.row == -2
-            ? shell::FramePreviewService::CachePolicy::Bypass
-            : shell::FramePreviewService::CachePolicy::Reuse);
+        shell::FramePreviewService::CachePolicy::Reuse,
+        seekMode, /*useSettleDelay=*/false, targetSize);
 }
 void ClipController::finishThumbnail(quint64 token, double decodedSeconds, const QImage& frame, const QString& reason) {
     if (!activeTile_ || token != activeTile_->token || invalidated_ || stopped_) return;
@@ -448,16 +453,24 @@ void ClipController::finishThumbnail(quint64 token, double decodedSeconds, const
             setStatus(QT_TR_NOOP("Preview unavailable: %1"), {reason});
         }
         emit previewChanged();
-    } else if (request.row >= 0 && request.generation == tileGeneration_ && !frame.isNull()) {
-        const quint64 revision = ++imageRevision_;
-        const QImage thumbnail = frame.scaled(228, 128, Qt::KeepAspectRatioByExpanding,
-                                              Qt::SmoothTransformation);
-        {
-            QMutexLocker lock(&frameStore_->mutex);
-            frameStore_->tiles[request.row] = {thumbnail, revision};
+    } else if (request.row >= 0 && request.generation == tileGeneration_) {
+        if (!frame.isNull()) {
+            const quint64 revision = ++imageRevision_;
+            const QImage thumbnail = (frame.size() == QSize(228, 128))
+                ? frame
+                : frame.scaled(228, 128, Qt::KeepAspectRatioByExpanding,
+                               Qt::SmoothTransformation);
+            {
+                QMutexLocker lock(&frameStore_->mutex);
+                frameStore_->tiles[request.row] = {thumbnail, revision};
+            }
+            thumbnails_.setImage(request.row,
+                QUrl(QStringLiteral("image://clip-frames/tile/%1/%2").arg(request.row).arg(revision)));
+        } else if (!request.retried) {
+            // Retry a transiently failed filmstrip tile once at the back of the queue
+            // instead of leaving a permanent blank slot.
+            tileQueue_.append({request.row, request.seconds, request.generation, true});
         }
-        thumbnails_.setImage(request.row,
-            QUrl(QStringLiteral("image://clip-frames/tile/%1/%2").arg(request.row).arg(revision)));
     }
     pumpThumbnails();
 }

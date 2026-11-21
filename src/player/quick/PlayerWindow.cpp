@@ -56,8 +56,23 @@ bool isWaylandPlatform() {
 /// dead window.
 class HoverPreviewImageProvider : public QQuickImageProvider {
 public:
+    static constexpr int kRingCapacity = 4;
+
     explicit HoverPreviewImageProvider(PlayerWindow* window)
         : QQuickImageProvider(QQuickImageProvider::Image), window_(window) {}
+
+    void storeFrameLocked(quint64 token, const QImage& image) {
+        for (auto& entry : ring_) {
+            if (entry.first == token) {
+                entry.second = image;
+                return;
+            }
+        }
+        if (ring_.size() >= kRingCapacity) ring_.removeFirst();
+        ring_.append({token, image});
+    }
+
+    void clearLocked() { ring_.clear(); }
 
     QImage requestImage(const QString& id, QSize* size, const QSize& requestedSize) override {
         Q_UNUSED(requestedSize);
@@ -66,16 +81,28 @@ public:
         const QString tokenText = id.section(QLatin1Char('?'), 0, 0);
         bool ok = false;
         const quint64 token = tokenText.toULongLong(&ok);
-        if (!ok || token == 0 || token != window_->hoverPreviewToken_) return QImage();
-        if (window_->hoverPreviewImage_.isNull()) return QImage();
-        const QImage image = window_->hoverPreviewImage_;
-        if (size != nullptr) *size = image.size();
-        return image;
+        if (!ok || token == 0) return QImage();
+        for (auto it = ring_.constEnd(); it != ring_.constBegin();) {
+            --it;
+            if (it->first == token && !it->second.isNull()) {
+                if (size != nullptr) *size = it->second.size();
+                return it->second;
+            }
+        }
+        // Fallback to the latest published frame if rapid scrubbing bumped the
+        // token past a small ring window, preventing blank Image.Error flashes.
+        if (token <= window_->hoverPreviewToken_ && !window_->hoverPreviewImage_.isNull()) {
+            const QImage image = window_->hoverPreviewImage_;
+            if (size != nullptr) *size = image.size();
+            return image;
+        }
+        return QImage();
     }
 
     /// Called from the window destructor while the engine still owns this.
     void detachWindow() {
         QMutexLocker locker(&mutex);
+        ring_.clear();
         window_ = nullptr;
     }
 
@@ -83,6 +110,7 @@ public:
 
 private:
     PlayerWindow* window_ = nullptr;
+    QList<QPair<quint64, QImage>> ring_;
 };
 
 PlayerWindow::PlayerWindow(PlayerController* controller, QWindow* transientParent)
@@ -532,6 +560,7 @@ void PlayerWindow::setHoverPreviewFrame(quint64 token, const QImage& image) {
     if (token < hoverPreviewToken_) return;
     hoverPreviewToken_ = token;
     hoverPreviewImage_ = image;
+    provider->storeFrameLocked(token, image);
 }
 
 void PlayerWindow::clearHoverPreviewFrame() {
@@ -542,6 +571,7 @@ void PlayerWindow::clearHoverPreviewFrame() {
     }
     QMutexLocker locker(&provider->mutex);
     hoverPreviewImage_ = QImage();
+    provider->clearLocked();
 }
 
 QUrl PlayerWindow::hoverPreviewSource() const {

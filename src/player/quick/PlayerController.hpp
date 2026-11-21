@@ -371,6 +371,7 @@ public:
     Q_INVOKABLE bool handleKey(int key, int modifiers);
 
     VideoSession* session() const { return session_; }
+    const shell::FramePreviewService* previewService() const { return previewService_; }
     QString caption() const { return caption_; }
     QString windowTitle() const;
     QString mediaPath() const { return url_; }
@@ -927,12 +928,15 @@ private:
     bool pipWasFullscreen_ = false;
 
     shell::FramePreviewService* previewService_ = nullptr;
+    QTimer* hoverRefineTimer_ = nullptr;
     bool hoverPreviewVisible_ = false;
     QUrl hoverPreviewSource_;
     double hoverPreviewSeconds_ = -1.0;
     QString hoverPreviewTime_;
     QString hoverPreviewLabel_;
     quint64 hoverPreviewToken_ = 0;
+    quint64 hoverPreviewAppliedToken_ = 0;
+    double hoverPreviewAppliedSeconds_ = -1.0;
     quint64 hoverPreviewPrewarmEpoch_ = 0;
 
     bool subtitleSearchVisible_ = false;

@@ -12,6 +12,7 @@
 #include <QList>
 #include <QObject>
 #include <QPair>
+#include <QSize>
 #include <QString>
 #include <QtGlobal>
 
@@ -62,7 +63,7 @@ public:
     /// Entries kept. A sweep that leaves the oldest ones behind is exactly what
     /// makes a second pass fast; keeping every frame of a two-hour film is how a
     /// thumbnail cache becomes a memory leak.
-    static constexpr int kCapacity = 64;
+    static constexpr int kCapacity = 192;
 
     /// Bucket index for an instant: 2 buckets per second, so a request landing
     /// anywhere in a half second shares the frame already decoded for it.
@@ -77,6 +78,14 @@ public:
     /// The frame for `(epoch, requestedSeconds)`, marked as just used. Nullopt is
     /// a miss - a different epoch or a bucket never decoded is not "close enough".
     std::optional<PreviewFrame> lookup(quint64 epoch, double requestedSeconds);
+
+    /// Read-only nearest cached frame within `maxDeltaSec` for `(epoch, seconds)`.
+    std::optional<PreviewFrame> peekNearest(quint64 epoch, double seconds,
+                                            double maxDeltaSec) const;
+
+    /// Copies cached entries matching `epoch` into `destination` without
+    /// altering recency in this cache.
+    void copyEntriesForEpoch(quint64 epoch, PreviewFrameCache& destination) const;
 
     int size() const { return entries_.size(); }
     /// How many entries have been dropped to stay inside kCapacity. Monotonic,
@@ -131,6 +140,11 @@ public:
         Bypass,
     };
 
+    enum class SeekMode {
+        Exact,
+        FastKeyframe,
+    };
+
     explicit FramePreviewService(QObject* parent = nullptr);
     ~FramePreviewService() override;
 
@@ -149,7 +163,17 @@ public:
     /// caller that hovers faster than the decoder shows only its last request.
     /// `token` 0 is not a request. An instant already in the store answers from
     /// it, without touching the worker.
-    void requestFrame(quint64 token, double seconds, CachePolicy cachePolicy);
+    void requestFrame(quint64 token, double seconds, CachePolicy cachePolicy,
+                      SeekMode seekMode = SeekMode::Exact, bool useSettleDelay = true,
+                      const QSize& targetSize = QSize());
+
+    /// Read-only lookup of the closest cached frame for the current source epoch
+    /// within `maxDeltaSec`. Never touches the worker thread.
+    std::optional<PreviewFrame> nearestCachedFrame(double seconds, double maxDeltaSec = 1.5) const;
+
+    /// Seeds this service's cache with frames already decoded by `other` when
+    /// both services refer to the same `(source, sourceEpoch)`.
+    void seedCacheFrom(const FramePreviewService& other);
 
     /// Warms the decoder for `seconds` without a card waiting on it: the frame
     /// lands in the store and is never published as a reply. Low priority by
@@ -191,7 +215,8 @@ signals:
 
     // ── posted to the worker; not part of the consumer's contract ──────────
     void sourceChanged(const QString& url, quint64 generation);
-    void frameRequested(quint64 token, double seconds);
+    void frameRequested(quint64 token, double seconds, int seekMode, bool useSettleDelay,
+                        const QSize& targetSize);
     void cancelRequested();
     void activityNoted();
 
@@ -216,6 +241,7 @@ private:
     /// stored and published only under the epoch it asked about, so a signal
     /// still crossing threads when the source changed cannot describe the new one.
     QHash<quint64, quint64> requestEpochs_;
+    QList<quint64> requestEpochOrder_;
     /// Started with each worker request; read when its reply settles.
     QElapsedTimer pendingSince_;
     /// The last activity this service forwarded, so a caller that reports every

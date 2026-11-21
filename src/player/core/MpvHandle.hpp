@@ -233,6 +233,12 @@ public:
     // event and any node it owns as soon as the next waitEvent runs.
     void setEventSink(std::function<void(mpv_event*)> sink);
 
+    // Registers an event-driven wakeup callback invoked by mpv from any thread
+    // whenever new events enter this handle's queue. Cleared automatically in
+    // ~MpvHandle() before mpv_terminate_destroy().
+    void setWakeupCallback(void (*callback)(void*), void* userdata);
+    void wakeup();
+
     // Fires during drainEvents on the calling thread. format must be the one the
     // callback is written against, because mpv delivers exactly what was asked
     // for. The id is never reused, so a late event cannot reach a new observer.

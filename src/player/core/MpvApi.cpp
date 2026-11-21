@@ -279,6 +279,8 @@ bool MpvApi::load(const MpvBundle& bundle, QString* reason) {
     bind("mpv_observe_property", table.observeProperty);
     bind("mpv_unobserve_property", table.unobserveProperty);
     bind("mpv_wait_event", table.waitEvent);
+    bind("mpv_set_wakeup_callback", table.setWakeupCallback);
+    bind("mpv_wakeup", table.wakeup);
     bind("mpv_client_api_version", table.clientApiVersion);
     bind("mpv_get_time_us", table.getTimeUs);
     bind("mpv_error_string", table.errorString);

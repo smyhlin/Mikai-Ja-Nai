@@ -110,14 +110,37 @@ void ClipController::queueEstimateSamples() {
     estimateBatch_ = std::make_shared<ClipEstimateBatch>();
     estimateBatch_->images.reserve(sampleCount);
     estimateBatch_->times.reserve(sampleCount);
-    estimatePendingFrames_ = sampleCount;
+    estimatePendingFrames_ = 0;
+    const double maxReuseDelta = std::max(1.5, selectionDuration() / 4.0);
     int insertion = 0;
     while (insertion < tileQueue_.size() && tileQueue_[insertion].row == -1) ++insertion;
+    int inserted = 0;
     for (int i = 0; i < sampleCount; ++i) {
         const double seconds = selectionStart() + selectionDuration() * (i + 0.5) / sampleCount;
-        tileQueue_.insert(insertion + i, {-2, seconds, estimateGeneration_});
+        if (const auto cached = frames_.nearestCachedFrame(seconds, maxReuseDelta)) {
+            const double sampleTime = cached->decodedSeconds >= 0.0 ? cached->decodedSeconds
+                                                                    : cached->requestedSeconds;
+            if (!cached->image.isNull() && std::isfinite(sampleTime) &&
+                sampleTime >= selectionStart() && sampleTime <= selectionEnd()) {
+                const bool duplicate = std::any_of(
+                    estimateBatch_->times.begin(), estimateBatch_->times.end(),
+                    [sampleTime](double time) { return std::abs(time - sampleTime) < 0.001; });
+                if (!duplicate) {
+                    estimateBatch_->images.push_back(cached->image);
+                    estimateBatch_->times.push_back(sampleTime);
+                    continue;
+                }
+            }
+        }
+        ++estimatePendingFrames_;
+        tileQueue_.insert(insertion + inserted, {-2, seconds, estimateGeneration_, false});
+        ++inserted;
     }
-    pumpThumbnails();
+    if (estimatePendingFrames_ == 0) {
+        analyzeEstimateSamples();
+    } else {
+        pumpThumbnails();
+    }
 }
 
 void ClipController::consumeEstimateFrame(quint64 generation, double decodedSeconds,

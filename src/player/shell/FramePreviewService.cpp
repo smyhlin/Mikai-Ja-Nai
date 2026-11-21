@@ -6,11 +6,15 @@
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QMetaObject>
+#include <QMutex>
+#include <QMutexLocker>
+#include <QPointer>
 #include <QThread>
 #include <QTimer>
 
 #include <mpv/client.h>
 
+#include <atomic>
 #include <cmath>
 #include <cstring>
 #include <exception>
@@ -25,10 +29,11 @@ namespace shell {
 namespace {
 
 // ── worker cadence ─────────────────────────────────────────────────────────
-// Busy: a local seek settles in tens of milliseconds. Idle: keep the event
-// queue drained without a wakeup per painted frame.
-constexpr int kBusyTickMs = 8;
-constexpr int kIdleTickMs = 200;
+// Wakeup-driven transitions handle mpv events at 0 ms latency; the timer only
+// guards hover settle windows, timeouts, and the idle release clock.
+constexpr int kSettleTickMs = 8;
+constexpr int kBusyWatchdogMs = 50;
+constexpr int kIdleTickMs = 1000;
 
 // ── bounds ────────────────────────────────────────────────────────────────
 constexpr qint64 kLoadTimeoutMs = 20000;
@@ -97,7 +102,11 @@ std::vector<std::pair<std::string, std::string>> previewOptions() {
         {"hwdec", "no"},
         {"vd-lavc-fast", "yes"},
         {"vd-lavc-skiploopfilter", "all"},
+        {"vd-lavc-threads", "2"},
+        {"hr-seek", "no"},
         {"hr-seek-framedrop", "yes"},
+        {"sws-scaler", "fast-bilinear"},
+        {"sws-allow-zimg", "no"},
         {"terminal", "no"},
         {"config", "no"},
         {"idle", "yes"},
@@ -116,14 +125,64 @@ std::vector<std::pair<std::string, std::string>> previewOptions() {
          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
          "Chrome/142.0.0.0 Safari/537.36"},
         {"http-header-fields", "Accept-Language: uk-UA"},
-        {"demuxer-readahead-secs", "3"},
-        {"demuxer-max-bytes", "33554432"},
-        {"demuxer-max-back-bytes", "8388608"},
-        // The card is a few hundred pixels wide at most, so the frame leaves the
-        // decoder already inside a 640x640 box; the cross-thread copy and the
-        // QImage stay small for a 4K source, portrait video included.
-        {"vf", "scale=w=640:h=640:force_original_aspect_ratio=decrease:flags=bilinear"},
+        {"demuxer-readahead-secs", "0"},
+        {"demuxer-max-bytes", "4194304"},
+        {"demuxer-max-back-bytes", "2097152"},
+        // Display-sized thumbnail box (360x360 -> 360x202 for 16:9): sharp for
+        // HiDPI hover cards (208x117) and Clip tiles (228x128), while cutting
+        // software scaling and RGBA copy work ~3.2x vs 640x640.
+        {"vf", "scale=w=360:h=360:force_original_aspect_ratio=decrease:flags=fast_bilinear"},
     };
+}
+
+// Tracks live preview worker threads so mid-session shutdown() stays
+// non-blocking on the GUI thread while QCoreApplication::aboutToQuit performs
+// a bounded join before process teardown.
+struct PreviewThreadRegistry {
+    QMutex mutex;
+    QList<QPointer<QThread>> threads;
+    bool exitHookInstalled = false;
+};
+
+PreviewThreadRegistry& previewThreadRegistry() {
+    static PreviewThreadRegistry registry;
+    return registry;
+}
+
+void joinAllPreviewThreadsOnQuit() {
+    QList<QPointer<QThread>> snapshot;
+    {
+        QMutexLocker lock(&previewThreadRegistry().mutex);
+        snapshot = previewThreadRegistry().threads;
+        previewThreadRegistry().threads.clear();
+    }
+    for (const QPointer<QThread>& thread : snapshot) {
+        if (!thread) continue;
+        thread->quit();
+        if (thread->isRunning()) thread->wait(1500);
+    }
+}
+
+void registerPreviewThread(QThread* thread) {
+    if (thread == nullptr) return;
+    PreviewThreadRegistry& registry = previewThreadRegistry();
+    bool installHook = false;
+    {
+        QMutexLocker lock(&registry.mutex);
+        registry.threads.erase(
+            std::remove_if(registry.threads.begin(), registry.threads.end(),
+                           [](const QPointer<QThread>& item) { return item.isNull(); }),
+            registry.threads.end());
+        registry.threads.append(QPointer<QThread>(thread));
+        if (!registry.exitHookInstalled && QCoreApplication::instance() != nullptr) {
+            registry.exitHookInstalled = true;
+            installHook = true;
+        }
+    }
+    if (installHook) {
+        QObject::connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit,
+                         &joinAllPreviewThreadsOnQuit);
+    }
 }
 
 }  // namespace
@@ -223,6 +282,39 @@ std::optional<PreviewFrame> PreviewFrameCache::lookup(quint64 epoch,
     return found.value();
 }
 
+std::optional<PreviewFrame> PreviewFrameCache::peekNearest(quint64 epoch, double seconds,
+                                                           double maxDeltaSec) const {
+    if (!std::isfinite(seconds) || seconds < 0.0 || !std::isfinite(maxDeltaSec) ||
+        maxDeltaSec < 0.0) {
+        return std::nullopt;
+    }
+    std::optional<PreviewFrame> best;
+    double bestDelta = maxDeltaSec;
+    for (auto it = entries_.constBegin(); it != entries_.constEnd(); ++it) {
+        if (it.key().first != epoch || it.value().image.isNull()) continue;
+        const double candidateTime = it.value().decodedSeconds >= 0.0
+                                         ? it.value().decodedSeconds
+                                         : it.value().requestedSeconds;
+        if (!std::isfinite(candidateTime)) continue;
+        const double delta = std::abs(candidateTime - seconds);
+        if (delta <= bestDelta) {
+            bestDelta = delta;
+            best = it.value();
+        }
+    }
+    return best;
+}
+
+void PreviewFrameCache::copyEntriesForEpoch(quint64 epoch,
+                                            PreviewFrameCache& destination) const {
+    for (const Key& key : recency_) {
+        if (key.first != epoch) continue;
+        const auto found = entries_.constFind(key);
+        if (found == entries_.constEnd() || found.value().image.isNull()) continue;
+        destination.insert(epoch, found.value());
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  worker
 // ═══════════════════════════════════════════════════════════════════════════
@@ -237,10 +329,12 @@ public:
 public slots:
     void initialize();
     void setSource(const QString& url, quint64 generation);
-    void requestFrame(quint64 token, double seconds);
+    void requestFrame(quint64 token, double seconds, int seekMode, bool useSettleDelay,
+                      const QSize& targetSize);
     void noteActivity();
     void cancelPending();
     void shutdown();
+    void onWakeup();
 
 signals:
     void frameReady(quint64 token, double requestedSeconds, double decodedSeconds,
@@ -273,9 +367,10 @@ private:
 
     void finishWithFrame(quint64 token, double requestedSeconds, double decodedSeconds,
                          const QImage& frame);
-    void fail(const QString& reason);
+    void fail(const QString& reason, bool fatalSourceError = true);
     void abandon();
 
+    static void mpvWakeupCallback(void* ctx);
     void onEvent(mpv_event* event);
     void updateTimer();
     QString coreError(int error) const;
@@ -293,8 +388,12 @@ private:
     /// only when both still name it.
     quint64 activeToken_ = 0;
     double activeSeconds_ = 0.0;
+    FramePreviewService::SeekMode activeSeekMode_ = FramePreviewService::SeekMode::Exact;
+    QSize activeTargetSize_;
     quint64 requestedToken_ = 0;
     double requestedSeconds_ = 0.0;
+    FramePreviewService::SeekMode requestedSeekMode_ = FramePreviewService::SeekMode::Exact;
+    QSize requestedTargetSize_;
 
     /// Where the core said the picture it just captured actually is. Reported by
     /// the seek's own position read, never assumed from the request: the card
@@ -329,6 +428,7 @@ private:
 
     AsyncRequestId positionRequest_;
     AsyncRequestId captureRequest_;
+    std::atomic<bool> wakeupPending_{false};
     /// The last failure sentence, replayed by the retry window.
     QString failure_;
 };
@@ -385,7 +485,8 @@ void FramePreviewWorker::setSource(const QString& url, quint64 generation) {
     updateTimer();
 }
 
-void FramePreviewWorker::requestFrame(quint64 token, double seconds) {
+void FramePreviewWorker::requestFrame(quint64 token, double seconds, int seekMode,
+                                      bool useSettleDelay, const QSize& targetSize) {
     if (shuttingDown_ || token == 0 || !std::isfinite(seconds) || seconds < 0.0) return;
     if (url_.isEmpty()) {
         emit frameUnavailable(token, seconds,
@@ -402,10 +503,12 @@ void FramePreviewWorker::requestFrame(quint64 token, double seconds) {
     }
     requestedToken_ = token;
     requestedSeconds_ = seconds;
-    startAfterMs_ = nowMs() + kHoverSettleMs;
+    requestedSeekMode_ = static_cast<FramePreviewService::SeekMode>(seekMode);
+    requestedTargetSize_ = targetSize;
+    startAfterMs_ = useSettleDelay ? (nowMs() + kHoverSettleMs) : 0;
     // A hover is activity: the five-minute idle release counts a decoder nobody
     // asked anything of, not a session that has been open for five minutes.
-    idleSinceMs_ = startAfterMs_;
+    idleSinceMs_ = nowMs();
     pump();
     updateTimer();
 }
@@ -435,6 +538,19 @@ void FramePreviewWorker::shutdown() {
     phase_ = Phase::Idle;
     if (timer_ != nullptr) timer_->stop();
     releaseCore();
+}
+
+void FramePreviewWorker::mpvWakeupCallback(void* ctx) {
+    auto* worker = static_cast<FramePreviewWorker*>(ctx);
+    if (worker == nullptr) return;
+    if (worker->wakeupPending_.exchange(true, std::memory_order_acq_rel)) return;
+    QMetaObject::invokeMethod(worker, &FramePreviewWorker::onWakeup, Qt::QueuedConnection);
+}
+
+void FramePreviewWorker::onWakeup() {
+    wakeupPending_.store(false, std::memory_order_release);
+    if (shuttingDown_) return;
+    tick();
 }
 
 // ── state machine ─────────────────────────────────────────────────────────
@@ -521,7 +637,7 @@ void FramePreviewWorker::tickSeek() {
         return;
     }
     if (nowMs() > deadlineMs_) {
-        fail(tr("The seek did not finish in time, so there is no frame to preview."));
+        fail(tr("The seek did not finish in time, so there is no frame to preview."), false);
         return;
     }
     if (!confirming_ && restartCount_ > restartBaseline_) {
@@ -561,11 +677,14 @@ void FramePreviewWorker::confirmSeek() {
                 // At rest on a newer instant: seek that one instead.
                 activeToken_ = requestedToken_;
                 activeSeconds_ = requestedSeconds_;
+                activeSeekMode_ = requestedSeekMode_;
+                activeTargetSize_ = requestedTargetSize_;
                 seekRetried_ = false;
                 startSeek();
                 return;
             }
-            if (std::abs(reply.number - activeSeconds_) > kPositionToleranceSec) {
+            if (activeSeekMode_ == FramePreviewService::SeekMode::Exact &&
+                std::abs(reply.number - activeSeconds_) > kPositionToleranceSec) {
                 if (!seekRetried_) {
                     // The keyframe pass landed on a neighbouring frame; one
                     // exact seek is what refines it.
@@ -573,7 +692,7 @@ void FramePreviewWorker::confirmSeek() {
                     startSeek();
                     return;
                 }
-                fail(tr("The source would not settle on the hovered position."));
+                fail(tr("The source would not settle on the hovered position."), false);
                 return;
             }
             settledSeconds_ = reply.number;
@@ -592,7 +711,7 @@ void FramePreviewWorker::tickCapture() {
     if (nowMs() > deadlineMs_) {
         if (core_ != nullptr && captureRequest_.valid()) core_->cancelAsync(captureRequest_);
         captureRequest_ = AsyncRequestId{};
-        fail(tr("The frame could not be captured in time."));
+        fail(tr("The frame could not be captured in time."), false);
     }
 }
 
@@ -622,6 +741,8 @@ void FramePreviewWorker::pump() {
     if (!ensureCore()) return;
     activeToken_ = requestedToken_;
     activeSeconds_ = requestedSeconds_;
+    activeSeekMode_ = requestedSeekMode_;
+    activeTargetSize_ = requestedTargetSize_;
     idleDropDone_ = false;
     seekRetried_ = false;
     confirming_ = false;
@@ -661,6 +782,7 @@ bool FramePreviewWorker::ensureCore() {
         return false;
     }
     core_->setEventSink([this](mpv_event* event) { onEvent(event); });
+    core_->setWakeupCallback(&FramePreviewWorker::mpvWakeupCallback, this);
     updateTimer();
     return true;
 }
@@ -670,6 +792,7 @@ void FramePreviewWorker::releaseCore() {
         if (timer_ != nullptr) timer_->stop();
         return;
     }
+    core_->setWakeupCallback(nullptr, nullptr);
     core_->cancelAllAsync();
     positionRequest_ = AsyncRequestId{};
     captureRequest_ = AsyncRequestId{};
@@ -704,10 +827,11 @@ void FramePreviewWorker::startSeek() {
     // proves where it landed, and a miss is refined by one exact seek - so the
     // frame the card gets is still the frame at the instant, never the keyframe's
     // neighbour presented as it.
-    const bool farJump =
-        !seekRetried_ && (settledSeconds_ < 0.0 ||
-                          std::abs(activeSeconds_ - settledSeconds_) > kKeyframeJumpSec);
-    const char* mode = farJump ? "absolute+keyframes" : "absolute+exact";
+    const bool keyframeSeek =
+        activeSeekMode_ == FramePreviewService::SeekMode::FastKeyframe ||
+        (!seekRetried_ && (settledSeconds_ < 0.0 ||
+                           std::abs(activeSeconds_ - settledSeconds_) > kKeyframeJumpSec));
+    const char* mode = keyframeSeek ? "absolute+keyframes" : "absolute+exact";
     const quint64 token = activeToken_;
     const AsyncRequestId request = core_->commandAsync(
         {"seek", mpvNumber(activeSeconds_), mode},
@@ -716,7 +840,7 @@ void FramePreviewWorker::startSeek() {
                 // A refusal for a superseded seek says nothing about its replacement.
                 if (phase_ != Phase::Seek) return;
                 if (token != activeToken_ || token != requestedToken_) return;
-                fail(tr("The source refused the seek: %1").arg(coreError(reply.error)));
+                fail(tr("The source refused the seek: %1").arg(coreError(reply.error)), false);
                 return;
             }
             // Counted where mpv accepted it, not where the request was queued: an
@@ -770,10 +894,17 @@ void FramePreviewWorker::captureFrame() {
             if (frame.isNull()) {
                 fail(reason.isEmpty()
                          ? tr("The captured frame could not be read.")
-                         : reason);
+                         : reason,
+                     false);
                 return;
             }
-            finishWithFrame(token, requested, decoded, frame);
+            QImage output = frame;
+            if (activeTargetSize_.isValid() && !activeTargetSize_.isEmpty() &&
+                output.size() != activeTargetSize_) {
+                output = output.scaled(activeTargetSize_, Qt::KeepAspectRatioByExpanding,
+                                       Qt::SmoothTransformation);
+            }
+            finishWithFrame(token, requested, decoded, output);
         });
     if (!request.valid()) {
         fail(tr("The player would not take the capture request."));
@@ -799,11 +930,7 @@ void FramePreviewWorker::finishWithFrame(quint64 token, double requestedSeconds,
     if (token != 0) emit frameReady(token, requestedSeconds, decodedSeconds, frame);
 }
 
-void FramePreviewWorker::fail(const QString& reason) {
-    failure_ = reason;
-    retryAfterMs_ = nowMs() + kRetryAfterFailureMs;
-    // The newest request is the one the card waits for; it asks about the same
-    // source, and the retry window would answer it with this same sentence.
+void FramePreviewWorker::fail(const QString& reason, bool fatalSourceError) {
     const quint64 token = requestedToken_;
     const double seconds = requestedSeconds_;
     phase_ = Phase::Idle;
@@ -811,18 +938,22 @@ void FramePreviewWorker::fail(const QString& reason) {
     idleSinceMs_ = nowMs();
     positionRequest_ = AsyncRequestId{};
     captureRequest_ = AsyncRequestId{};
-    // The core is left with nothing loaded, so the retry window is what decides
-    // when the source is tried again.
-    if (core_ != nullptr) {
+    if (fatalSourceError) {
+        failure_ = reason;
+        retryAfterMs_ = nowMs() + kRetryAfterFailureMs;
+        // The core is left with nothing loaded, so the retry window is what
+        // decides when the source is tried again.
+        if (core_ != nullptr) {
+            core_->cancelAllAsync();
+            core_->invalidateAsyncEpoch();
+            core_->commandAsync({"stop"}, [](const AsyncReply&) {});
+        }
+        loadedUrl_.clear();
+    } else if (core_ != nullptr) {
+        // Transient seek/capture failure on an already-loaded stream: keep the
+        // demuxer warm and avoid imposing a blackout window on later requests.
         core_->cancelAllAsync();
-        // Task 07 deleted MpvHandle::stop(): its two halves are the epoch
-        // retirement and a "stop" command on the async transport, the same
-        // shape VideoSurface uses. Neither replacement throws, so there is
-        // no "nothing was loaded" case to catch any more.
-        core_->invalidateAsyncEpoch();
-        core_->commandAsync({"stop"}, [](const AsyncReply&) {});
     }
-    loadedUrl_.clear();
     if (token != 0) {
         requestedToken_ = 0;
         emit frameUnavailable(token, seconds, reason);
@@ -871,8 +1002,11 @@ void FramePreviewWorker::updateTimer() {
     }
     // A loaded source nobody hovers still ticks slowly: that tick is what
     // releases it after kIdleDropMs.
+    const bool waitingSettle =
+        phase_ == Phase::Idle && requestedToken_ != 0 && startAfterMs_ > nowMs();
     const bool busy = phase_ != Phase::Idle || requestedToken_ != 0;
-    timer_->setInterval(busy ? kBusyTickMs : kIdleTickMs);
+    timer_->setInterval(waitingSettle ? kSettleTickMs
+                                      : (busy ? kBusyWatchdogMs : kIdleTickMs));
     if (!timer_->isActive()) timer_->start();
 }
 
@@ -905,7 +1039,9 @@ void FramePreviewService::setSource(const QString& url, quint64 sourceEpoch) {
     if (worker_ != nullptr) emit sourceChanged(source_, generation_);
 }
 
-void FramePreviewService::requestFrame(quint64 token, double seconds, CachePolicy cachePolicy) {
+void FramePreviewService::requestFrame(quint64 token, double seconds, CachePolicy cachePolicy,
+                                       SeekMode seekMode, bool useSettleDelay,
+                                       const QSize& targetSize) {
     if (stopped_ || token == 0 || isInternal(token) || !std::isfinite(seconds) || seconds < 0.0) {
         return;
     }
@@ -933,17 +1069,40 @@ void FramePreviewService::requestFrame(quint64 token, double seconds, CachePolic
             pendingToken_ = 0;
             stats_.lastHitLatencyUs = timer.nsecsElapsed() / 1000;
             stats_.lastSettleLatencyMs = timer.elapsed();
-            emit frameReady(token, seconds, cached->decodedSeconds, cached->image);
+            QImage out = cached->image;
+            if (targetSize.isValid() && !targetSize.isEmpty() && out.size() != targetSize) {
+                out = out.scaled(targetSize, Qt::KeepAspectRatioByExpanding,
+                                 Qt::SmoothTransformation);
+            }
+            emit frameReady(token, seconds, cached->decodedSeconds, out);
             return;
         }
     }
     ++stats_.workerRequests;
     // The epoch is part of the request's identity: a reply is only ever a
-    // picture of the source this request was made against.
-    if (requestEpochs_.size() > 128) requestEpochs_.clear();
+    // picture of the source this request was made against. Bounded FIFO eviction
+    // never drops the currently active pendingToken_.
+    while (requestEpochs_.size() >= 128 && !requestEpochOrder_.isEmpty()) {
+        const quint64 oldest = requestEpochOrder_.takeFirst();
+        if (oldest == pendingToken_) continue;
+        requestEpochs_.remove(oldest);
+    }
     requestEpochs_.insert(token, sourceEpoch_);
+    requestEpochOrder_.append(token);
     ensureWorker();
-    emit frameRequested(token, seconds);
+    emit frameRequested(token, seconds, static_cast<int>(seekMode), useSettleDelay, targetSize);
+}
+
+std::optional<PreviewFrame> FramePreviewService::nearestCachedFrame(double seconds,
+                                                                    double maxDeltaSec) const {
+    if (stopped_ || source_.isEmpty()) return std::nullopt;
+    return cache_.peekNearest(sourceEpoch_, seconds, maxDeltaSec);
+}
+
+void FramePreviewService::seedCacheFrom(const FramePreviewService& other) {
+    if (stopped_ || source_.isEmpty()) return;
+    if (source_ != other.source_ || sourceEpoch_ != other.sourceEpoch_) return;
+    other.cache_.copyEntriesForEpoch(sourceEpoch_, cache_);
 }
 
 void FramePreviewService::prewarm(double seconds) {
@@ -952,7 +1111,8 @@ void FramePreviewService::prewarm(double seconds) {
     if (cache_.lookup(sourceEpoch_, seconds).has_value()) return;
     prewarmToken_ = nextInternalToken_++;
     ensureWorker();
-    emit frameRequested(prewarmToken_, seconds);
+    emit frameRequested(prewarmToken_, seconds, static_cast<int>(SeekMode::FastKeyframe), false,
+                        QSize());
 }
 
 void FramePreviewService::noteActivity() {
@@ -970,6 +1130,7 @@ void FramePreviewService::cancel() {
     // > 128 entries can erase a still-pending token's epoch, silently
     // discarding its reply.
     requestEpochs_.remove(pendingToken_);
+    requestEpochOrder_.removeAll(pendingToken_);
     pendingToken_ = 0;
     prewarmToken_ = 0;
     if (worker_ != nullptr) emit cancelRequested();
@@ -1001,6 +1162,7 @@ void FramePreviewService::ensureWorker() {
     if (stopped_ || thread_ != nullptr) return;
     thread_ = new QThread;
     thread_->setObjectName(QStringLiteral("framePreview"));
+    registerPreviewThread(thread_);
     auto* worker = new FramePreviewWorker;
     worker_ = worker;
     worker->moveToThread(thread_);
@@ -1032,6 +1194,7 @@ void FramePreviewService::ensureWorker() {
                     return;
                 }
                 const quint64 epoch = requestEpochs_.take(token);
+                requestEpochOrder_.removeAll(token);
                 if (epoch != sourceEpoch_) {
                     // The source changed while this reply was crossing threads:
                     // it describes a picture that is no longer loaded.
@@ -1049,10 +1212,15 @@ void FramePreviewService::ensureWorker() {
             });
     connect(worker, &FramePreviewWorker::frameUnavailable, this,
             [this](quint64 token, double seconds, const QString& reason) {
-                if (stopped_ || isInternal(token)) return;
+                if (stopped_) return;
+                if (isInternal(token)) {
+                    if (token == prewarmToken_) prewarmToken_ = 0;
+                    return;
+                }
                 // X-M2: take the epoch before the pending check — a failed
                 // reply for a superseded token must not leak its entry.
                 requestEpochs_.take(token);
+                requestEpochOrder_.removeAll(token);
                 if (token != pendingToken_) return;
                 pendingToken_ = 0;
                 stats_.lastSettleLatencyMs = pendingSince_.elapsed();

@@ -130,6 +130,21 @@ PlayerController::PlayerController(const QString& caption, const QString& url,
     connect(idleTimer_, &QTimer::timeout, this, &PlayerController::onIdleTimeout);
 
     previewService_ = new shell::FramePreviewService(this);
+    hoverRefineTimer_ = new QTimer(this);
+    hoverRefineTimer_->setSingleShot(true);
+    hoverRefineTimer_->setInterval(120);
+    connect(hoverRefineTimer_, &QTimer::timeout, this, [this] {
+        if (closed_ || !hoverPreviewVisible_ || previewService_ == nullptr) return;
+        if (!std::isfinite(hoverPreviewSeconds_) || hoverPreviewSeconds_ < 0.0) return;
+        if (std::isfinite(hoverPreviewAppliedSeconds_) &&
+            std::abs(hoverPreviewAppliedSeconds_ - hoverPreviewSeconds_) <= 0.5) {
+            return;
+        }
+        const quint64 token = ++hoverPreviewToken_;
+        previewService_->requestFrame(
+            token, hoverPreviewSeconds_, shell::FramePreviewService::CachePolicy::Reuse,
+            shell::FramePreviewService::SeekMode::Exact, false);
+    });
     connect(previewService_, &shell::FramePreviewService::frameReady, this,
             [this](quint64 token, double requestedSeconds, double decodedSeconds,
                    const QImage& frame) {
@@ -137,7 +152,12 @@ PlayerController::PlayerController(const QString& caption, const QString& url,
             });
     connect(previewService_, &shell::FramePreviewService::frameUnavailable, this,
             [this](quint64 token, double, const QString&) {
-                if (token == hoverPreviewToken_) clearHoverPreview();
+                // Keep the live timestamp card visible on transient seek failures;
+                // only drop the stored image if nothing has been displayed yet.
+                if (token == hoverPreviewToken_ && hoverPreviewSource_.isEmpty()) {
+                    if (window_ != nullptr) window_->clearHoverPreviewFrame();
+                    emit hoverPreviewChanged();
+                }
             });
 
     buildModels();
@@ -380,7 +400,24 @@ void PlayerController::connectWindow() {
     });
     connect(window_.get(), &PlayerWindow::framePresented, this, [this] {
         hideOpeningOverlay();
-        if (previewService_ != nullptr) previewService_->noteActivity();
+        if (previewService_ != nullptr) {
+            previewService_->noteActivity();
+            if (session_ != nullptr && !session_->sourceUrl().isEmpty()) {
+                const uint64_t epoch = session_->sourceEpoch();
+                if (epoch != 0 && hoverPreviewPrewarmEpoch_ != epoch) {
+                    hoverPreviewPrewarmEpoch_ = epoch;
+                    QTimer::singleShot(450, this, [this, epoch] {
+                        if (closed_ || previewService_ == nullptr || session_ == nullptr) return;
+                        if (session_->sourceEpoch() != epoch || hoverPreviewVisible_) return;
+                        const double pos = std::isfinite(session_->position()) &&
+                                                   session_->position() >= 0.0
+                                               ? session_->position()
+                                               : 0.0;
+                        previewService_->prewarm(pos);
+                    });
+                }
+            }
+        }
         if (compareLoadingActive_) scheduleCompareStart(compareLoadingGeneration_, 80);
     });
     connect(window_.get(), &PlayerWindow::sceneReady, this, [this] {
@@ -1025,12 +1062,33 @@ void PlayerController::showHoverPreview(double seconds) {
     hoverPreviewLabel_ = episodeLabel_.isEmpty() ? caption_ : episodeLabel_;
     const quint64 token = ++hoverPreviewToken_;
     hoverPreviewVisible_ = true;
+    if (window_ != nullptr) {
+        if (const auto nearby = previewService_->nearestCachedFrame(seconds, 1.0)) {
+            const double nearbyTime = nearby->decodedSeconds >= 0.0 ? nearby->decodedSeconds
+                                                                    : nearby->requestedSeconds;
+            const bool closer =
+                hoverPreviewSource_.isEmpty() || !std::isfinite(hoverPreviewAppliedSeconds_) ||
+                std::abs(nearbyTime - seconds) < std::abs(hoverPreviewAppliedSeconds_ - seconds);
+            if (closer) {
+                window_->setHoverPreviewFrame(token, nearby->image);
+                hoverPreviewSource_ = window_->hoverPreviewSource();
+                hoverPreviewAppliedToken_ = token;
+                hoverPreviewAppliedSeconds_ = nearbyTime;
+            }
+        }
+    }
     emit hoverPreviewChanged();
-    previewService_->requestFrame(token, seconds, shell::FramePreviewService::CachePolicy::Reuse);
+    previewService_->requestFrame(
+        token, seconds, shell::FramePreviewService::CachePolicy::Reuse,
+        shell::FramePreviewService::SeekMode::FastKeyframe, true);
+    if (hoverRefineTimer_ != nullptr) hoverRefineTimer_->start();
 }
 
 void PlayerController::hideHoverPreview() {
+    if (hoverRefineTimer_ != nullptr) hoverRefineTimer_->stop();
     if (hoverPreviewToken_ != 0) ++hoverPreviewToken_;
+    hoverPreviewAppliedToken_ = 0;
+    hoverPreviewAppliedSeconds_ = -1.0;
     if (previewService_ != nullptr) previewService_->cancel();
     if (!hoverPreviewVisible_ && hoverPreviewSource_.isEmpty()) return;
     hoverPreviewVisible_ = false;
@@ -1044,13 +1102,26 @@ void PlayerController::hideHoverPreview() {
 
 void PlayerController::applyHoverPreviewFrame(quint64 token, double requestedSeconds,
                                                double decodedSeconds, const QImage& image) {
-    if (closed_ || window_ == nullptr || token != hoverPreviewToken_ || image.isNull()) return;
-    if (std::abs(requestedSeconds - hoverPreviewSeconds_) > 0.75) return;
+    if (closed_ || window_ == nullptr || !hoverPreviewVisible_ || image.isNull()) return;
+    // Allow superseded in-flight frames to update the card smoothly during
+    // scrubbing, while rejecting out-of-order frames older than what is shown.
+    if (token < hoverPreviewAppliedToken_) return;
+    const double frameTime = decodedSeconds >= 0.0 ? decodedSeconds : requestedSeconds;
+    const bool isLatest = (token == hoverPreviewToken_);
+    if (!isLatest && !hoverPreviewSource_.isEmpty() && std::isfinite(hoverPreviewAppliedSeconds_) &&
+        std::isfinite(hoverPreviewSeconds_) &&
+        std::abs(hoverPreviewAppliedSeconds_ - hoverPreviewSeconds_) <=
+            std::abs(frameTime - hoverPreviewSeconds_)) {
+        return;
+    }
+    hoverPreviewAppliedToken_ = token;
+    hoverPreviewAppliedSeconds_ = frameTime;
     window_->setHoverPreviewFrame(token, image);
     const QUrl source = window_->hoverPreviewSource();
     hoverPreviewSource_ = source;
-    hoverPreviewVisible_ = !source.isEmpty();
-    hoverPreviewTime_ = formatTime(decodedSeconds >= 0.0 ? decodedSeconds : requestedSeconds);
+    if (isLatest) {
+        hoverPreviewTime_ = formatTime(frameTime);
+    }
     emit hoverPreviewChanged();
 }
 

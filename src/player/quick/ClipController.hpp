@@ -84,7 +84,8 @@ class ClipController : public QObject {
     Q_PROPERTY(QColor accentInk READ accentInk NOTIFY themeChanged)
 
 public:
-    explicit ClipController(VideoSession* source, QString caption, QObject* parent = nullptr);
+    explicit ClipController(VideoSession* source, QString caption, QObject* parent = nullptr,
+                            const shell::FramePreviewService* seedPreview = nullptr);
     ~ClipController() override;
 
     VideoSession* session() const { return preview_; }
@@ -161,7 +162,7 @@ signals:
 
 private:
     enum class ExportState { Editing, Choosing, Confirming, Encoding, Cancelling, Saved, Failed };
-    struct TileRequest { int row; double seconds; quint64 generation; };
+    struct TileRequest { int row; double seconds; quint64 generation; bool retried = false; };
     struct ActiveTile { TileRequest request; quint64 token; };
 
     void initializeSizeEstimator();
