@@ -719,6 +719,15 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
             q.order = QStringLiteral("desc");
         });
     }
+    auto* randomBtn = new QPushButton(tr("Surprise me"), quickCategoriesBar_);
+    randomBtn->setObjectName(QStringLiteral("randomAnimeButton"));
+    randomBtn->setToolTip(tr("Open a random anime matching active filters"));
+    theme::applyActionRole(randomBtn, theme::ActionRole::Secondary);
+    connect(randomBtn, &QPushButton::clicked, this, [this] {
+        openRandomAnime(catalogueQuery_.genres, catalogueQuery_.formats);
+    });
+    qcFlow->addWidget(randomBtn);
+
     auto* moreFiltersBtn = new QPushButton(tr("More filters…"), quickCategoriesBar_);
     theme::applyActionRole(moreFiltersBtn, theme::ActionRole::Ghost);
     connect(moreFiltersBtn, &QPushButton::clicked, this, &SearchPage::showCatalogueFilters);
@@ -1249,6 +1258,28 @@ void SearchPage::setResultsGridMode(bool grid) {
         if (resultsGridScroll_ != nullptr) resultsGridScroll_->setVisible(grid);
         if (results_ != nullptr) results_->setVisible(!grid);
     }
+}
+void SearchPage::openRandomAnime(const QStringList& genres, const QStringList& formats) {
+    backend::MikaiClient* client = &client_;
+    const QPointer<SearchPage> self(this);
+    runner_.run(
+        [client, genres, formats] {
+            return QVariant::fromValue(client->getRandomAnime(genres, formats));
+        },
+        [self](const QVariant& result) {
+            if (self.isNull()) return;
+            const auto detail = result.value<backend::AnimeDetail>();
+            if (!detail.ref.isEmpty()) {
+                const QString poster = !detail.poster.big.webp.isEmpty()
+                                           ? detail.poster.big.webp
+                                           : detail.poster.big.jpg;
+                Q_EMIT self->openRequested(detail.ref, poster);
+            }
+        },
+        [self](const backend::Failure& failure) {
+            if (self.isNull()) return;
+            self->reportFailure(failure);
+        });
 }
 void SearchPage::rebuildActiveFilterChips() {
     if (activeFiltersBar_ == nullptr || activeFiltersLayout_ == nullptr) return;

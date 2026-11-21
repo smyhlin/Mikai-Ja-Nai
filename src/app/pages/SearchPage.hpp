@@ -244,6 +244,7 @@ private:
     void syncResultsSortToolbar();
     void setResultsGridMode(bool grid);
     void rebuildActiveFilterChips();
+    void openRandomAnime(const QStringList& genres = {}, const QStringList& formats = {});
     void retranslateUi();
     /// The heading of the block `key` names, in the active language. Both the
     /// constructor and a retranslate pass take it from here, so the two can
