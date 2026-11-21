@@ -614,17 +614,6 @@ Item {
     // Not modal and not dismissible: the rows live until one is chosen, a new
     // source supersedes them or the player closes, exactly as the old status
     // row did. Transport stays usable underneath.
-    MouseArea {
-        anchors.fill: remedyPanel
-        visible: remedyPanel.visible
-        z: remedyPanel.z - 1
-        acceptedButtons: Qt.AllButtons
-        onPressed: mouse => {
-            root.controller.noteUserActivity()
-            mouse.accepted = true
-        }
-    }
-
     FocusScope {
         id: remedyLayer
         anchors.fill: parent
@@ -665,6 +654,17 @@ Item {
         Keys.onEscapePressed: event => {
             if (dismissToOriginal()) {
                 event.accepted = true
+            }
+        }
+
+        MouseArea {
+            anchors.fill: remedyPanel
+            visible: remedyPanel.visible
+            z: remedyPanel.z - 1
+            acceptedButtons: Qt.AllButtons
+            onPressed: mouse => {
+                root.controller.noteUserActivity()
+                mouse.accepted = true
             }
         }
 
