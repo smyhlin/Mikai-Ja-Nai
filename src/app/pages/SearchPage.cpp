@@ -3142,19 +3142,117 @@ void SearchPage::showCatalogueFilters() {
             refresh();
         };
 
+    const auto buildTriStateChipBoard =
+        [&dialog](QVBoxLayout* section, QLineEdit* searchBox, QListWidget* incList,
+                  QListWidget* excList) {
+            QWidget* owner = section->parentWidget();
+            auto* legend = new QLabel(tr("Click a chip to cycle: Off → + Include → − Exclude"), owner);
+            legend->setObjectName(QStringLiteral("muted"));
+            section->addWidget(legend);
+
+            auto* board = new QWidget(owner);
+            auto* flow = new FlowLayout(theme::kSpacingXs, theme::kSpacingXs);
+            flow->setContentsMargins(0, 0, 0, 0);
+            board->setLayout(flow);
+
+            struct ChipBinding {
+                QPushButton* btn = nullptr;
+                QString label;
+                QString canonical;
+                int row = 0;
+            };
+            auto bindings = std::make_shared<QVector<ChipBinding>>();
+
+            const auto applyChipVisual = [](QPushButton* btn, const QString& label, int state) {
+                if (state == 1) {
+                    btn->setText(QStringLiteral("+ ") + label);
+                    btn->setObjectName(QStringLiteral("pagerChipActive"));
+                    btn->setStyleSheet(QString());
+                } else if (state == 2) {
+                    btn->setText(QStringLiteral("− ") + label);
+                    btn->setObjectName(QStringLiteral("pagerChip"));
+                    btn->setStyleSheet(QStringLiteral(
+                        "background: rgba(239, 68, 68, 0.18); border: 1px solid rgba(239, 68, 68, 0.65);"));
+                } else {
+                    btn->setText(label);
+                    btn->setObjectName(QStringLiteral("pagerChip"));
+                    btn->setStyleSheet(QString());
+                }
+                btn->style()->unpolish(btn);
+                btn->style()->polish(btn);
+            };
+
+            const auto syncAllChips = [bindings, incList, excList, applyChipVisual]() {
+                for (const ChipBinding& b : *bindings) {
+                    const bool inc = b.row < incList->count() &&
+                                     incList->item(b.row)->checkState() == Qt::Checked;
+                    const bool exc = b.row < excList->count() &&
+                                     excList->item(b.row)->checkState() == Qt::Checked;
+                    applyChipVisual(b.btn, b.label, inc ? 1 : (exc ? 2 : 0));
+                }
+            };
+
+            for (int r = 0; r < incList->count(); ++r) {
+                const QString lbl = incList->item(r)->text();
+                const QString key = incList->item(r)->data(Qt::UserRole).toString();
+                auto* chip = new QPushButton(lbl, board);
+                chip->setCursor(Qt::PointingHandCursor);
+                chip->setToolTip(tr("%1 — click to include, click again to exclude").arg(lbl));
+                bindings->append({chip, lbl, key, r});
+                connect(chip, &QPushButton::clicked, &dialog, [r, incList, excList]() {
+                    QListWidgetItem* incItem = incList->item(r);
+                    QListWidgetItem* excItem = excList->item(r);
+                    if (incItem == nullptr || excItem == nullptr) return;
+                    if (incItem->checkState() != Qt::Checked && excItem->checkState() != Qt::Checked) {
+                        incItem->setCheckState(Qt::Checked);
+                    } else if (incItem->checkState() == Qt::Checked) {
+                        incItem->setCheckState(Qt::Unchecked);
+                        excItem->setCheckState(Qt::Checked);
+                    } else {
+                        excItem->setCheckState(Qt::Unchecked);
+                    }
+                });
+                flow->addWidget(chip);
+            }
+
+            connect(incList, &QListWidget::itemChanged, &dialog,
+                    [syncAllChips](QListWidgetItem*) { syncAllChips(); });
+            connect(excList, &QListWidget::itemChanged, &dialog,
+                    [syncAllChips](QListWidgetItem*) { syncAllChips(); });
+            if (searchBox != nullptr) {
+                connect(searchBox, &QLineEdit::textChanged, &dialog,
+                        [bindings](const QString& term) {
+                            const QString needle = term.trimmed();
+                            for (const ChipBinding& b : *bindings) {
+                                const bool match =
+                                    needle.isEmpty() ||
+                                    b.label.contains(needle, Qt::CaseInsensitive) ||
+                                    b.canonical.contains(needle, Qt::CaseInsensitive);
+                                b.btn->setVisible(match);
+                            }
+                        });
+            }
+            syncAllChips();
+            section->addWidget(board);
+            // Keep backing QListWidgets hidden (still owned by dialog for programmatic sync).
+            incList->hide();
+            excList->hide();
+        };
+
     auto* genres = addSection(tr("Genres"));
     attachSectionHeaderTools(0, tr("Genres"), genres, {genreInclude, genreExclude});
-    addSectionSearch(genres, QStringLiteral("genreFilterSearch"), tr("Search genres"),
-                     {genreInclude, genreExclude});
-    addField(genres, tr("Genres include"), genreInclude);
-    addField(genres, tr("Genres exclude"), genreExclude);
+    QLineEdit* genreSearch =
+        addSectionSearch(genres, QStringLiteral("genreFilterSearch"), tr("Search genres…"),
+                         {genreInclude, genreExclude});
+    buildTriStateChipBoard(genres, genreSearch, genreInclude, genreExclude);
     addField(genres, tr("Genre matching"), genreMatch);
+
     auto* tagsSection = addSection(tr("Tags"));
     attachSectionHeaderTools(1, tr("Tags"), tagsSection, {tagInclude, tagExclude});
-    addSectionSearch(tagsSection, QStringLiteral("tagFilterSearch"), tr("Search tags"),
-                     {tagInclude, tagExclude});
-    addField(tagsSection, tr("Tags include"), tagInclude);
-    addField(tagsSection, tr("Tags exclude"), tagExclude);
+    QLineEdit* tagSearch =
+        addSectionSearch(tagsSection, QStringLiteral("tagFilterSearch"), tr("Search tags…"),
+                         {tagInclude, tagExclude});
+    buildTriStateChipBoard(tagsSection, tagSearch, tagInclude, tagExclude);
     addField(tagsSection, tr("Tag matching"), tagMatch);
 
     const int currentYear = QDate::currentDate().year();
