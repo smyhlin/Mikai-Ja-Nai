@@ -2936,15 +2936,20 @@ void SearchPage::showCatalogueFilters() {
         column->addWidget(field);
         section->addWidget(block);
     };
-    // A filtered list keeps only the height its visible rows need, so narrowing
-    // a long dictionary never leaves a scroll box of blank space behind.
+    // Expand choice lists to their visible row height with no inner vertical
+    // scrollbar so the single outer section QScrollArea handles wheel scrolling
+    // smoothly without nested scroll-wheel hijacking.
     const auto fitChoiceList = [](QListWidget* list) {
+        list->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
         int shown = 0;
         for (int row = 0; row < list->count(); ++row) {
             if (!list->item(row)->isHidden()) ++shown;
         }
-        list->setFixedHeight(theme::kCatalogueChoiceRowHeight * qBound(1, shown, 6) +
-                             theme::kSpacingLarge);
+        list->setFixedHeight(shown > 0
+                                 ? theme::kCatalogueChoiceRowHeight * shown + theme::kSpacingSmall
+                                 : 0);
+        list->setVisible(shown > 0);
     };
     const auto filterChoices = [fitChoiceList](QListWidget* list, const QString& term) {
         const QString needle = term.trimmed();
