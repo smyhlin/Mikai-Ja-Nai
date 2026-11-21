@@ -63,7 +63,7 @@ video ABI, not mpv frontend state transitions, RIFE inference, image quality or 
 
 Functional engine verification, not a Settings throughput sample or a change to the historical
 matrix. Local date: 2026-11-13; evidence timestamp: `2026-11-12T23:34:51Z`.
-Machine/backend: Windows x64, NVIDIA GeForce RTX 5090, AnimeJaNai v0.24.0 ABI 9,
+Machine/backend: Windows x64, NVIDIA GeForce RTX 5090, AnimeJaNai v0.27.0 ABI 9,
 TensorRT-RTX 1.7.1. Model: 4× Real-ESRGAN AnimeVideo v3 fp32, SHA-256
 `78baa685a1a92cac6e14ab2af2a8ad0ef56fa48629563b1414e3a7acc54d86e2`.
 

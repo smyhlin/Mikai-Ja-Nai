@@ -22,7 +22,7 @@ From the main window, choose **Open video → Video file…** and select a file.
 
 The player does not move or delete a local source file. Local media can have embedded audio/subtitle tracks and exact-match sidecars; unrelated files in the containing folder are not indiscriminately loaded. Use **Audio** and **Subtitles** to choose available tracks; the local subtitle menu includes **Off**. Track rows may include title, language, codec, channels and flags such as external, forced or default. A menu may report that no alternate audio or no subtitles are available when the source has no choices.
 
-![Player window with a paused local colour-pattern video, the dock, timeline and transport controls](images/gallery-2026-11-05/player.png)
+![Player window with a paused local colour-pattern video, the dock, timeline and transport controls](images/gallery-2026-11-21/player.png)
 
 *A local file paused mid-playback, original pipeline, no processing preset. The pictured clip is a synthetic project-generated 12-second 320×180 HEVC colour-pattern fixture, not a provider stream or anime footage. This is a November 2026 capture of the prior player layout; it is not a screenshot of the current Quick scene.*
 
@@ -33,6 +33,10 @@ Catalogue variant selection and local track selection are different operations: 
 - **Space** toggles play/pause. The player dock also has a play/pause control.
 - The timeline shows playback position and remaining time when duration is known. Drag/scrub it to seek; the final pointer position on left-button release selects the target, even if the last movement event was elsewhere.
 - Hover over a seekable video’s timeline to preview a frame and timestamp without moving playback. Repeated movement over the same preview position keeps the pending decode; the last decoded picture can remain visible while the next one loads. The card belongs to the bar: moving the pointer off the timeline dismisses it immediately, so it never lingers over the picture. During a drag, the card shows the time without decoding a frame. Unseekable or unavailable sources show a reason instead.
+
+![Timeline hover thumbnail preview card showing a decoded frame and timestamp](images/gallery-2026-11-21/player-hover-preview.png)
+
+*Hover preview uses a fast keyframe-first decode with the lowest-resolution HLS variant (`previewSourceUrl` + `hls-bitrate=min`), `start=<t>` cold open, `FastKeyframe` scrubbing with post-arrival exact refinement, `vd-lavc-skipframe=nonref`, and a 4-frame `HoverPreviewImageProvider` ring buffer with sync lookup (#43–#48).*
 - MoonAnime **Opening**, **Ending**, **Mixed opening**, **Mixed ending** and **Recap** ranges are tinted with the app accent; the hover card names each range under the pointer.
 - When MoonAnime supplies skip markers, **Skip Opening**, **Skip Ending** and the other segment offers appear above the right side of the player dock while that range is playing. Select one to seek to its end; overlapping segments remain separate offers. Markers depend on the selected episode and provider.
 - The separate **+85** control advances by 85 seconds, bounded by a known duration.
@@ -43,6 +47,8 @@ Catalogue variant selection and local track selection are different operations: 
 In fullscreen, the dock and its overlays hide after about 2.5 seconds without pointer movement. That idle hide is deferred while the pointer rests on the timeline, the volume control or the dock, while an overlay is open, or during a drag. The next movement brings the chrome back. In windowed mode the dock stays visible.
 
 The **Q** control opens the in-scene **Settings** menu. It lists the speed presets (**0.5x Slow**, **1.0x Normal**, **1.2x Slightly faster**, **1.5x Fast**, **1.7x Very fast**, **2.0x Double speed**), quick **SCALING** modes, and **Make mikai the default video player**. Speed and scaling choices can be adjusted without leaving the menu. Default-player registration adds Mikai as a candidate and opens the platform's default-applications settings; it does not change your default automatically.
+
+![Player Settings popover menu with quality, speed, audio, subtitles and scaling controls](images/gallery-2026-11-21/player-settings-menu.png)
 
 ## Keyboard, mouse and window navigation
 
@@ -76,6 +82,10 @@ In a windowed or fullscreen frameless player the top-right corner holds **Minimi
 ## Picture-in-picture
 
 Choose the player’s **Picture in picture** control to compact the same player window and session; playback does not restart, switch surfaces or create a second decode. **Restore full player** returns to the full layout, and **Close player** closes the player. PiP keeps the timeline, position/remaining-time readout, play/pause, −85/+85 seek, volume, audio/subtitle menus and player settings menu available in its compact controls. Compare and the other picture-context actions are not shown in the compact layout.
+
+![Redesigned compact Picture-in-Picture window with minimal overlay](images/gallery-2026-11-21/player-pip.png)
+
+*Redesigned compact PiP: auto-hide on focus/mouse leave, full-surface drag, minimal overlay (480×270).*
 
 The window manager controls movement, resizing and stacking. On Wayland, the compositor may not honor movement, resize or always-on-top requests. Restoring returns to the full player; closing PiP closes the player session.
 
@@ -130,7 +140,7 @@ The file is added to mpv and selected, so it appears in the same selectors as an
 
 For a local file, open the picture context menu and choose **Media information**. The inspector has **Overview**, **Tree**, and **Plain text** views, based on the active playback session. It reports metadata such as filename/path, container, duration, file size, bitrate, dimensions, frame rate and video codec, plus available audio/subtitle track information. Information is gathered asynchronously; unavailable fields/errors are shown rather than guessed, and the dialog is non-modal so it can stay beside the picture until you close it. This menu action is offered for local media, not as a general catalogue-stream inspector.
 
-![Media information Overview dialog showing the local fixture's path, container, duration, dimensions, frame rate and HEVC codec](images/gallery-2026-11-05/media-info.png)
+![Media information Overview dialog showing the local fixture's path, container, duration, dimensions, frame rate and HEVC codec](images/gallery-2026-11-21/media-info.png)
 
 *The **Overview** view for the same synthetic fixture; the path shown is the repository's own `tests/fixtures/media` copy. It is not a provider stream and involves no AI processing.*
 
@@ -151,7 +161,7 @@ Choose a view in the **Mode:** menu; the window opens in **Side-by-side**:
 
 Choose **Bilinear** or **Nearest Neighbor** in the **Filter:** list for scaling. The mouse wheel zooms around the pointer. Drag the picture to pan; double-click the picture away from the split divider fits the image. **Fit** (or **F**) fits the view. **S** swaps A and B; **R** captures the current player frame again; **P** pins/unpins the Compare window so it stays on top. Hold **Space** to peek at Side A; releasing it restores the selected comparison view, including its zoom and pan. **F11** toggles Compare fullscreen. **Esc** leaves fullscreen first, otherwise closes Compare. While the pointer is over the picture, the toolbar reads out its pixel position and colour.
 
-![Compare window in side-by-side mode with the original selected on the left and Anime4K A Fast selected on the right](images/gallery-2026-11-05/compare.png)
+![Compare window in side-by-side mode with the original selected on the left and Anime4K A Fast selected on the right](images/gallery-2026-11-21/compare.png)
 
 *Compare on a paused synthetic 320×180 HEVC colour-pattern clip. Side A is disabled (the original frame); side B has **Anime4K A (Fast)** selected. The window clips that label, and the image does not establish that the shader finished rendering or provide a quality or performance result.*
 

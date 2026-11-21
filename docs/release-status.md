@@ -2,6 +2,12 @@
 
 Published packages, release-specific changes and checksums are available on the [GitHub releases page](https://github.com/smyhlin/Mikai-Ja-Nai/releases). The original [v0.1.0](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0) was followed by the [player and usability update](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0-update-20261101). Local rebuilds produce their own `SHA256SUMS`; a rebuild alone does not require a documentation update.
 
+### v0.2.3.2 Linux release candidates & preview overhaul — 2026-11-21
+
+Commit `6cae66c1` plus HLS preview fixes. Overhauled hover preview & Clip Cut Window preload pipeline (#43–#48): event-driven `mpv_set_wakeup_callback`/`mpv_wakeup` worker, lowest-resolution HLS variant routing (`previewSourceUrl`) + `hls-bitrate=min`, `start=<t>` cold open, `FastKeyframe` scrubbing + post-arrival exact refinement, `vd-lavc-skipframe=nonref`, `HoverPreviewImageProvider` 4-frame ring buffer + sync lookup, 450 ms post-first-frame `prewarm()`, `ClipController` shared cache + sequential forward filmstrip + off-GUI 228×128 scaling + single-pass tile retry + zero-seek `ClipSizeEstimate` + process-wide `ClipEncodingProfile` cache.
+
+Verification: 4/4 CTest entries passed — `TestHoverPreview`, `TestCompareClip`, `TestClipExport`, `TestClipSizeEstimate`. New 18-image gallery added under `docs/images/gallery-2026-11-21/` (`catalogue.png`, `filters.png`, `title-page.png`, `player.png`, `player-hover-preview.png`, `player-settings-menu.png`, `player-processing-menu.png`, `player-pip.png`, `clip.png`, `compare.png`, `media-info.png`, `settings.png`, `settings-customization.png`, `settings-general.png`, `settings-shortcuts.png`, `settings-processing.png`).
+
 ### v0.2.3.1 hotfix published — 2026-11-21
 
 [Release v0.2.3.1](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.2.3.1) was tagged at `1cae547`, the Linux artifact revision. The Linux AppImage and tarball were rebuilt from `1cae547`; the Windows application payload identifies `21bd1c9`. The Windows packaging commits `80409dc` and `1cae547` updated the system-DLL import allowlist and installer file-version handling without changing the application payload. All six release assets were downloaded and the five product files matched the published `SHA256SUMS`.

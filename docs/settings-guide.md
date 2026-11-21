@@ -16,7 +16,15 @@ Open **Settings** from the main window. The settings window has these pages:
 
 The sidebar groups the pages as listed, and the window normally opens on **Customization → General**; an invalid stored preset binding opens **Application → Keyboard shortcuts** instead so the conflict is visible. Page contents scroll independently; the **Save** and **Cancel** buttons stay in the Settings footer. **Save** commits preferences immediately and remains open (displaying an inline **Saved** confirmation for a moment), allowing continuous adjustments across multiple pages without closing the window; **Cancel**, Escape, or closing the window closes it. For detailed processing, component installation and benchmark instructions, see the [processing guide](processing-guide.md).
 
-**Check for updates automatically** controls the startup release check. It is enabled by default; save Settings to change it. The check sends one unauthenticated request to GitHub for the latest stable release. The main window also offers **Check for updates** on demand. A notice links to the release page and can suppress reminders for that version. No update is downloaded or installed by the app.
+**Check for updates automatically** controls the startup release check. It is enabled by default; save Settings to change it. The check sends one unauthenticated request to GitHub for the latest stable release. The main window also offers **Check for updates** on demand. A notice links to the release page and can suppress reminders for that version. No update is downloaded or installed automatically without explicit user confirmation.
+
+### Update channel (Stable / Nightly)
+
+The update channel selector switches between the **Stable** and **Nightly** release tracks (#16). Stable follows the published stable releases; Nightly opts into pre-release builds. The choice persists in settings and is applied on the next update check. Switching channels does not download or install anything by itself; the next check uses the selected track.
+
+### SHA-256 verified auto-update
+
+The in-app auto-updater (v0.2.3.1, #15) verifies downloaded updates against their published SHA-256 before applying them. A mismatched or unverifiable payload is rejected and the running build is left untouched; no update is applied unless its checksum matches the published manifest.
 
 ## Change appearance and display preferences
 
@@ -37,7 +45,7 @@ In **Customization → Appearance**:
 - A profile created by an older version, which stored a gradient colour separately and had no source setting, keeps that colour as a **Custom** choice. The app cannot tell a deliberately chosen colour from the old default, so it never discards one; pick **Auto (follow accent)** once to join the accent.
 - **Reset** resets the appearance-page choices (accent, radius and background-gradient settings, including the gradient source) to the shipped values. It does not reset the separate General-page choices.
 
-![Appearance settings page with a pink accent swatch selected and a custom background gradient](images/gallery-2026-11-05/settings.png)
+![Appearance settings page](images/gallery-2026-11-21/settings.png)
 
 *The Appearance page with a custom pink accent and custom gradient — an example choice, not the shipped defaults. The capture was taken with no edit saved.*
 
@@ -139,7 +147,7 @@ While an acquisition runs, the window-level bar names the bytes received (`Downl
 
 The graphs land in the app-owned custom-model directory (`…/animejanai/models/custom/`) and are then selectable as spatial **Upscale** steps executed through AnimeJaNai in the player and as spatial comparison candidates. The publisher's model card is the licence record for those bytes; this project does not redistribute them. See [Optional upscalers](processing-guide.md#optional-upscalers-downloaded-onnx-graphs).
 
-![Components settings page with TensorRT for RTX selected and its runtime reported as not installed](images/gallery-2026-11-05/components.png)
+![Processing settings page](images/gallery-2026-11-21/settings-processing.png)
 
 *The Components page during the Windows capture: TensorRT for RTX selected, its runtime reported as not installed, and no download started. The capture does not show a working RTX runtime or any inference result.*
 

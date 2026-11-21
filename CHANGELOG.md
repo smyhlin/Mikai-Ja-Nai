@@ -2,6 +2,23 @@
 
 Published changes are recorded with their downloads on the [GitHub releases page](https://github.com/smyhlin/Mikai-Ja-Nai/releases). Artifact checksums live with each release, not in the documentation.
 
+## 0.2.3.2 — 2026-11-21
+
+- Overhaul hover preview & Clip Cut Window preload pipeline (#43–#48):
+  - `FramePreviewService` becomes event-driven through `MpvApi`'s `mpv_set_wakeup_callback`/`mpv_wakeup` instead of polling; lowest-resolution HLS variant routing via `previewSourceUrl` + `hls-bitrate=min`, `start=<t>` cold open, `FastKeyframe` scrubbing with post-arrival exact refinement, `vd-lavc-skipframe=nonref`.
+  - `HoverPreviewImageProvider` 4-frame ring buffer with sync lookup plus a 450 ms post-first-frame `prewarm()`.
+  - `ClipController` shared cache with sequential forward filmstrip, off-GUI 228×128 scaling, single-pass tile retry, zero-seek `ClipSizeEstimate`, and a process-wide `ClipEncodingProfile` cache.
+- Documentation gallery refreshed under `docs/images/gallery-2026-11-21/` (catalogue, filters, title page, player, hover preview, settings, PiP, clip, compare, media info).
+
+## 0.2.3.1 — 2026-11-21
+
+- SHA-256 verified in-app auto-updater (#15) and Stable/Nightly update channel switch (#16).
+- Mikai Public API v1.5 Tier 1 & Tier 3 endpoints (#37); open video by URL persistent history (#41).
+- Redesigned compact PiP (`PipControls.qml`: auto-hide on focus/mouse leave, full-surface drag, minimal overlay).
+- Player presentation is a native Qt Quick/QML window (`PlayerWindow`/`PlayerController`/`ClipWindow`) retaining the C++ playback engine; Compare, Clip, Media Information, Settings and Components remain Widgets interfaces.
+- Security/stability fixes (#27–#42).
+- Qt Quick/QML hover preview & clip preload pipeline foundations; `MpvApi` wakeup callbacks.
+
 ## 0.2.3 — Unreleased
 
 This release introduces the player-only Qt Quick/QML frontend while retaining the C++ playback engine and Widgets application pages.

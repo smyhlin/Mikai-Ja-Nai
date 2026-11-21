@@ -925,3 +925,43 @@ Run on a real desktop or under Xvfb with `QT_QPA_PLATFORM=xcb`; the offscreen
 plugin cannot prove the native OpenGL video surface. Forward the local media
 path, absolute output directory and optional compiled catalogue after the
 launcher options. Exit status is zero only when every recorded check passes.
+
+## Release gallery probe (`--full-docs-gallery`)
+
+`release_gallery_probe` (built from `src/probes/app/ReleaseGalleryProbe.cpp`) is
+an explicit `EXCLUDE_FROM_ALL` desktop probe that drives the production QML
+surfaces and captures the documentation screenshot set. The full 18-image gallery
+is generated with the `--full-docs-gallery` flag:
+
+```bash
+cmake --build build/release --target release_gallery_probe --parallel 4
+./build/release/release_gallery_probe --full-docs-gallery --output-dir docs/images/gallery-2026-11-21
+```
+
+The gallery is captured on Linux x86_64 (Qt 6.12.0, xcb/Xvfb) against mikai
+0.2.3.2 and contains exactly 18 PNGs:
+
+| File | Geometry | Subject |
+|---|---|---|
+| `catalogue.png` | 1280×800 | Catalogue home: sidebar, search toolbar, request-quota badge, live feeds & posters |
+| `filters.png` | 760×780 | Catalogue filters dialog (genres, tags, years, format, status, season, studio, sort) |
+| `title-page.png` | 1280×800 | Live Title Page with poster, synopsis, metadata, provider tabs, episode list |
+| `player.png` | 1280×800 | Qt Quick/QML player paused on 1080p fixture with timeline, transport controls, codec badges |
+| `player-hover-preview.png` | 1280×800 | Timeline hover thumbnail preview card with decoded frame |
+| `player-settings-menu.png` | 1280×800 | Player Settings popover menu (quality, speed, audio, subtitles, scaling) |
+| `player-processing-menu.png` | 1280×800 | Player Enhancements/Processing popover menu (Original, Anime4K presets, AnimeJaNai, Native) |
+| `player-pip.png` | 480×270 | Redesigned compact Picture-in-Picture window |
+| `clip.png` | 1060×820 | Cut Moment / Clip editor window |
+| `compare.png` | 1280×800 | Side-by-side Compare window (Original vs Anime4K A Fast) |
+| `media-info.png` | 1280×800 | Media Information overview dialog |
+| `settings.png` | 1280×800 | Settings → Customization → Appearance |
+| `settings-customization.png` | 1280×800 | Settings → Customization → General |
+| `settings-general.png` | 1280×800 | Settings → Application → Access & General |
+| `settings-shortcuts.png` | 1280×800 | Settings → Application → Shortcuts |
+| `settings-processing.png` | 1280×800 | Settings → Playback → Processing |
+| `appearance-before.png` | 1280×800 | Catalogue baseline before live appearance preview |
+| `appearance-preview.png` | 1280×800 | Catalogue live preview after accent/gradient/radius changes |
+
+Run on a real desktop or under Xvfb with `QT_QPA_PLATFORM=xcb`; the offscreen
+plugin cannot prove the native OpenGL video surface. The probe never mutates an
+installed native/model store.

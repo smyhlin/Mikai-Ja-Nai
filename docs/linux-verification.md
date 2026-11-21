@@ -1,5 +1,9 @@
 # Native-Linux verification of the Windows-recorded QA material — 2026-11-05
 
+> Note: a newer 2026-11-21 (v0.2.3.2) verification and gallery run is recorded in
+> [release-status.md](release-status.md#v0232-linux-release-candidates--preview-overhaul--2026-11-21);
+> the 2026-11-05 historical log below is preserved unchanged.
+
 The Windows runs behind this repository's goal reports recorded a passing player-probe
 gate. This document is the native-Linux counterpart: the same tree, built and exercised
 on this desktop. The Windows evidence tree (`docs/ai/`, plus three local

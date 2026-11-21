@@ -20,7 +20,7 @@ The original Windows v0.1.0 packages can fail on startup with `__cxa_call_termin
 
 Launch the installed or portable application. The left sidebar provides **Home**, **Filters** and **Teams…**, with **Open video**, **Shortcuts** and **Settings** rows at the bottom. In narrower windows the sidebar becomes an icon rail: the brand name is hidden and tooltips name each action. **Home** returns to discovery, **Filters** opens the catalogue-filter dialog, and **Teams…** opens the team picker.
 
-**Open video** is a menu with **Video file…** and **Video URL…**. A chosen file or stream address opens in the player without using the catalogue, and it keeps working when catalogue requests fail; see [local video or URL playback](player-guide.md#local-video-or-url).
+**Open video** is a menu with **Video file…** and **Video URL…**. A chosen file or stream address opens in the player without using the catalogue, and it keeps working when catalogue requests fail; see [local video or URL playback](player-guide.md#local-video-or-url). **Video URL…** keeps a persistent history of recently opened stream addresses, so a previous URL can be reopened without retyping it (#41).
 
 The search field (**Search by title…**, with its **Enter** key hint and return arrow), **Search** and the **RPM** quota pill stay in the top toolbar while the Home blocks scroll below. Press **Enter** in the field to search. **Shortcuts** opens the keyboard-shortcut overlay; **Escape** closes it and returns to Home.
 
@@ -28,11 +28,13 @@ The **Latest updates** and **Release schedule** rows keep their full caption and
 
 Home stacks **Recently opened** (titles opened on this machine), the **Currently airing** and **Popular on Mikai** carousels, then the **Latest updates** and **Release schedule** lists. Carousel arrows page by the visible cards, and **Alt + mouse wheel** over a carousel scrolls it horizontally; a plain wheel still scrolls the page. The four server-backed blocks can be switched off under **Settings → Access → Home page sections**, and a disabled block is not requested; **Recently opened** stays because it is local. Open a result to see its title page, releases and episodes. On a title page the genre and tag chips are links: a click opens the catalogue filtered by that genre or tag, replacing the current filters. Settings groups **Customization** (General, Appearance), **Application** (Access, Keyboard shortcuts) and **Playback** (Processing, Components, Upscalers, Benchmark); its footer holds **Save** (commits without closing, displaying an inline **Saved** indicator) and **Cancel**.
 
-Catalogue browsing works anonymously, subject to the service's anonymous limits. A key is optional: enter it under **Settings → Access**, choose **Test**, then **Save** to use the higher keyed limit. Keep the key private; it is sent to the Mikai API. The Access page also carries the **API usage** readout. The [API reference](https://api.mikai.me/public/docs) explains the public API contract.
+Catalogue browsing works anonymously, subject to the service's anonymous limits. A key is optional: enter it under **Settings → Access**, choose **Test**, then **Save** to use the higher keyed limit. Keep the key private; it is sent to the Mikai API. The Access page also carries the **API usage** readout. The [API reference](https://api.mikai.me/public/docs) explains the public API contract. Mikai Ja Nai targets Mikai Public API v1.5, whose Tier 1 and Tier 3 read-only endpoints power catalogue browsing, title pages, releases, episodes and team listings (#37).
+
+The app can check for updates automatically and verifies downloaded release artifacts by SHA-256 before applying them, so an in-app update cannot silently replace the binary with a tampered build (#15). See [settings and privacy](settings-guide.md) for the update-channel controls.
 
 The Home/Search header’s **RPM** pill reads **RPM: used / limit** from the last response that carried quota headers; its tooltip adds the remaining requests, the reset countdown and any queued requests. Its dot is neutral until quota data arrives, and the other tones mark healthy, low or exhausted remaining quota rather than a general connection-health check. The title page shows the same usage inline in its header. Both are shortcuts: pressing the pill (or the title page's inline line) opens **Settings → Access**, the page that owns the key the quota belongs to.
 
-![Catalogue home showing the sidebar, top search toolbar, request quota badge, currently airing and latest update feeds, and popular titles](images/gallery-2026-11-05/catalogue.png)
+![Catalogue home showing the sidebar, top search toolbar, request quota badge, currently airing and latest update feeds, and popular titles](images/gallery-2026-11-21/catalogue.png)
 
 *Catalogue home. This capture is a Windows build with the Ukrainian interface and a custom pink accent, so your own accent, language and window size will differ; catalogue content and availability change upstream.*
 
@@ -43,7 +45,7 @@ The Home/Search header’s **RPM** pill reads **RPM: used / limit** from the las
 3. For selected genres or tags, choose **Match all** or **Match any**. Include and exclude selections let you shape a result set—for example, include a genre and exclude a tag you do not want.
 4. Choose **Apply** to apply the selections, or **Reset** to clear catalogue criteria and apply that cleared state. Both actions keep the search text. **Cancel** discards edits made in the dialog.
 
-![Catalogue filters dialog with a genre list and the filter, reset and cancel actions](images/gallery-2026-11-05/filters.png)
+![Catalogue filters dialog with a genre list and the filter, reset and cancel actions](images/gallery-2026-11-21/filters.png)
 
 *The **Catalogue filters** dialog. Selections are applied only when you choose **Apply**; **Cancel** discards them.*
 
@@ -58,6 +60,10 @@ Open **Teams…** to get the **Select a team** dialog. Type in **Search teams**;
 Tick one or more rows and choose **Filter catalogue** to apply the checked teams as catalogue criteria; this replaces the previous team selection and keeps ticks while the dialog stays open. A failed team request is shown in the picker or page status; retry by searching again or reopening the picker.
 
 ## Choose a title, release and episode
+
+![Live title page with poster, synopsis, metadata, provider tabs and episode list](images/gallery-2026-11-21/title-page.png)
+
+*Live Title Page captured from the anonymous Mikai catalogue (mikai 0.2.3.2).*
 
 Open a catalogue result to view its title page. The header has **Back** (returns to the previous title page or the catalogue view you came from), **Home**, the inline API-usage line and the API-token gear.
 

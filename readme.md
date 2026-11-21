@@ -43,28 +43,52 @@ Application captures and their provenance are documented in [Screenshot provenan
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/gallery-2026-11-05/catalogue.png" alt="Catalogue home with sidebar, search toolbar, request quota badge and currently airing and latest update feeds"></td>
-    <td width="50%"><img src="docs/images/gallery-2026-11-05/filters.png" alt="Catalogue filters dialog listing genres and other narrowing options"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-21/catalogue.png" alt="Catalogue home with sidebar, search toolbar, request quota badge, live feeds and posters"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-21/filters.png" alt="Catalogue filters dialog (genres, tags, years, format, status, season, studio, sort)"></td>
   </tr>
   <tr>
-    <td align="center"><em><strong>Catalogue.</strong> Sidebar, search, request quota, currently airing and latest updates.</em></td>
-    <td align="center"><em><strong>Filters.</strong> Genre and tag include/exclude lists, years, format, status, season, studio and sort.</em></td>
+    <td align="center"><em><strong>Catalogue.</strong> Sidebar, search, request quota, live feeds and posters.</em></td>
+    <td align="center"><em><strong>Filters.</strong> Genres, tags, years, format, status, season, studio and sort.</em></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/images/gallery-2026-11-05/settings.png" alt="Appearance settings with a pink accent and a custom background gradient"></td>
-    <td width="50%"><img src="docs/images/gallery-2026-11-05/components.png" alt="Components settings with TensorRT for RTX selected and its runtime reported as not installed"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-21/title-page.png" alt="Live Title Page with poster, synopsis, metadata, provider tabs and episode list"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-21/player.png" alt="Qt Quick/QML player paused on a 1080p fixture with timeline, transport controls and codec badges"></td>
   </tr>
   <tr>
-    <td align="center"><em><strong>Appearance.</strong> Accent, corner radius and background gradient, applied to every surface at once.</em></td>
-    <td align="center"><em><strong>Components.</strong> Optional runtime and model inventory; TensorRT for RTX is selected and its runtime is not installed.</em></td>
+    <td align="center"><em><strong>Title page.</strong> Poster, synopsis, metadata, provider tabs and episode list.</em></td>
+    <td align="center"><em><strong>Player.</strong> Paused on a 1080p fixture with timeline, transport controls and codec badges.</em></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/images/gallery-2026-11-05/player.png" alt="Player window showing a paused local colour-pattern video with its timeline and transport controls"></td>
-    <td width="50%"><img src="docs/images/gallery-2026-11-05/compare.png" alt="Compare window in side-by-side mode with the original selected on the left and the Anime4K A Fast preset selected on the right"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-21/player-hover-preview.png" alt="Timeline hover thumbnail preview card with a decoded frame"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-21/player-pip.png" alt="Redesigned compact Picture-in-Picture window"></td>
   </tr>
   <tr>
-    <td align="center"><em><strong>Player.</strong> A local file paused mid-playback, with the real decode, timeline and transport chrome.</em></td>
-    <td align="center"><em><strong>Compare.</strong> One captured frame, with the original and an Anime4K preset selected side by side.</em></td>
+    <td align="center"><em><strong>Hover preview.</strong> Timeline hover thumbnail preview card with a decoded frame.</em></td>
+    <td align="center"><em><strong>PiP.</strong> Redesigned compact window with auto-hide and full-surface drag.</em></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/gallery-2026-11-21/clip.png" alt="Cut Moment / Clip editor window with sequential filmstrip, trim handles, quality selector and size estimate"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-21/compare.png" alt="Side-by-side Compare window (Original vs Anime4K A Fast)"></td>
+  </tr>
+  <tr>
+    <td align="center"><em><strong>Clip.</strong> Cut Moment editor with filmstrip, trim handles, quality selector and size estimate.</em></td>
+    <td align="center"><em><strong>Compare.</strong> Original vs Anime4K A Fast, side by side.</em></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/gallery-2026-11-21/player-settings-menu.png" alt="Player Settings popover menu (quality, speed, audio, subtitles, scaling)"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-21/player-processing-menu.png" alt="Player Enhancements/Processing popover menu (Original, Anime4K presets, AnimeJaNai, Native)"></td>
+  </tr>
+  <tr>
+    <td align="center"><em><strong>Settings menu.</strong> Quality, speed, audio, subtitles and scaling.</em></td>
+    <td align="center"><em><strong>Processing menu.</strong> Original, Anime4K presets, AnimeJaNai and Native.</em></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/gallery-2026-11-21/settings-general.png" alt="Settings Application Access and General (interface language, HDR policy, Stable/Nightly channel, auto-update, scaling, API key)"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-21/settings.png" alt="Settings Customization Appearance (accent, corner radius, background gradient)"></td>
+  </tr>
+  <tr>
+    <td align="center"><em><strong>Settings general.</strong> Interface language, HDR policy, Stable/Nightly channel, auto-update, scaling and API key.</em></td>
+    <td align="center"><em><strong>Settings appearance.</strong> Accent, corner radius and background gradient.</em></td>
   </tr>
 </table>
 
@@ -80,7 +104,7 @@ The artifacts are unsigned, and [release status](docs/release-status.md) records
 
 Linux packages include the project's libmpv runtime, but still require compatible host graphics, audio and system libraries. They are not universal Linux bundles. The original Windows v0.1.0 packages have a startup-runtime issue; the [player and usability update](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0-update-20261101) includes the fix.
 
-As checked on 2026-11-13, the latest published release is **[v0.2.1](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.2.1)**. Current source is **0.2.3, unreleased**; its Qt Quick player and later changes are not in those downloads. Local Windows review artifacts are not a public release. See the [application state and release status](docs/release-status.md#application-state--2026-11-13) for observed checks, open issues and publication blockers.
+As checked on 2026-11-21, the latest published release is **[v0.2.3.1](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.2.3.1)**. Current source is **0.2.3.2** (in-app SHA-256 verified auto-updater, Stable/Nightly release channels, Mikai Public API v1.5 endpoints, persistent Open-by-URL history, redesigned compact PiP, and the fast HLS hover-preview / Clip filmstrip pipeline). See the [application state and release status](docs/release-status.md) for observed checks, open issues and publication blockers.
 
 ## Quick start
 

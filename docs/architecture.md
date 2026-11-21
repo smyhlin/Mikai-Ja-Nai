@@ -75,7 +75,7 @@ The over-budget scratch path and DPI event routing were checked against their so
 
 ## API and state boundaries
 
-The API client sends an application/version identity (`Mikai Wrapper/0.2.0` for this release) rather than impersonating a browser. API keys are optional, remain local configuration and are not compiled into source.
+The API client sends an application/version identity (`Mikai Wrapper/0.2.3.2` for this release) rather than impersonating a browser. API keys are optional, remain local configuration and are not compiled into source.
 
 The client keeps a bounded in-memory JSON cache keyed by request URL and credential generation. Fresh cache directives can satisfy a request; stale entries can be revalidated with ETag, and `304` reuses the cached body. `no-store`, errors and designated endpoints are not retained. The client's own quota estimate before headers arrive is 299 requests/minute without a key and 599 with one; the API's rate-limit and retry headers remain authoritative, and cached requests do not change server-side semantics. A credential change starts a new generation, so a reply from a superseded key's window cannot describe the new key's quota.
 
@@ -121,6 +121,10 @@ Keyboard navigation and the **+85** control send asynchronous `relative+exact` s
 MoonAnime skip metadata is fetched on the stream worker for the selected episode and provider. The title-page session discards stale responses after a source change; valid ranges drive both timeline bands and individually actionable skip buttons, including overlapping segments.
 
 Timeline hover previews use a separate, lazily created libmpv core on a worker thread, not the active playback core. Requests are coalesced and stale results are discarded when the pointer or source changes. Decoding requires a seekable source; the preview is not a capture of the active player's processing pipeline.
+
+`FramePreviewService` drives the hover/clip preview pipeline event-driven through `MpvApi`'s `mpv_set_wakeup_callback`/`mpv_wakeup` bindings instead of polling: the worker is woken only when mpv reports new state, so idle previews consume no CPU. It routes to the lowest-resolution HLS variant via `PlayerController::previewSourceUrl` and `hls-bitrate=min`, opens cold with `start=<t>`, scrubs with `FastKeyframe` and refines exactly once the target frame arrives, and sets `vd-lavc-skipframe=nonref` to drop non-reference frames during seek. `HoverPreviewImageProvider` (registered on `PlayerWindow`) keeps a 4-frame ring buffer with synchronous lookup, and `prewarm()` runs 450 ms after the first decoded frame so the next hover is already warm.
+
+`ClipController` shares a single cache across the Clip window's sequential forward filmstrip, scales thumbnails off the GUI thread to 228×128, retries a tile in a single pass, computes `ClipSizeEstimate` with zero seeks, and reuses a process-wide `ClipEncodingProfile` cache (`probeClipEncodingProfile`) so repeated estimates do not re-probe the encoder. `PipControls.qml` presents the redesigned compact PiP: auto-hide on focus/mouse leave, full-surface drag and a minimal overlay, all on the same `PlayerWindow`/session with no second decoder.
 
 ### Comparative player-source review
 

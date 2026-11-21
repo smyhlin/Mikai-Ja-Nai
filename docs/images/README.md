@@ -1,49 +1,41 @@
 # Screenshot provenance
 
-**Current gallery:** `gallery-2026-11-05/` holds seven images captured manually from the running Windows application on 2026-11-05. It supplies the top-level README gallery and the inline illustrations in the player, user, settings and processing guides.
+**Current gallery:** `gallery-2026-11-21/` holds eighteen PNGs captured by the opt-in `release_gallery_probe --full-docs-gallery` run on 2026-11-21 from the running Linux x86_64 application (mikai 0.2.3.2, Qt 6.12.0, xcb/Xvfb). It supplies the inline illustrations in the player, user, settings and processing guides.
 
-**Historical records:** `gallery-2026-11-01/`, `screenshots/` (2026-10-30) and `gallery-release-0.1.0/` (2026-10-24) are unchanged probe-run captures with their original `gallery-evidence.json` files. They are retained as run evidence, not as pictures of the current interface; their player, Compare and media-information images must not be read as a description of what the application does today.
+**Historical records:** `gallery-2026-11-05/` (manual Windows captures, 2026-11-05), `gallery-2026-11-01/`, `screenshots/` (2026-10-30) and `gallery-release-0.1.0/` (2026-10-24) are retained as run evidence, not as pictures of the current interface; their player, Compare and media-information images must not be read as a description of what the application does today.
 
 Neither the current gallery nor the historical records are release QA, rights clearance or approval for further distribution; see [release status](../release-status.md).
 
-## Current gallery (2026-11-05, manual)
+## Current gallery (2026-11-21, probe)
 
 | File | Size | SHA-256 | Shows |
 |---|---|---|---|
-| `catalogue.png` | 1894×1384, 497071 B | `c62b0a308db58f80c9567683ac4658213cf995b3db39ad8f6c3bc98759fda54a` | Catalogue home: sidebar, search toolbar, request-quota badge, currently-airing and latest-update feeds, popular titles |
-| `filters.png` | 1334×1419, 55410 B | `87948db23d2eb90cd7fe0940d0f8eb4ef3e3815a0332aa90680f8acf5a061573` | The **Catalogue filters** dialog with its genre list |
-| `settings.png` | 1649×1489, 111218 B | `b123e31243f6fe27bb3bfbb1f735381bc3db9f4ecdd167013447af414ef0bf7c` | **Settings → Appearance** with a pink accent and a custom background gradient |
-| `components.png` | 1649×1489, 130849 B | `df2d441b3bc3f914a6e6660c6ac3810ce6acf3fea35721b30c570610d884640a` | **Settings → Components** with TensorRT for RTX selected and its runtime reported as not installed |
-| `player.png` | 1964×1279, 1268877 B | `c40fbca508da0b3596aab2673138b43a3d41844c9f4e42680882da008084201e` | The player window with a paused local clip, its chrome, timeline and controls |
-| `compare.png` | 2244×1454, 1039187 B | `b372fe200e81cda89b5546876e76d9b1f252612aa986f9df0be33a0674c753ba` | The Compare window in side-by-side mode: A disabled, B selected on the bundled **Anime4K A (Fast)** preset |
-| `media-info.png` | 1580×1110, 61758 B | `42cf5f606d29e053aafa5af7a998f9d05ec5a38a58d75bcd7af916483323f55d` | The **Media information** Overview dialog for that local fixture, showing path, container, dimensions, frame rate and codec |
+| `catalogue.png` | 1280×800 | `4bd2a4f7439986ec408aa21148cca41da0a809571a97ecfb4f61223bfcfec091` | Catalogue home: sidebar, search toolbar, request-quota badge, live feeds & posters |
+| `filters.png` | 760×780 | `df6713ef81d099c2c876895aab93af28e856210e8ff832aba7e4656c72e2bdf8` | Catalogue filters dialog (genres, tags, years, format, status, season, studio, sort) |
+| `title-page.png` | 1280×800 | `5dcae3aa7267b098d6079dd01c1ffb3c9340683b456ba1555f77856fac2d2e11` | Live Title Page with poster, synopsis, metadata, provider tabs, episode list |
+| `player.png` | 1280×800 | `9dfa612f998e283bfc79a9c9c07474895225e20d75346a0ad88aad5d6d178ac7` | Qt Quick/QML player paused on 1080p fixture with timeline, transport controls, codec badges |
+| `player-hover-preview.png` | 1280×800 | `e4e11d3698cf2433ca690bb2438b4b4e1dce2c1bfd93cfade68a56420493c0ec` | Timeline hover thumbnail preview card with decoded frame |
+| `player-settings-menu.png` | 1280×800 | `5d5f0481a0dac39fb492d3ead91d5d96fd0c5ceb554949567117ff9202b89769` | Player Settings popover menu (quality, speed, audio, subtitles, scaling) |
+| `player-processing-menu.png` | 1280×800 | `a3654ee77562e5e99342f2aedf17fd2de9cfb1c8d32a6e9e912dcef4950c1fef` | Player Enhancements/Processing popover menu (Original, Anime4K presets, AnimeJaNai, Native) |
+| `player-pip.png` | 480×270 | `f8648eb789cc9f02c10c3d5b1e0cf91a1ad9d2bc4819525af237500d132e7033` | Redesigned compact Picture-in-Picture window (auto-hide on focus/mouse leave, full-surface drag, minimal overlay) |
+| `clip.png` | 1060×820 | `33de0b67ec34ca27100d6db5424f3d65367a7b4822b3493ca0f16f9753d20d8c` | Cut Moment / Clip editor window with sequential filmstrip, trim handles, quality selector, and size estimate |
+| `compare.png` | 1280×800 | `7c0f583ee9a553ea0a19a2423a53883a5d6d6ec20eb8f4a1dcffe7a69e0d323a` | Side-by-side Compare window (Original vs Anime4K A Fast) |
+| `media-info.png` | 1280×800 | `73538bc70eeceba45a7c01c0509da059733615b40019dbecedb7dc47ddb887df` | Media Information overview dialog |
+| `settings.png` | 1280×800 | `7f8abb686699b229bdafd6b707261c626fd20bb2970d8404efbbb38f7a49802e` | Settings → Customization → Appearance (accent, corner radius, background gradient) |
+| `settings-customization.png` | 1280×800 | `2a116fea9ebbdb38e0333dce097f8952de894fff750e3fdf495bb3f9bcaea272` | Settings → Customization → General (Dark/Light theme, title & name language) |
+| `settings-general.png` | 1280×800 | `39b4e2e28e78ba3aa8c6c9df3c2eb8f126c0952a7c27fb9bc3c885b3bc5575b1` | Settings → Application → Access & General (interface language, HDR policy, Stable/Nightly update channel, auto-update, scaling, API key) |
+| `settings-shortcuts.png` | 1280×800 | `5564a9cdd706392b58ab2688da61649ccaaf4ebc4d7091cca3797572d7c39b76` | Settings → Application → Shortcuts (Anime4K preset hotkeys) |
+| `settings-processing.png` | 1280×800 | `9ba353b3bbfd98b46715a0d0e7c93ae14ed6dfe07ed0881f07f6e3b544ec5182` | Settings → Playback → Processing (Standard vs Native runtime, backend, recipe) |
+| `appearance-before.png` | 1280×800 | `0726f6cb55e789f4a78d18d6c190e5073ce01869aa5add4fe6412b2876d2f857` | Catalogue baseline before live appearance preview |
+| `appearance-preview.png` | 1280×800 | `65b92d7f7ea9046391b96ea46b31d025714a3514d66dd74a2e6e6a2acdb0e9f1` | Catalogue live preview after accent/gradient/radius changes |
 
 Capture conditions:
 
-- Platform: Windows, Qt 6.12, MinGW build `build/release/mikai.exe`. The running binary logged `mikai 0.1.0 (0d8ff35, built 2026-11-05T11:58:23Z)` at startup.
-- Method: real window captures of the running application with a desktop capture tool. No mockups, compositing, edited pixels or fabricated catalogue data.
-- Catalogue content: live catalogue and artwork from the configured Mikai service. The page was scrolled below the **Recently opened** section so the locally stored history of this machine does not appear in the committed image. The client used the operator's existing settings; the capture does not establish whether an API key was active.
-- Isolation: the build tree and `MIKAI_NATIVE_ROOT` were isolated from the user's normal release install, but the user's Qt settings (`Mikai` / `Mikai Wrapper`) were **not** isolated. Window geometry, stored appearance and the local recently-opened list are therefore this machine's state.
+- Platform: Linux x86_64, Qt 6.12.0, xcb/Xvfb. The running binary logged `mikai 0.2.3.2` at startup.
+- Method: opt-in `release_gallery_probe --full-docs-gallery` captured real widgets at a fixed 1280×800 logical size and wrote a `gallery-evidence.json` record beside the PNGs. No mockups, compositing, edited pixels or fabricated catalogue data.
+- Fixture: 18s 1080p synthetic fixture plus live anonymous catalogue.
+- Catalogue content: live catalogue and artwork from the configured Mikai service (anonymous).
 - Privacy: no API token field is visible in any capture.
-- Appearance: Ukrainian interface language, pink accent and a custom gradient. This is one appearance choice, not the shipped default.
-- Components screen: the backend row shows **TensorRT for RTX** and the required runtime is shown as not installed. Nothing was downloaded or installed, **Apply changes** was not pressed, and no inference or playback was started during the four catalogue/Appearance/Components captures.
-- `settings.png` is the Appearance page exactly as opened: no edit was saved and no **Apply**/**Save** was pressed. The filter dialog and Settings were dismissed without saving, and the application then exited normally (exit code 0).
-
-Second session, same binary and build tree:
-
-- `player.png`, `compare.png` and `media-info.png` come from a separate launch of the same `mikai 0.1.0 (0d8ff35)` Windows binary. Unlike the four captures above, this session **did** play video: it opened a project-generated 12-second, 320×180, 24 fps 8-bit HEVC colour-pattern clip (`tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4`), let it decode, and paused it at about 2.042 s so a real decoded frame was presented in a normal window with its ordinary chrome.
-- `player.png` shows that paused local file in the player, not provider or anime playback. No processing preset was selected; the picture is the original decoded frame.
-- `compare.png` shows the real Compare window in side-by-side mode, opened on the same paused frame. Side A is disabled (the original); side B has the bundled **Anime4K A (Fast)** shader preset selected. The UI clips the right-hand preset label to `B: A (…`; the image does not establish that the selected shader finished rendering or provide a quality or timing result. No model, runtime download or AI inference was involved.
-- `media-info.png` shows the app's metadata dialog for that fixture, including its path `F:\ZKS\mikai_janai\tests\fixtures\media\motion_320x180_24fps_8bit_hevc.mp4`. The path contains no Windows user name.
-- The clip is a synthetic project fixture. These images do not show anime footage, provider streams, AI inference, GPU performance or a rights-cleared title.
-
-Limitations:
-
-- Not a probe run: there is no `gallery-evidence.json`, no fixed 1280×800 logical window size, no worker-drain attestation, and no clean-shutdown record beyond the normal application exit. No probe was run for any of the seven images.
-- The captures cover one viewport, scale factor, language, theme and appearance. They are not a review matrix.
-- `settings.png` and `components.png` share a size because they are the two Settings pages at the same window geometry.
-- Catalogue entries, artwork and availability change upstream; a capture is evidence of that moment only.
-- The player, Compare and media-information images show one synthetic 320×180 HEVC clip at one paused position, in one window geometry and one appearance. They do not establish playback quality, decode performance, HDR behaviour or that a provider stream plays.
 
 ## Historical probe galleries
 

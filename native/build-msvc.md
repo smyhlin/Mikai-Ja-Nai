@@ -11,7 +11,7 @@ official v0.9.0 tag baseline plus authorized mutable local edits
 `matchesPinnedCommit: false`). It is not the runtime the application installs
 for Standard AnimeJaNai playback and it does not build one:
 
-- the current official release cohort is **v0.22.2 / ABI 9**, recorded in
+- the current official release cohort is **v0.27.0 / ABI 9**, recorded in
   `native/manifest/sources.json` under `currentOfficialRelease`, and it is
   acquired as a release asset rather than built here;
 - its opt-in Windows **TensorRT for RTX 1.7** backend (`aji_trtrtx.dll` plus

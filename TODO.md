@@ -1,8 +1,8 @@
 ## Todo
 
 - [x] in-app update notification
-- [ ] auto-update from GitHub Releases
-- [ ] nightly builds
+- [x] auto-update from GitHub Releases (shipped in 0.2.3.1, #15)
+- [x] nightly builds (Stable/Nightly channel, shipped in 0.2.3.1, #16)
 
 ## Doing
 
