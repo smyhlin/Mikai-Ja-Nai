@@ -504,8 +504,9 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     fieldLayout->addWidget(query_, 1);
 
     searchKeycap_ = new SearchKeycap(searchField_);
-    searchKeycap_->setText(tr("Enter"));
-    searchKeycap_->setAccessibleName(tr("Press Enter to search"));
+    searchKeycap_->setText(QStringLiteral("Ctrl+K"));
+    searchKeycap_->setToolTip(tr("Press Ctrl+K or / to focus search"));
+    searchKeycap_->setAccessibleName(tr("Press Ctrl+K to focus search"));
     fieldLayout->addWidget(searchKeycap_, 0, Qt::AlignVCenter);
 
     headerLayout->addWidget(searchField_, 1, Qt::AlignVCenter);
@@ -794,9 +795,12 @@ void SearchPage::refreshHeaderActionWidths() {
     if (searchButton_ == nullptr || rateLabel_ == nullptr || rateLabel_->layout() == nullptr) return;
     searchButton_->ensurePolished();
     rateLabel_->ensurePolished();
-    const int width = qMax(searchButton_->sizeHint().width(), rateLabel_->layout()->sizeHint().width());
-    searchButton_->setFixedWidth(width);
-    rateLabel_->setFixedWidth(width);
+    // Keep searchButton_ and rateLabel_ independently sized so rate-limit text
+    // changes or translations never distort the primary Search CTA button.
+    searchButton_->setMinimumWidth(searchButton_->sizeHint().width());
+    searchButton_->setMaximumWidth(QWIDGETSIZE_MAX);
+    rateLabel_->setMinimumWidth(rateLabel_->layout()->sizeHint().width());
+    rateLabel_->setMaximumWidth(QWIDGETSIZE_MAX);
 }
 
 void SearchPage::refreshHeaderIcons() {
@@ -907,8 +911,9 @@ void SearchPage::retranslateUi() {
         query_->setPlaceholderText(tr("Search by title…"));
     }
     if (searchKeycap_ != nullptr) {
-        searchKeycap_->setText(tr("Enter"));
-        searchKeycap_->setAccessibleName(tr("Press Enter to search"));
+        searchKeycap_->setText(QStringLiteral("Ctrl+K"));
+        searchKeycap_->setToolTip(tr("Press Ctrl+K or / to focus search"));
+        searchKeycap_->setAccessibleName(tr("Press Ctrl+K to focus search"));
     }
     if (sidebarBrandName_ != nullptr) sidebarBrandName_->setText(tr("Mikai Ja Nai"));
     if (homeButton_ != nullptr) {
@@ -1417,14 +1422,18 @@ bool SearchPage::eventFilter(QObject* watched, QEvent* event) {
         searchField_->style()->unpolish(searchField_);
         searchField_->style()->polish(searchField_);
         searchField_->update();
+        if (searchKeycap_ != nullptr) {
+            const bool showHint = !query_->hasFocus() && query_->text().isEmpty() &&
+                                  searchField_->width() >= theme::kSearchKeycapMinFieldWidth;
+            searchKeycap_->setVisible(showHint);
+        }
     }
     if (watched == searchField_) {
         if (event->type() == QEvent::Resize && searchKeycap_ != nullptr) {
-            // A keycap that no longer fits is dropped rather than left to
-            // squeeze the line edit; the field itself stays intact.
-            searchKeycap_->setVisible(
-                static_cast<QResizeEvent*>(event)->size().width() >=
-                theme::kSearchKeycapMinFieldWidth);
+            const bool showHint = (query_ == nullptr || (!query_->hasFocus() && query_->text().isEmpty())) &&
+                                  static_cast<QResizeEvent*>(event)->size().width() >=
+                                      theme::kSearchKeycapMinFieldWidth;
+            searchKeycap_->setVisible(showHint);
         } else if (event->type() == QEvent::MouseButtonPress && query_ != nullptr) {
             // The glyph and the keycap are decoration: a click anywhere in the
             // frame belongs to the line edit.
