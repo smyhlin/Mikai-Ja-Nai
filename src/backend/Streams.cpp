@@ -127,7 +127,11 @@ QString detectSite(const QString& pageUrl) {
             path.startsWith(QStringLiteral("/vod/")) && path.size() > 5) {
             return QStringLiteral("tortuga");
         }
-        if (path.endsWith(QStringLiteral(".m3u8")) || path.endsWith(QStringLiteral(".mp4"))) {
+        if (path.endsWith(QStringLiteral(".m3u8")) || path.endsWith(QStringLiteral(".mp4")) ||
+            path.endsWith(QStringLiteral(".mkv")) || path.endsWith(QStringLiteral(".webm")) ||
+            path.endsWith(QStringLiteral(".mov")) || path.endsWith(QStringLiteral(".m4v")) ||
+            path.endsWith(QStringLiteral(".ts")) || path.endsWith(QStringLiteral(".avi")) ||
+            path.endsWith(QStringLiteral(".flv")) || path.endsWith(QStringLiteral(".ogv"))) {
             return QStringLiteral("direct");
         }
     }
