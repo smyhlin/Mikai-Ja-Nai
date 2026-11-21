@@ -156,8 +156,22 @@ MainWindow::MainWindow(backend::MikaiClient& client, StartupMode startupMode, QW
       automaticSetupAllowed_(startupMode == StartupMode::Application) {
     setObjectName(QStringLiteral("mainWindow"));
     setWindowTitle(tr("Mikai Ja Nai"));
-    setMinimumSize(860, 620);
-    resize(1080, 760);
+    QSize minSize(860, 620);
+    QSize defaultSize(1080, 760);
+    if (const QScreen* primary = QGuiApplication::primaryScreen()) {
+        const QSize available = primary->availableGeometry().size();
+        minSize = minSize.boundedTo(available);
+        defaultSize = defaultSize.boundedTo(available);
+    }
+    setMinimumSize(minSize);
+    resize(defaultSize);
+    {
+        const QByteArray savedGeometry =
+            QSettings().value(QStringLiteral("window/mainGeometry")).toByteArray();
+        if (!savedGeometry.isEmpty()) {
+            restoreGeometry(savedGeometry);
+        }
+    }
     videoDrop_ = new gui::VideoDropTarget(this, gui::VideoDropTarget::OverlayMode::Widget);
     connect(videoDrop_, &gui::VideoDropTarget::videoDropped, this,
             [this](const QString& path) { openMedia(path); });
@@ -375,6 +389,7 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     // the home page never reaches that path. Persist here so those sessions
     // keep their extracted streams, and use the forced variant so the debounce
     // interval cannot swallow the last write.
+    QSettings().setValue(QStringLiteral("window/mainGeometry"), saveGeometry());
     qualityCache_->flushNow();
     QWidget::closeEvent(event);
 }
