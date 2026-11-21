@@ -3420,6 +3420,32 @@ void SearchPage::showCatalogueFilters() {
         // button drift from the accent while the rest of the dialog followed.
         theme::applyActionRole(apply, theme::ActionRole::Primary);
     }
+    auto* clearDraft = new QPushButton(tr("Clear draft"), &dialog);
+    clearDraft->setObjectName(QStringLiteral("catalogueClearDraftButton"));
+    clearDraft->setToolTip(tr("Reset all controls in this dialog without closing"));
+    theme::applyActionRole(clearDraft, theme::ActionRole::Ghost);
+    buttons->addButton(clearDraft, QDialogButtonBox::ActionRole);
+    connect(clearDraft, &QPushButton::clicked, &dialog,
+            [genreInclude, genreExclude, tagInclude, tagExclude, formatList, statusList, seasonList,
+             studioList, yearFrom, yearTo, years, genreMatch, tagMatch, sort, order] {
+                for (QListWidget* list : {genreInclude, genreExclude, tagInclude, tagExclude,
+                                          formatList, statusList, seasonList, studioList}) {
+                    for (int r = 0; r < list->count(); ++r) {
+                        if (list->item(r)->checkState() == Qt::Checked) {
+                            list->item(r)->setCheckState(Qt::Unchecked);
+                        }
+                    }
+                }
+                yearFrom->setValue(0);
+                yearTo->setValue(0);
+                years->clear();
+                genreMatch->setCurrentIndex(0);
+                tagMatch->setCurrentIndex(0);
+                const int nameIdx = sort->findData(QStringLiteral("name"));
+                if (nameIdx >= 0) sort->setCurrentIndex(nameIdx);
+                order->setCurrentIndex(0);
+            });
+
     if (auto* reset = buttons->button(QDialogButtonBox::Reset)) {
         reset->setObjectName(QStringLiteral("catalogueResetButton"));
         theme::applyActionRole(reset, theme::ActionRole::Secondary);
