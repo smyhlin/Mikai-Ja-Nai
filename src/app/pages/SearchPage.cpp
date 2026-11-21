@@ -3833,14 +3833,32 @@ void SearchPage::applyCatalogueFilters() {
 
 void SearchPage::openTeamPicker() {
     QDialog dialog(this);
-    dialog.setWindowTitle(tr("Select a team"));
+    dialog.setWindowTitle(tr("Teams directory"));
     dialog.setObjectName(QStringLiteral("teamPickerDialog"));
     dialog.setMinimumSize(theme::kSettingsDialogMinWidth, theme::kTeamPickerMinHeight);
-    dialog.resize(theme::kSettingsDialogMinWidth, theme::kTeamPickerDefaultHeight);
+    dialog.resize(qMax(theme::kCatalogueFiltersWidth, 760),
+                  qMax(theme::kTeamPickerDefaultHeight, 600));
     auto* layout = new QVBoxLayout(&dialog);
-    layout->setContentsMargins(theme::kSpacingLarge, theme::kSpacingMedium,
-                               theme::kSpacingLarge, theme::kSpacingMedium);
-    layout->setSpacing(theme::kSpacingSmall);
+    layout->setContentsMargins(theme::kSpacingLarge, theme::kSpacingLarge,
+                               theme::kSpacingLarge, theme::kSpacingLarge);
+    layout->setSpacing(theme::kSpacingMedium);
+
+    auto* dirHeader = new QFrame(&dialog);
+    dirHeader->setObjectName(QStringLiteral("settingsCard"));
+    auto* dirHeaderLayout = new QVBoxLayout(dirHeader);
+    dirHeaderLayout->setContentsMargins(theme::kSpacingLarge, theme::kSpacingMedium,
+                                        theme::kSpacingLarge, theme::kSpacingMedium);
+    dirHeaderLayout->setSpacing(theme::kSpacingXs);
+    auto* dirTitle = new QLabel(tr("Ukrainian Dubbing & Subtitles Teams"), dirHeader);
+    dirTitle->setObjectName(QStringLiteral("sectionHeading"));
+    auto* dirSub = new QLabel(
+        tr("Double-click a team to browse its anime catalogue, or check multiple teams to filter."),
+        dirHeader);
+    dirSub->setObjectName(QStringLiteral("muted"));
+    dirSub->setWordWrap(true);
+    dirHeaderLayout->addWidget(dirTitle);
+    dirHeaderLayout->addWidget(dirSub);
+    layout->addWidget(dirHeader);
     auto* search = new QLineEdit(&dialog);
     search->setObjectName(QStringLiteral("teamSearchEdit"));
     search->setPlaceholderText(tr("Search teams"));
