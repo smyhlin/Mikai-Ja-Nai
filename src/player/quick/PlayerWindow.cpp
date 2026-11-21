@@ -3,6 +3,7 @@
 #include "MpvVideoItem.hpp"
 #include "PlayerController.hpp"
 #include "PlayerIconProvider.hpp"
+#include "gui/IdleInhibitor.hpp"
 
 #include <QCloseEvent>
 #include <QEvent>
@@ -144,6 +145,7 @@ PlayerWindow::PlayerWindow(PlayerController* controller, QWindow* transientParen
 }
 
 PlayerWindow::~PlayerWindow() {
+    mikai::gui::idleInhibitor().release(this);
     if (auto* provider = static_cast<HoverPreviewImageProvider*>(hoverPreviewProvider_)) {
         provider->detachWindow();
     }
@@ -595,6 +597,7 @@ void PlayerWindow::showEvent(QShowEvent* event) {
         hide();
         return;
     }
+    mikai::gui::idleInhibitor().setActiveFor(this, true);
     if (!videoItem_) {
         if (QQuickItem* root = rootObject()) {
             if (auto* item = qobject_cast<MpvVideoItem*>(
@@ -635,6 +638,7 @@ void PlayerWindow::syncFullscreenIntentFromWindowState() {
 }
 
 void PlayerWindow::hideEvent(QHideEvent* event) {
+    mikai::gui::idleInhibitor().setActiveFor(this, false);
     QQuickView::hideEvent(event);
 }
 

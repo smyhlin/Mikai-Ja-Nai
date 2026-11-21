@@ -22,17 +22,23 @@ namespace mikai::gui {
 
 struct IdleInhibitor::Platform {
 #ifdef Q_OS_LINUX
-    // logind hands back a file descriptor, and closing it releases the lock.
-    // The screen-saver interface hands back a cookie instead; KDE and most
-    // X11/Wayland desktops implement one of the two.
+    // Desktop environments do not all honor the same inhibition bus:
+    // - systemd-logind blocks logind idle/sleep actions (fd lock),
+    // - org.freedesktop.ScreenSaver / org.kde.screensaver blocks DPMS & blanking,
+    // - org.freedesktop.PowerManagement.Inhibit blocks KDE/XFCE auto-suspend,
+    // - org.gnome.SessionManager blocks GNOME idle + suspend.
+    // Acquiring all available ones together ensures the screen stays awake on
+    // KDE Plasma, GNOME, XFCE, and Wayland/X11 sessions alike.
     QDBusUnixFileDescriptor logindFd;
     quint32 screenSaverCookie = 0;
     bool kdeScreenSaver = false;
+    quint32 powerManagementCookie = 0;
+    quint32 gnomeSessionCookie = 0;
 #endif
 };
 
 namespace {
-constexpr auto kInhibitReason = "Video is playing";
+constexpr auto kInhibitReason = "Player window is open";
 }  // namespace
 
 IdleInhibitor::IdleInhibitor() : platform_(std::make_unique<Platform>()) {}
@@ -43,6 +49,8 @@ IdleInhibitor::~IdleInhibitor() {
     platform_->logindFd = QDBusUnixFileDescriptor();
 #endif
     releaseScreenSaver();
+    releasePowerManagement();
+    releaseGnomeSession();
 }
 
 bool IdleInhibitor::active() const { return !owners_.empty(); }
@@ -61,8 +69,9 @@ bool IdleInhibitor::inhibitThroughLogind() {
     // freeze the GUI thread on every playback start/stop.
     manager.setTimeout(250);
     const QDBusMessage reply =
-        manager.call(QStringLiteral("Inhibit"), QStringLiteral("idle"), QStringLiteral("Mikai Ja Nai"),
-                     QString::fromLatin1(kInhibitReason), QStringLiteral("block"));
+        manager.call(QStringLiteral("Inhibit"), QStringLiteral("idle:sleep"),
+                     QStringLiteral("Mikai Ja Nai"), QString::fromLatin1(kInhibitReason),
+                     QStringLiteral("block"));
     if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty()) return false;
     const QDBusUnixFileDescriptor fd = reply.arguments().first().value<QDBusUnixFileDescriptor>();
     if (!fd.isValid()) return false;
@@ -104,11 +113,75 @@ void IdleInhibitor::releaseScreenSaver() {
     platform_->screenSaverCookie = 0;
 }
 
+bool IdleInhibitor::inhibitThroughPowerManagement() {
+    QDBusInterface power(QStringLiteral("org.freedesktop.PowerManagement.Inhibit"),
+                         QStringLiteral("/org/freedesktop/PowerManagement/Inhibit"),
+                         QStringLiteral("org.freedesktop.PowerManagement.Inhibit"),
+                         QDBusConnection::sessionBus());
+    if (!power.isValid()) return false;
+    power.setTimeout(250);
+    const QDBusMessage reply = power.call(QStringLiteral("Inhibit"),
+                                          QStringLiteral("Mikai Ja Nai"),
+                                          QString::fromLatin1(kInhibitReason));
+    if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty()) return false;
+    platform_->powerManagementCookie = reply.arguments().first().toUInt();
+    return platform_->powerManagementCookie != 0;
+}
+
+void IdleInhibitor::releasePowerManagement() {
+    if (platform_->powerManagementCookie == 0) return;
+    QDBusInterface power(QStringLiteral("org.freedesktop.PowerManagement.Inhibit"),
+                         QStringLiteral("/org/freedesktop/PowerManagement/Inhibit"),
+                         QStringLiteral("org.freedesktop.PowerManagement.Inhibit"),
+                         QDBusConnection::sessionBus());
+    if (power.isValid()) {
+        power.setTimeout(250);
+        power.call(QStringLiteral("UnInhibit"), platform_->powerManagementCookie);
+    }
+    platform_->powerManagementCookie = 0;
+}
+
+bool IdleInhibitor::inhibitThroughGnomeSession() {
+    QDBusInterface session(QStringLiteral("org.gnome.SessionManager"),
+                           QStringLiteral("/org/gnome/SessionManager"),
+                           QStringLiteral("org.gnome.SessionManager"),
+                           QDBusConnection::sessionBus());
+    if (!session.isValid()) return false;
+    session.setTimeout(250);
+    // Flags: 4 = suspend, 8 = idle (screen blanking / lock).
+    constexpr quint32 kInhibitSuspendAndIdle = 4U | 8U;
+    const QDBusMessage reply = session.call(QStringLiteral("Inhibit"),
+                                            QStringLiteral("Mikai Ja Nai"),
+                                            quint32(0),
+                                            QString::fromLatin1(kInhibitReason),
+                                            kInhibitSuspendAndIdle);
+    if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty()) return false;
+    platform_->gnomeSessionCookie = reply.arguments().first().toUInt();
+    return platform_->gnomeSessionCookie != 0;
+}
+
+void IdleInhibitor::releaseGnomeSession() {
+    if (platform_->gnomeSessionCookie == 0) return;
+    QDBusInterface session(QStringLiteral("org.gnome.SessionManager"),
+                           QStringLiteral("/org/gnome/SessionManager"),
+                           QStringLiteral("org.gnome.SessionManager"),
+                           QDBusConnection::sessionBus());
+    if (session.isValid()) {
+        session.setTimeout(250);
+        session.call(QStringLiteral("Uninhibit"), platform_->gnomeSessionCookie);
+    }
+    platform_->gnomeSessionCookie = 0;
+}
+
 #else
 
 bool IdleInhibitor::inhibitThroughLogind() { return false; }
 bool IdleInhibitor::inhibitThroughScreenSaver() { return false; }
 void IdleInhibitor::releaseScreenSaver() {}
+bool IdleInhibitor::inhibitThroughPowerManagement() { return false; }
+void IdleInhibitor::releasePowerManagement() {}
+bool IdleInhibitor::inhibitThroughGnomeSession() { return false; }
+void IdleInhibitor::releaseGnomeSession() {}
 
 #endif
 
@@ -145,8 +218,13 @@ void IdleInhibitor::apply(bool active) {
     return;
 #endif
     if (active) {
-        if (inhibitThroughLogind()) return;
+        // Acquire all available session & system inhibitors together: logind
+        // alone does not stop KDE PowerDevil, GNOME, or X11/Wayland DPMS from
+        // blanking the display.
+        inhibitThroughLogind();
         inhibitThroughScreenSaver();
+        inhibitThroughPowerManagement();
+        inhibitThroughGnomeSession();
         return;
     }
 #ifdef Q_OS_LINUX
@@ -154,6 +232,8 @@ void IdleInhibitor::apply(bool active) {
     platform_->logindFd = QDBusUnixFileDescriptor();
 #endif
     releaseScreenSaver();
+    releasePowerManagement();
+    releaseGnomeSession();
 }
 
 IdleInhibitor& idleInhibitor() {

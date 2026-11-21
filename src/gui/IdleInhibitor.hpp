@@ -32,6 +32,10 @@ private:
     bool inhibitThroughLogind();
     bool inhibitThroughScreenSaver();
     void releaseScreenSaver();
+    bool inhibitThroughPowerManagement();
+    void releasePowerManagement();
+    bool inhibitThroughGnomeSession();
+    void releaseGnomeSession();
 
     std::unique_ptr<Platform> platform_;
     // Unbounded: an owner is a reason, not a slot, so the 9th owner is
