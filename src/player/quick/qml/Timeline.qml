@@ -34,7 +34,9 @@ Item {
     readonly property color markColor: Qt.rgba(controller.accentColor.r, controller.accentColor.g,
                                                controller.accentColor.b, 0.42)
     readonly property color readoutText: controller.darkTheme ? "#f4f4f5" : "#18181b"
-    readonly property color readoutFill: Qt.rgba(0, 0, 0, controller.darkTheme ? 0.72 : 0.6)
+    readonly property color readoutFill: controller.darkTheme
+                                         ? Qt.rgba(0.07, 0.08, 0.10, 0.92)
+                                         : Qt.rgba(0.98, 0.98, 0.99, 0.96)
 
     signal previewRequested(real seconds, point anchorPoint)
     signal previewDismissed()
