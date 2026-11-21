@@ -3414,12 +3414,93 @@ void SearchPage::showCatalogueFilters() {
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Apply | QDialogButtonBox::Reset |
                                           QDialogButtonBox::Cancel, &dialog);
     buttons->setObjectName(QStringLiteral("catalogueFilterButtons"));
-    if (auto* apply = buttons->button(QDialogButtonBox::Apply)) {
-        apply->setObjectName(QStringLiteral("catalogueApplyButton"));
+    QPushButton* applyButton = buttons->button(QDialogButtonBox::Apply);
+    if (applyButton != nullptr) {
+        applyButton->setObjectName(QStringLiteral("catalogueApplyButton"));
         // The shared role paints it: a private sheet here is what let this one
         // button drift from the accent while the rest of the dialog followed.
-        theme::applyActionRole(apply, theme::ActionRole::Primary);
+        theme::applyActionRole(applyButton, theme::ActionRole::Primary);
     }
+
+    // Live debounced (400ms) result-count preview on the primary Apply button.
+    auto previewSeq = std::make_shared<int>(0);
+    auto* previewTimer = new QTimer(&dialog);
+    previewTimer->setSingleShot(true);
+    previewTimer->setInterval(400);
+    const auto buildDraftQuery = [this, genreInclude, genreExclude, tagInclude, tagExclude,
+                                  genreMatch, tagMatch, yearFrom, yearTo, years, formatList,
+                                  statusList, seasonList, studioList, sort, order]() {
+        auto collectChecked = [](QListWidget* list) {
+            QStringList vals;
+            for (int r = 0; r < list->count(); ++r) {
+                if (list->item(r)->checkState() == Qt::Checked) {
+                    vals << list->item(r)->data(Qt::UserRole).toString();
+                }
+            }
+            return vals;
+        };
+        backend::AnimeQuery q = catalogueQuery_;
+        q.search = query_ != nullptr ? query_->text().trimmed() : QString();
+        q.genres = collectChecked(genreInclude);
+        q.genres_exclude = collectChecked(genreExclude);
+        q.genres_match = genreMatch->currentData().toString();
+        q.tags = collectChecked(tagInclude);
+        q.tags_exclude = collectChecked(tagExclude);
+        q.tags_match = tagMatch->currentData().toString();
+        q.year_from = yearFrom->value() ? std::optional<int>(yearFrom->value()) : std::nullopt;
+        q.year_to = yearTo->value() ? std::optional<int>(yearTo->value()) : std::nullopt;
+        q.years.clear();
+        for (const QString& part : years->text().split(QLatin1Char(','), Qt::SkipEmptyParts)) {
+            bool ok = false;
+            const int y = part.trimmed().toInt(&ok);
+            if (ok) q.years.append(y);
+        }
+        q.formats = collectChecked(formatList);
+        q.statuses = collectChecked(statusList);
+        q.seasons = collectChecked(seasonList);
+        q.studios = collectChecked(studioList);
+        q.sort = sort->currentData().toString();
+        q.order = order->currentData().toString();
+        q.page = 1;
+        q.limit = 1;
+        return q;
+    };
+    connect(previewTimer, &QTimer::timeout, &dialog,
+            [this, previewSeq, buildDraftQuery, applyBtn = QPointer<QPushButton>(applyButton)] {
+                if (applyBtn.isNull()) return;
+                const int seq = ++(*previewSeq);
+                const backend::AnimeQuery req = buildDraftQuery();
+                backend::MikaiClient* client = &client_;
+                runner_.run(
+                    [client, req] { return QVariant::fromValue(client->search(req)); },
+                    [previewSeq, seq, applyBtn](const QVariant& result) {
+                        if (applyBtn.isNull() || seq != *previewSeq) return;
+                        const auto res = result.value<backend::SearchResult>();
+                        if (res.total.has_value()) {
+                            const int n = *res.total;
+                            applyBtn->setText(n > 0 ? tr("Apply · %n title(s)", nullptr, n)
+                                                    : tr("Apply · No matches"));
+                        }
+                    },
+                    [previewSeq, seq, applyBtn](const backend::Failure&) {
+                        if (applyBtn.isNull() || seq != *previewSeq) return;
+                        applyBtn->setText(tr("Apply"));
+                    });
+            });
+    const auto schedulePreview = [previewTimer]() { previewTimer->start(); };
+    for (QListWidget* list : {genreInclude, genreExclude, tagInclude, tagExclude, formatList,
+                              statusList, seasonList, studioList}) {
+        connect(list, &QListWidget::itemChanged, &dialog,
+                [schedulePreview](QListWidgetItem*) { schedulePreview(); });
+    }
+    connect(yearFrom, &QSpinBox::valueChanged, &dialog, [schedulePreview](int) { schedulePreview(); });
+    connect(yearTo, &QSpinBox::valueChanged, &dialog, [schedulePreview](int) { schedulePreview(); });
+    connect(years, &QLineEdit::textChanged, &dialog,
+            [schedulePreview](const QString&) { schedulePreview(); });
+    connect(genreMatch, &QComboBox::currentIndexChanged, &dialog,
+            [schedulePreview](int) { schedulePreview(); });
+    connect(tagMatch, &QComboBox::currentIndexChanged, &dialog,
+            [schedulePreview](int) { schedulePreview(); });
     auto* clearDraft = new QPushButton(tr("Clear draft"), &dialog);
     clearDraft->setObjectName(QStringLiteral("catalogueClearDraftButton"));
     clearDraft->setToolTip(tr("Reset all controls in this dialog without closing"));
