@@ -9,6 +9,7 @@ class QCloseEvent;
 class QComboBox;
 class QLabel;
 class QPlainTextEdit;
+class QPushButton;
 class QStackedWidget;
 class QTimer;
 
@@ -49,6 +50,8 @@ private:
     MediaInformationDocument document_;
     QLabel* modeLabel_ = nullptr;
     QComboBox* modeSelector_ = nullptr;
+    QPushButton* copyButton_ = nullptr;
+    QPushButton* retryButton_ = nullptr;
     QStackedWidget* views_ = nullptr;
     MediaInformationOverview* overview_ = nullptr;
     MediaInformationTree* tree_ = nullptr;

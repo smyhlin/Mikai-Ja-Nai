@@ -5,15 +5,18 @@
 #include "ShellTheme.hpp"
 #include "VideoSession.hpp"
 
+#include <QClipboard>
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QEvent>
 #include <QFontDatabase>
+#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPalette>
 #include <QPlainTextEdit>
+#include <QPushButton>
 #include <QScreen>
 #include <QScrollBar>
 #include <QStackedWidget>
@@ -66,6 +69,24 @@ MediaInformationDialog::MediaInformationDialog(VideoSession* session, QWidget* p
     connect(modeSelector_, &QComboBox::currentIndexChanged, this,
             [this] { updateActiveView(); });
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
+    copyButton_ = buttons->addButton(tr("Copy"), QDialogButtonBox::ActionRole);
+    copyButton_->setObjectName(QStringLiteral("playerMediaInformationCopy"));
+    retryButton_ = buttons->addButton(tr("Retry"), QDialogButtonBox::ActionRole);
+    retryButton_->setObjectName(QStringLiteral("playerMediaInformationRetry"));
+    retryButton_->hide();
+    connect(copyButton_, &QPushButton::clicked, this, [this] {
+        if (QClipboard* cb = QGuiApplication::clipboard()) {
+            cb->setText(mediaInformationPlainText(document_));
+        }
+        copyButton_->setText(tr("Copied"));
+        QTimer::singleShot(1400, copyButton_, [this] {
+            if (copyButton_ != nullptr) copyButton_->setText(tr("Copy"));
+        });
+    });
+    connect(retryButton_, &QPushButton::clicked, this, [this] {
+        retryButton_->hide();
+        requestInformation();
+    });
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::close);
     layout->addWidget(buttons);
     information_.coreIdentity = tracks_.coreIdentity;
@@ -82,10 +103,23 @@ MediaInformationDialog::MediaInformationDialog(VideoSession* session, QWidget* p
         cancelRequest();
         timedOut_ = true;
         information_.loading = false;
+        if (retryButton_ != nullptr) retryButton_->show();
         renderInformation();
     });
     connect(session, &VideoSession::sourceEpochChanged, this, [this] {
-        if (!sourceIsCurrent()) close();
+        if (session_ == nullptr) {
+            close();
+            return;
+        }
+        sourceUrl_ = session_->sourceUrl();
+        tracks_ = session_->mediaTracks();
+        information_ = MediaInformation{};
+        information_.coreIdentity = tracks_.coreIdentity;
+        information_.sourceEpoch = session_->sourceEpoch();
+        trackError_.clear();
+        playbackError_.clear();
+        timedOut_ = false;
+        requestInformation();
     });
     connect(session, &QObject::destroyed, this, &QDialog::close);
     connect(session, &VideoSession::mediaInformationInvalidated, this, &QDialog::close);
