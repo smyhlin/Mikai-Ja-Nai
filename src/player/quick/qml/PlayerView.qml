@@ -114,6 +114,16 @@ Item {
         z: 0
     }
 
+    Timer {
+        id: singleClickPlayTimer
+        interval: Math.min(220, Qt.styleHints.mouseDoubleClickInterval)
+        repeat: false
+        onTriggered: {
+            root.forceActiveFocus()
+            root.controller.togglePlayPause()
+        }
+    }
+
     // Picture input sits under the chrome, so a click reaches a control first.
     MouseArea {
         id: pictureInput
@@ -121,27 +131,22 @@ Item {
         z: 1
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         hoverEnabled: true
-        property bool suppressClick: false
 
         onPressed: mouse => root.controller.noteUserActivity()
 
         onClicked: mouse => {
             if (mouse.button === Qt.RightButton) {
+                singleClickPlayTimer.stop()
                 const scenePoint = pictureInput.mapToItem(null, mouse.x, mouse.y)
                 root.openMenuAt("picture", Qt.rect(scenePoint.x, scenePoint.y, 0, 0))
                 return
             }
-            if (suppressClick) {
-                suppressClick = false
-                return
-            }
-            root.forceActiveFocus()
-            root.controller.togglePlayPause()
+            singleClickPlayTimer.restart()
         }
 
         onDoubleClicked: mouse => {
             if (mouse.button !== Qt.LeftButton) return
-            suppressClick = true
+            singleClickPlayTimer.stop()
             root.forceActiveFocus()
             root.controller.toggleFullscreen()
         }

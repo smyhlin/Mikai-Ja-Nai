@@ -67,6 +67,18 @@ Item {
         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
     }
 
+    Timer {
+        id: pipSingleClickTimer
+        interval: Math.min(220, Qt.styleHints.mouseDoubleClickInterval)
+        repeat: false
+        onTriggered: {
+            if (root.controller.hasMedia) {
+                root.controller.noteUserActivity()
+                root.controller.togglePlayPause()
+            }
+        }
+    }
+
     // Full-surface drag & click target: drag anywhere on the video to move the
     // PiP window, single-click to toggle Play/Pause, double-click to expand.
     MouseArea {
@@ -90,19 +102,23 @@ Item {
             const dx = mouse.x - pressPos.x
             const dy = mouse.y - pressPos.y
             if ((dx * dx + dy * dy) >= 16) {
+                pipSingleClickTimer.stop()
                 dragStarted = true
                 root.controller.beginWindowMove()
             }
         }
         onReleased: {
             if (!dragStarted && root.controller.hasMedia) {
-                root.controller.noteUserActivity()
-                root.controller.togglePlayPause()
+                pipSingleClickTimer.restart()
             }
             dragStarted = false
         }
-        onCanceled: dragStarted = false
+        onCanceled: {
+            pipSingleClickTimer.stop()
+            dragStarted = false
+        }
         onDoubleClicked: {
+            pipSingleClickTimer.stop()
             dragStarted = true
             root.controller.leavePip()
         }
