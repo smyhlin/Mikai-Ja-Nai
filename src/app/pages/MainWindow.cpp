@@ -935,9 +935,9 @@ void MainWindow::checkForUpdates(bool manual, bool forceChannelSwitch) {
                             QString::fromLatin1(kUpdateNotificationsDismissedVersion))
                                       .toString() != version) {
                         const bool forceSwitch = value.toMap().value(QStringLiteral("forceSwitch")).toBool();
-                        if ((forceSwitch ||
-                             (!manual &&
-                              settings.value(QString::fromLatin1(kUpdateAutoDownloadEnabled), false).toBool())) &&
+                        const bool autoDownload =
+                            settings.value(QString::fromLatin1(kUpdateAutoDownloadEnabled), false).toBool();
+                        if (((forceSwitch && autoDownload) || (!manual && autoDownload)) &&
                             backend::isSelfUpdatable(backend::detectInstallKind())) {
                             startUpdateDownload(version, url, forceSwitch);
                         } else {
