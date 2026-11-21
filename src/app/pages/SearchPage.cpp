@@ -2995,6 +2995,25 @@ void SearchPage::showCatalogueFilters() {
                                     tagNames.second, catalogueQuery_.tags);
     auto* tagExclude = checkedList(QStringLiteral("tagExcludeList"), tagNames.first,
                                     tagNames.second, catalogueQuery_.tags_exclude);
+    // Enforce mutual exclusion: checking a genre/tag in Include clears it from
+    // Exclude (and vice versa) so contradictory queries cannot be constructed.
+    const auto linkMutualExclusion = [&dialog](QListWidget* primary, QListWidget* opposite) {
+        connect(primary, &QListWidget::itemChanged, &dialog, [opposite](QListWidgetItem* changed) {
+            if (changed == nullptr || changed->checkState() != Qt::Checked) return;
+            const QString key = changed->data(Qt::UserRole).toString();
+            for (int row = 0; row < opposite->count(); ++row) {
+                QListWidgetItem* other = opposite->item(row);
+                if (other != nullptr && other->data(Qt::UserRole).toString() == key &&
+                    other->checkState() == Qt::Checked) {
+                    other->setCheckState(Qt::Unchecked);
+                }
+            }
+        });
+    };
+    linkMutualExclusion(genreInclude, genreExclude);
+    linkMutualExclusion(genreExclude, genreInclude);
+    linkMutualExclusion(tagInclude, tagExclude);
+    linkMutualExclusion(tagExclude, tagInclude);
     QStringList matchModes = apiMeta_.match_modes;
     if (matchModes.isEmpty()) matchModes << QStringLiteral("all") << QStringLiteral("any");
     auto* genreMatch = selectionMode(QStringLiteral("genreMatchMode"), matchModes,
@@ -3184,6 +3203,12 @@ void SearchPage::applyCatalogueFilters() {
     ++requestSeq_;
     ++catalogueRequestSeq_;
     ++teamRequestSeq_;
+    for (const QString& g : catalogueQuery_.genres) {
+        catalogueQuery_.genres_exclude.removeAll(g);
+    }
+    for (const QString& t : catalogueQuery_.tags) {
+        catalogueQuery_.tags_exclude.removeAll(t);
+    }
     catalogueQuery_.search = query_->text().trimmed();
     catalogueQuery_.page = 1;
     catalogueQuery_.limit = pageSize_;
