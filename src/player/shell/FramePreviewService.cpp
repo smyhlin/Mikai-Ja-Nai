@@ -102,9 +102,11 @@ std::vector<std::pair<std::string, std::string>> previewOptions() {
         {"hwdec", "no"},
         {"vd-lavc-fast", "yes"},
         {"vd-lavc-skiploopfilter", "all"},
+        {"vd-lavc-skipframe", "nonref"},
         {"vd-lavc-threads", "2"},
         {"hr-seek", "no"},
         {"hr-seek-framedrop", "yes"},
+        {"hls-bitrate", "min"},
         {"sws-scaler", "fast-bilinear"},
         {"sws-allow-zimg", "no"},
         {"terminal", "no"},
@@ -619,6 +621,24 @@ void FramePreviewWorker::confirmLoad() {
                 return;
             }
             loadedUrl_ = url_;
+            // Adopt any newer hover request that arrived while the stream was
+            // opening (e.g. a user hover superseding an in-flight prewarm).
+            if (requestedToken_ != 0 && requestedToken_ != activeToken_) {
+                activeToken_ = requestedToken_;
+                activeSeconds_ = requestedSeconds_;
+                activeSeekMode_ = requestedSeekMode_;
+                activeTargetSize_ = requestedTargetSize_;
+                seekRetried_ = false;
+                startSeek();
+                return;
+            }
+            // Cold load already passed `start=<activeSeconds_>`: check if we
+            // landed close enough to capture immediately without a second seek.
+            if (activeSeekMode_ == FramePreviewService::SeekMode::FastKeyframe) {
+                phase_ = Phase::Seek;
+                confirmSeek();
+                return;
+            }
             startSeek();
         });
     if (!request.valid()) {
@@ -809,6 +829,9 @@ void FramePreviewWorker::startLoad() {
     endBaseline_ = endCount_;
     deadlineMs_ = nowMs() + kLoadTimeoutMs;
     try {
+        // Jump directly to the requested timestamp on cold open so network/HLS
+        // streams do not download segment 0 before seeking to the hovered time.
+        core_->setString("start", activeSeconds_ > 0.0 ? mpvNumber(activeSeconds_) : "none");
         core_->loadFile(url_.toStdString());
     } catch (const std::exception& error) {
         fail(tr("The source could not be opened: %1").arg(QString::fromUtf8(error.what())));

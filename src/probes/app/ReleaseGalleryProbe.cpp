@@ -93,6 +93,7 @@ struct Arguments {
     bool help = false;
     bool accentSweep = false;
     bool radiusSweep = false;
+    bool fullDocsGallery = false;
 };
 
 Arguments parseArguments(const QStringList& arguments) {
@@ -109,6 +110,10 @@ Arguments parseArguments(const QStringList& arguments) {
         }
         if (option == QLatin1String("--radius-sweep")) {
             result.radiusSweep = true;
+            continue;
+        }
+        if (option == QLatin1String("--full-docs-gallery")) {
+            result.fullDocsGallery = true;
             continue;
         }
         QString* value = nullptr;
@@ -202,9 +207,11 @@ public:
     }
 
 private:
-    enum class Stage { Catalogue, Playback, Pause, PlayerShot, CompareOpen, CompareReady,
-        CompareClosed, InformationOpen, InformationRead, InformationShot, SettingsOpen,
-        SettingsShot, Close, Drain, Finished };
+    enum class Stage { Catalogue, FiltersOpen, FiltersShot, TitleOpen, TitleShot,
+        Playback, Pause, PlayerShot, PlayerHoverShot, PlayerSettingsMenuShot,
+        PlayerProcessingMenuShot, PlayerPipShot, ClipOpen, ClipShot,
+        CompareOpen, CompareReady, CompareClosed, InformationOpen, InformationRead,
+        InformationShot, SettingsOpen, SettingsShot, Close, Drain, Finished };
 
     void next(Stage stage) {
         stage_ = stage;
@@ -405,9 +412,70 @@ private:
                 capture(window_.get(), QStringLiteral("catalogue"), QJsonObject{
                     {QStringLiteral("surface"), QStringLiteral("live anonymous home catalogue")},
                     {QStringLiteral("cards"), cards}});
-                startPlayback();
+                if (arguments_.fullDocsGallery) {
+                    next(Stage::FiltersOpen);
+                } else {
+                    startPlayback();
+                }
             } else if (stageClock_.elapsed() > 65000) {
                 error(QStringLiteral("Live anonymous catalogue/artwork did not become ready in 65 seconds; no catalogue screenshot or invented replacement was produced."));
+                startPlayback();
+            }
+            break;
+        }
+        case Stage::FiltersOpen: {
+            auto* filtersButton =
+                window_->findChild<QAbstractButton*>(QStringLiteral("catalogueFiltersButton"));
+            if (filtersButton != nullptr && filtersButton->isVisible() && filtersButton->isEnabled()) {
+                next(Stage::FiltersShot);
+                QTimer::singleShot(0, filtersButton, [filtersButton] { filtersButton->click(); });
+            } else {
+                next(Stage::TitleOpen);
+            }
+            break;
+        }
+        case Stage::FiltersShot: {
+            auto* modal = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+            if (modal != nullptr && modal->isVisible()) {
+                if (stageClock_.elapsed() >= 500) {
+                    capture(modal, QStringLiteral("filters"), QJsonObject{
+                        {QStringLiteral("surface"), QStringLiteral("catalogue filters dialog")}});
+                    modal->reject();
+                    next(Stage::TitleOpen);
+                }
+            } else if (stageClock_.elapsed() > 4000) {
+                next(Stage::TitleOpen);
+            }
+            break;
+        }
+        case Stage::TitleOpen: {
+            mikai::app::TitleCard* firstCard = nullptr;
+            for (auto* card : window_->findChildren<mikai::app::TitleCard*>()) {
+                if (!card->isVisible()) continue;
+                auto* poster = card->findChild<QLabel*>(QStringLiteral("carouselPoster"));
+                if (poster != nullptr && !poster->pixmap().isNull()) {
+                    firstCard = card;
+                    break;
+                }
+            }
+            if (firstCard != nullptr) {
+                QTest::mouseClick(firstCard, Qt::LeftButton);
+                next(Stage::TitleShot);
+            } else {
+                startPlayback();
+            }
+            break;
+        }
+        case Stage::TitleShot: {
+            auto* titlePage = window_->findChild<mikai::app::TitlePage*>();
+            if (titlePage != nullptr && titlePage->isVisible() && stageClock_.elapsed() >= 2500) {
+                capture(window_.get(), QStringLiteral("title-page"), QJsonObject{
+                    {QStringLiteral("surface"), QStringLiteral("live title page")}});
+                if (auto* back = window_->findChild<QAbstractButton*>(QStringLiteral("titleBack"))) {
+                    back->click();
+                }
+                startPlayback();
+            } else if (stageClock_.elapsed() > 10000) {
                 startPlayback();
             }
             break;
@@ -447,11 +515,95 @@ private:
             if (surface_->pauseObserved() && !surface_->isPlaying() && stageClock_.elapsed() >= 700) {
                 player_->noteUserActivity();
                 capture(player_->window(), QStringLiteral("player"), playbackState());
-                next(Stage::CompareOpen);
+                if (arguments_.fullDocsGallery) {
+                    player_->showHoverPreview(5.5);
+                    next(Stage::PlayerHoverShot);
+                } else {
+                    next(Stage::CompareOpen);
+                }
             } else if (stageClock_.elapsed() > 6000) {
                 stop(QStringLiteral("The real pause action did not settle."));
             }
             break;
+        case Stage::PlayerHoverShot:
+            if (!player_->hoverPreviewSource().isEmpty() && stageClock_.elapsed() >= 400) {
+                player_->noteUserActivity();
+                capture(player_->window(), QStringLiteral("player-hover-preview"), playbackState());
+                player_->hideHoverPreview();
+                if (QObject* root = player_->window()->rootObject()) {
+                    QMetaObject::invokeMethod(
+                        root, "openMenuAt",
+                        Q_ARG(QVariant, QStringLiteral("settings")),
+                        Q_ARG(QVariant, QRectF(player_->window()->width() - 96.0,
+                                               player_->window()->height() - 56.0, 36.0, 36.0)));
+                }
+                next(Stage::PlayerSettingsMenuShot);
+            } else if (stageClock_.elapsed() > 8000) {
+                player_->hideHoverPreview();
+                next(Stage::CompareOpen);
+            }
+            break;
+        case Stage::PlayerSettingsMenuShot:
+            if (stageClock_.elapsed() >= 500) {
+                player_->noteUserActivity();
+                capture(player_->window(), QStringLiteral("player-settings-menu"), playbackState());
+                if (QObject* root = player_->window()->rootObject()) {
+                    QMetaObject::invokeMethod(
+                        root, "openMenuAt",
+                        Q_ARG(QVariant, QStringLiteral("enhancements")),
+                        Q_ARG(QVariant, QRectF(player_->window()->width() - 144.0,
+                                               player_->window()->height() - 56.0, 36.0, 36.0)));
+                }
+                next(Stage::PlayerProcessingMenuShot);
+            }
+            break;
+        case Stage::PlayerProcessingMenuShot:
+            if (stageClock_.elapsed() >= 500) {
+                player_->noteUserActivity();
+                capture(player_->window(), QStringLiteral("player-processing-menu"), playbackState());
+                QTest::keyClick(player_->window(), Qt::Key_Escape);
+                player_->togglePip();
+                next(Stage::PlayerPipShot);
+            }
+            break;
+        case Stage::PlayerPipShot:
+            if (player_->isPipActive() && stageClock_.elapsed() >= 700) {
+                player_->noteUserActivity();
+                capture(player_->window(), QStringLiteral("player-pip"), playbackState());
+                player_->togglePip();
+                fit(player_->window());
+                player_->window()->showWindowed();
+                next(Stage::ClipOpen);
+            } else if (stageClock_.elapsed() > 5000) {
+                if (player_->isPipActive()) player_->togglePip();
+                next(Stage::ClipOpen);
+            }
+            break;
+        case Stage::ClipOpen:
+            if (stageClock_.elapsed() >= 400) {
+                player_->openClipWindow();
+                next(Stage::ClipShot);
+            }
+            break;
+        case Stage::ClipShot: {
+            QWindow* clipWindow = nullptr;
+            for (QWindow* top : QGuiApplication::topLevelWindows()) {
+                if (top != nullptr && top->objectName() == QLatin1String("clipWindow") &&
+                    top->isVisible()) {
+                    clipWindow = top;
+                    break;
+                }
+            }
+            if (clipWindow != nullptr && stageClock_.elapsed() >= 2500) {
+                capture(clipWindow, QStringLiteral("clip"), playbackState());
+                clipWindow->close();
+                next(Stage::CompareOpen);
+            } else if (stageClock_.elapsed() > 8000) {
+                if (clipWindow != nullptr) clipWindow->close();
+                next(Stage::CompareOpen);
+            }
+            break;
+        }
         case Stage::CompareOpen:
             next(Stage::CompareReady);
             if (!pictureAction(QStringLiteral("compare"))) stop(QStringLiteral("The real Quick picture menu Compare row could not be activated."));
@@ -693,6 +845,25 @@ private:
                     {QStringLiteral("availablePages"), QJsonArray::fromStringList(settings->pageIds())},
                     {QStringLiteral("appearanceInteractions"), settingsInteractionEvidence_},
                     {QStringLiteral("saved"), false}});
+                if (arguments_.fullDocsGallery) {
+                    const QList<QPair<QString, QString>> pages = {
+                        {QStringLiteral("customization/general"), QStringLiteral("settings-customization")},
+                        {QStringLiteral("access"), QStringLiteral("settings-general")},
+                        {QStringLiteral("shortcuts"), QStringLiteral("settings-shortcuts")},
+                        {QStringLiteral("processing"), QStringLiteral("settings-processing")},
+                        {QStringLiteral("components"), QStringLiteral("settings-components")},
+                        {QStringLiteral("upscalers"), QStringLiteral("settings-upscalers")},
+                        {QStringLiteral("benchmark"), QStringLiteral("settings-benchmark")},
+                    };
+                    for (const auto& [pageId, shotName] : pages) {
+                        if (!settings->showPage(pageId)) continue;
+                        QCoreApplication::processEvents();
+                        QTest::qWait(250);
+                        capture(settings, shotName, QJsonObject{
+                            {QStringLiteral("page"), pageId},
+                            {QStringLiteral("saved"), false}});
+                    }
+                }
                 next(Stage::Close);
                 settings->reject(); // Never Save: no OS integration or production preference changes.
             }
@@ -738,7 +909,9 @@ private:
 
     void finish() {
         timer_.stop();
-        const bool ok = errors_.isEmpty() && shots_.size() == 8;
+        const bool ok = arguments_.fullDocsGallery
+            ? (errors_.isEmpty() && shots_.size() >= 14)
+            : (errors_.isEmpty() && shots_.size() == 8);
         evidence_.insert(QStringLiteral("success"), ok);
         evidence_.insert(QStringLiteral("finishedUtc"), QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
         evidence_.insert(QStringLiteral("elapsedMs"), double(totalClock_.elapsed()));
@@ -1091,6 +1264,49 @@ private:
         shots_.append(extra);
         diagnostic(QStringLiteral("Captured %1").arg(path));
         return true;
+    }
+
+    bool capture(QWindow* window, const QString& rawName, QJsonObject extra) {
+        if (window == nullptr || !window->isVisible() || window->screen() == nullptr ||
+            window->width() <= 0 || window->height() <= 0) {
+            check(QStringLiteral("capture:") + rawName, false,
+                  QStringLiteral("the real Quick window is not visible or has no size"));
+            return false;
+        }
+        const QPixmap grab = window->screen()->grabWindow(window->winId());
+        if (grab.isNull()) {
+            check(QStringLiteral("capture:") + rawName, false,
+                  QStringLiteral("the real Quick window produced no pixels"));
+            return false;
+        }
+        const QString name = safeName(rawName);
+        const QString path = QDir(arguments_.output).filePath(name + QStringLiteral(".png"));
+        if (!grab.save(path, "PNG")) {
+            check(QStringLiteral("capture:") + rawName, false,
+                  QStringLiteral("saving the Quick window grab failed"));
+            return false;
+        }
+        extra.insert(QStringLiteral("file"), name + QStringLiteral(".png"));
+        extra.insert(QStringLiteral("windowClass"),
+                     QString::fromLatin1(window->metaObject()->className()));
+        extra.insert(QStringLiteral("logicalSize"), QJsonArray{window->width(), window->height()});
+        extra.insert(QStringLiteral("pixelSize"), QJsonArray{grab.width(), grab.height()});
+        extra.insert(QStringLiteral("devicePixelRatio"), grab.devicePixelRatio());
+        extra.insert(QStringLiteral("capturedUtc"),
+                     QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+        shots_.append(extra);
+        diagnostic(QStringLiteral("Captured %1").arg(path));
+        return true;
+    }
+
+    static void fit(QWindow* window) {
+        if (window == nullptr) return;
+        window->resize(kWidth, kHeight);
+        if (QScreen* screen = window->screen()) {
+            const QRect available = screen->availableGeometry();
+            window->setPosition(available.center() - QPoint(window->width() / 2,
+                                                            window->height() / 2));
+        }
     }
 
     static void place(QWidget* widget, int width, int height) {
@@ -2060,10 +2276,12 @@ private:
                                 {QStringLiteral("inferenceProven"), false}});
         }
         player_->togglePip();
-        check(player_->window() == originalWindow && player_->session() == originalSession &&
+        check(QStringLiteral("pip-restore"),
+              player_->window() == originalWindow && player_->session() == originalSession &&
                   !player_->isPipActive(),
-              "leaving PiP restores the same player window and session");
-        check(player_->requestClose(), "Quick player acknowledges PiP sweep teardown");
+              QStringLiteral("leaving PiP restores the same player window and session"));
+        check(QStringLiteral("pip-teardown"), player_->requestClose(),
+              QStringLiteral("Quick player acknowledges PiP sweep teardown"));
         player_ = nullptr;
         surface_ = nullptr;
 
@@ -2437,7 +2655,7 @@ int main(int argc, char** argv) {
     app.setOrganizationName(QStringLiteral("MikaiReleaseGallery"));
     app.setApplicationName(QStringLiteral("ReleaseGalleryProbe"));
     app.setApplicationDisplayName(QStringLiteral("Mikai Ja Nai"));
-    app.setApplicationVersion(QStringLiteral("0.1.0"));
+    app.setApplicationVersion(mikai::backend::kApiApplicationVersion);
     const QString root = mikai::probes::isolation::isolatedRoot();
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, root + QStringLiteral("/settings"));

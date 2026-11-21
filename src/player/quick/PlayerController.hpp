@@ -372,6 +372,7 @@ public:
 
     VideoSession* session() const { return session_; }
     const shell::FramePreviewService* previewService() const { return previewService_; }
+    QString previewSourceUrl(const QString& fallbackUrl) const;
     QString caption() const { return caption_; }
     QString windowTitle() const;
     QString mediaPath() const { return url_; }

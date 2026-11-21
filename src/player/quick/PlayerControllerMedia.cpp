@@ -360,6 +360,19 @@ void PlayerController::selectQuality(int height) {
     flashStatus(tr("%1p is not available for this release").arg(height), true);
 }
 
+QString PlayerController::previewSourceUrl(const QString& fallbackUrl) const {
+    if (directMedia_ || qualities_.isEmpty()) return fallbackUrl;
+    const shell::QualityEntry* lowest = nullptr;
+    for (const shell::QualityEntry& entry : qualities_) {
+        if (entry.url.isEmpty()) continue;
+        if (lowest == nullptr ||
+            (entry.height > 0 && (lowest->height <= 0 || entry.height < lowest->height))) {
+            lowest = &entry;
+        }
+    }
+    return (lowest != nullptr && !lowest->url.isEmpty()) ? lowest->url : fallbackUrl;
+}
+
 bool PlayerController::openStream(const QString& url, int height, bool resume) {
     if (closed_ || url.isEmpty()) return false;
     showOpeningOverlay();
@@ -400,7 +413,7 @@ bool PlayerController::openStream(const QString& url, int height, bool resume) {
         runtimePendingVisible_ = false;
         resumePauseGeneration_ = session_->pauseRequestGeneration();
         if (previewService_ != nullptr) {
-            previewService_->setSource(url, session_->sourceEpoch());
+            previewService_->setSource(previewSourceUrl(url), session_->sourceEpoch());
         }
     }
     rebuildQualityMenu();

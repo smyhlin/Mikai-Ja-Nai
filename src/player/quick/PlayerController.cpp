@@ -303,7 +303,7 @@ void PlayerController::connectSession() {
         }
         hideHoverPreview();
         if (previewService_ != nullptr && session_ != nullptr) {
-            previewService_->setSource(session_->sourceUrl(), epoch);
+            previewService_->setSource(previewSourceUrl(session_->sourceUrl()), epoch);
         }
         hoverPreviewPrewarmEpoch_ = 0;
         if (compareLoadingActive_) finishCompareLoading();
@@ -1078,10 +1078,10 @@ void PlayerController::showHoverPreview(double seconds) {
         }
     }
     emit hoverPreviewChanged();
+    if (hoverRefineTimer_ != nullptr) hoverRefineTimer_->stop();
     previewService_->requestFrame(
         token, seconds, shell::FramePreviewService::CachePolicy::Reuse,
         shell::FramePreviewService::SeekMode::FastKeyframe, true);
-    if (hoverRefineTimer_ != nullptr) hoverRefineTimer_->start();
 }
 
 void PlayerController::hideHoverPreview() {
@@ -1121,6 +1121,14 @@ void PlayerController::applyHoverPreviewFrame(quint64 token, double requestedSec
     hoverPreviewSource_ = source;
     if (isLatest) {
         hoverPreviewTime_ = formatTime(frameTime);
+        // Only schedule exact refinement AFTER the fast keyframe has arrived,
+        // and only when the keyframe is noticeably far from the hovered instant.
+        if (hoverRefineTimer_ != nullptr && std::isfinite(hoverPreviewSeconds_) &&
+            std::abs(frameTime - hoverPreviewSeconds_) > 0.75) {
+            const bool isNetwork = url_.startsWith(QLatin1String("http://"), Qt::CaseInsensitive) ||
+                                   url_.startsWith(QLatin1String("https://"), Qt::CaseInsensitive);
+            hoverRefineTimer_->start(isNetwork ? 350 : 120);
+        }
     }
     emit hoverPreviewChanged();
 }

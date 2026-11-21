@@ -191,7 +191,12 @@ ClipController::ClipController(VideoSession* source, QString caption, QObject* p
     anchor_ = std::isfinite(source->position()) ? source->position() : 0.0;
     sourceSize_ = QSize(source->videoWidth(), source->videoHeight());
     initializeSizeEstimator();
-    frames_.setSource(sourceUrl_, sourceEpoch_);
+    const QString previewUrl =
+        (seedPreview != nullptr && !seedPreview->source().isEmpty() &&
+         seedPreview->sourceEpoch() == sourceEpoch_)
+            ? seedPreview->source()
+            : sourceUrl_;
+    frames_.setSource(previewUrl, sourceEpoch_);
     if (seedPreview != nullptr) frames_.seedCacheFrom(*seedPreview);
     connect(source, &VideoSession::mediaInformationInvalidated, this, [this] {
         invalidate(QT_TR_NOOP("The video changed. Close this window and open Cut moment again."));
