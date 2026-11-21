@@ -4297,9 +4297,16 @@ void SearchPage::renderTeamProfile() {
                         loc.toString(profile.views_total),
                         loc.toString(profile.views_last_30_days))
                    .toHtmlEscaped();
-    if (profile.has_voice) details << tr("Voice").toHtmlEscaped();
-    if (profile.has_subs) details << tr("Subtitles").toHtmlEscaped();
-    details << renderTeamLinks();
+    QStringList badges;
+    if (profile.has_voice) badges << tr("Voice").toHtmlEscaped();
+    if (profile.has_subs) badges << tr("Subtitles").toHtmlEscaped();
+    if (!badges.isEmpty()) {
+        details << badges.join(QStringLiteral(" · "));
+    }
+    const QStringList links = renderTeamLinks();
+    if (!links.isEmpty()) {
+        details << links.join(QStringLiteral("&nbsp;&nbsp;·&nbsp;&nbsp;"));
+    }
     teamDetailLabel_->setText(details.join(QStringLiteral("<br>")));
 }
 
