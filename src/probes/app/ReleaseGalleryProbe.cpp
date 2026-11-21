@@ -516,7 +516,17 @@ private:
                 player_->noteUserActivity();
                 capture(player_->window(), QStringLiteral("player"), playbackState());
                 if (arguments_.fullDocsGallery) {
-                    player_->showHoverPreview(5.5);
+                    bool movedToTimeline = false;
+                    if (QObject* root = player_->window()->rootObject()) {
+                        if (auto* timeline = qobject_cast<QQuickItem*>(
+                                root->property("timeline").value<QObject*>())) {
+                            const QPointF scenePos = timeline->mapToScene(
+                                QPointF(timeline->width() * 0.35, timeline->height() * 0.5));
+                            QTest::mouseMove(player_->window(), scenePos.toPoint());
+                            movedToTimeline = true;
+                        }
+                    }
+                    if (!movedToTimeline) player_->showHoverPreview(5.5);
                     next(Stage::PlayerHoverShot);
                 } else {
                     next(Stage::CompareOpen);

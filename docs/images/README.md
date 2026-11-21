@@ -14,7 +14,7 @@ Neither the current gallery nor the historical records are release QA, rights cl
 | `filters.png` | 760×780 | `df6713ef81d099c2c876895aab93af28e856210e8ff832aba7e4656c72e2bdf8` | Catalogue filters dialog (genres, tags, years, format, status, season, studio, sort) |
 | `title-page.png` | 1280×800 | `5dcae3aa7267b098d6079dd01c1ffb3c9340683b456ba1555f77856fac2d2e11` | Live Title Page with poster, synopsis, metadata, provider tabs, episode list |
 | `player.png` | 1280×800 | `9dfa612f998e283bfc79a9c9c07474895225e20d75346a0ad88aad5d6d178ac7` | Qt Quick/QML player paused on 1080p fixture with timeline, transport controls, codec badges |
-| `player-hover-preview.png` | 1280×800 | `e4e11d3698cf2433ca690bb2438b4b4e1dce2c1bfd93cfade68a56420493c0ec` | Timeline hover thumbnail preview card with decoded frame |
+| `player-hover-preview.png` | 1280×800 | `4deb35b5ee32c07c58110809f09ec66582841cfe458e6c0e3598eacc9606d26c` | Timeline hover thumbnail preview card with decoded frame |
 | `player-settings-menu.png` | 1280×800 | `5d5f0481a0dac39fb492d3ead91d5d96fd0c5ceb554949567117ff9202b89769` | Player Settings popover menu (quality, speed, audio, subtitles, scaling) |
 | `player-processing-menu.png` | 1280×800 | `a3654ee77562e5e99342f2aedf17fd2de9cfb1c8d32a6e9e912dcef4950c1fef` | Player Enhancements/Processing popover menu (Original, Anime4K presets, AnimeJaNai, Native) |
 | `player-pip.png` | 480×270 | `f8648eb789cc9f02c10c3d5b1e0cf91a1ad9d2bc4819525af237500d132e7033` | Redesigned compact Picture-in-Picture window (auto-hide on focus/mouse leave, full-surface drag, minimal overlay) |
