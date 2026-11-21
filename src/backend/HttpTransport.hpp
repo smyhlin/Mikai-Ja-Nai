@@ -52,6 +52,15 @@ struct HttpFetchOptions {
     qint64 maxResponseBytes = 0;
 };
 
+enum class HttpMethod { Get, Post, Put, Patch, Delete };
+
+// Runs one bounded HTTP request (GET/POST/PUT/PATCH/DELETE) with optional body on the calling thread;
+// retry policy remains with callers.
+HttpFetchResult runBlockingRequest(QNetworkAccessManager* manager, HttpMethod method,
+                                   const QNetworkRequest& request,
+                                   const QByteArray& body,
+                                   const HttpFetchOptions& options);
+
 // Runs one bounded GET on the calling thread; retry policy remains with callers.
 HttpFetchResult runBlockingFetch(QNetworkAccessManager* manager, const QNetworkRequest& request,
                                  const HttpFetchOptions& options);

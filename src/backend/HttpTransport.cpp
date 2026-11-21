@@ -99,6 +99,13 @@ QNetworkAccessManager* transportManagerForThread() {
 
 HttpFetchResult runBlockingFetch(QNetworkAccessManager* manager, const QNetworkRequest& request,
                                  const HttpFetchOptions& options) {
+    return runBlockingRequest(manager, HttpMethod::Get, request, {}, options);
+}
+
+HttpFetchResult runBlockingRequest(QNetworkAccessManager* manager, HttpMethod method,
+                                   const QNetworkRequest& request,
+                                   const QByteArray& body,
+                                   const HttpFetchOptions& options) {
     HttpFetchResult result;
     if (WorkCancellationScope::cancellationRequested()) {
         result.cancelled = true;
@@ -106,14 +113,30 @@ HttpFetchResult runBlockingFetch(QNetworkAccessManager* manager, const QNetworkR
     }
     // Credential-bearing requests may redirect only within their origin.
     const bool hasCredential = hasCredentialHeader(request);
-    QNetworkReply* reply = nullptr;
+    QNetworkRequest effective = request;
     if (hasCredential) {
-        QNetworkRequest restricted = request;
-        restricted.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
-                                QNetworkRequest::SameOriginRedirectPolicy);
-        reply = manager->get(restricted);
-    } else {
-        reply = manager->get(request);
+        effective.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                               QNetworkRequest::SameOriginRedirectPolicy);
+    }
+    QNetworkReply* reply = nullptr;
+    switch (method) {
+        case HttpMethod::Get:
+            reply = manager->get(effective);
+            break;
+        case HttpMethod::Post:
+            reply = manager->post(effective, body);
+            break;
+        case HttpMethod::Put:
+            reply = manager->put(effective, body);
+            break;
+        case HttpMethod::Patch:
+            reply = manager->sendCustomRequest(effective, QByteArrayLiteral("PATCH"), body);
+            break;
+        case HttpMethod::Delete:
+            reply = body.isEmpty()
+                        ? manager->deleteResource(effective)
+                        : manager->sendCustomRequest(effective, QByteArrayLiteral("DELETE"), body);
+            break;
     }
     QEventLoop loop;
     QTimer timer;

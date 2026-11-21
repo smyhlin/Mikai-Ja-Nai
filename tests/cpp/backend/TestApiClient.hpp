@@ -80,6 +80,7 @@ class TestApiClient : public QObject {
   // The envelope decoder is the shared contract in Errors.hpp: it is what both
   // the client and the settings dialog read a failure through.
   void anEnvelopeFailureDecodesItsNamedReason();
+  void apiV15EndpointsUseExpectedVerbsAndPaths();
 
  private:
   // Where the .env the client writes is redirected, so no test ever reads or

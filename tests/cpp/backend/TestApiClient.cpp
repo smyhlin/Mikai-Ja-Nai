@@ -65,6 +65,7 @@ using mikai_test::asText;
 namespace {
 
 struct CapturedRequest {
+  QString method;
   QString target;
   QMap<QString, QString> headers;
 };
@@ -187,6 +188,7 @@ class LoopbackApi : public QObject {
     const QList<QByteArray> lines = connection.buffer.left(headerEnd).split('\n');
     if (!lines.isEmpty()) {
       const QList<QByteArray> first = lines.first().split(' ');
+      if (first.size() >= 1) request.method = QString::fromLatin1(first.at(0));
       if (first.size() >= 2) request.target = QString::fromLatin1(first.at(1));
     }
     for (const QByteArray& line : lines.mid(1)) {
@@ -1594,6 +1596,57 @@ void TestApiClient::anEnvelopeFailureDecodesItsNamedReason() {
   ApiErrorEnvelope garbage;
   QVERIFY2(!parseApiErrorEnvelope(QByteArrayLiteral("<html>oops</html>"), 500, &garbage),
            "a non-envelope body decoded as an envelope");
+}
+
+void TestApiClient::apiV15EndpointsUseExpectedVerbsAndPaths() {
+  LoopbackApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+
+  QList<QPair<QString, QString>> observed;
+  api.setRoute([&observed](const CapturedRequest& req) {
+    observed.append({req.method, req.target});
+    if (req.target.endsWith(QLatin1String("/blog/tags"))) {
+      return WireReply{200, QByteArrayLiteral("{\"ok\":true,\"result\":[\"news\",\"releases\"]}"), {}};
+    }
+    return WireReply{200, QByteArrayLiteral("{\"ok\":true,\"result\":{\"status\":\"ok\"}}"), {}};
+  });
+
+  MikaiClient client(QString::fromLatin1(kOldKey), api.baseUrl());
+  QCOMPARE(client.startDeviceAuth(QStringLiteral("Mikai Desktop")).value(QStringLiteral("status")).toString(),
+           QStringLiteral("ok"));
+  QCOMPARE(client.pollDeviceAuthToken(QStringLiteral("dev_1")).value(QStringLiteral("status")).toString(),
+           QStringLiteral("ok"));
+  QVERIFY(client.cancelDeviceAuth(QStringLiteral("dev_1")).value(QStringLiteral("ok")).toBool());
+  QVERIFY(client.revokeMyApiKey().value(QStringLiteral("ok")).toBool());
+  QCOMPARE(client.putMyListEntry(QStringLiteral("42"), QJsonObject{{QStringLiteral("status"), QStringLiteral("watching")}})
+               .value(QStringLiteral("status")).toString(),
+           QStringLiteral("ok"));
+  QVERIFY(client.deleteMyListEntry(QStringLiteral("42")).value(QStringLiteral("ok")).toBool());
+  QCOMPARE(client.updateMyCollection(QStringLiteral("c1"), QJsonObject{{QStringLiteral("title"), QStringLiteral("Fav")}})
+               .value(QStringLiteral("status")).toString(),
+           QStringLiteral("ok"));
+  QVERIFY(client.reorderMyCollection(QStringLiteral("c1"), QJsonObject{}).value(QStringLiteral("ok")).toBool());
+  QCOMPARE(client.getBlogTags().size(), 2);
+  QVERIFY(client.getCharacterVoices(QStringLiteral("ch1")).value(QStringLiteral("ok")).toBool());
+  QVERIFY(client.getPersonStaff(QStringLiteral("p1")).value(QStringLiteral("ok")).toBool());
+  QVERIFY(client.getCollectionAnime(QStringLiteral("col1")).value(QStringLiteral("ok")).toBool());
+  QVERIFY(client.getCommentReplies(QStringLiteral("99")).value(QStringLiteral("ok")).toBool());
+
+  QCOMPARE(observed.size(), 13);
+  QCOMPARE(observed.at(0), qMakePair(QStringLiteral("POST"), QStringLiteral("/public/v1/auth/device")));
+  QCOMPARE(observed.at(1), qMakePair(QStringLiteral("POST"), QStringLiteral("/public/v1/auth/device/token")));
+  QCOMPARE(observed.at(2), qMakePair(QStringLiteral("POST"), QStringLiteral("/public/v1/auth/device/cancel")));
+  QCOMPARE(observed.at(3), qMakePair(QStringLiteral("DELETE"), QStringLiteral("/public/v1/me/key")));
+  QCOMPARE(observed.at(4), qMakePair(QStringLiteral("PUT"), QStringLiteral("/public/v1/me/list/42")));
+  QCOMPARE(observed.at(5), qMakePair(QStringLiteral("DELETE"), QStringLiteral("/public/v1/me/list/42")));
+  QCOMPARE(observed.at(6), qMakePair(QStringLiteral("PATCH"), QStringLiteral("/public/v1/me/collections/c1")));
+  QCOMPARE(observed.at(7), qMakePair(QStringLiteral("PUT"), QStringLiteral("/public/v1/me/collections/c1/order")));
+  QCOMPARE(observed.at(8), qMakePair(QStringLiteral("GET"), QStringLiteral("/public/v1/blog/tags")));
+  QVERIFY(observed.at(9).second.startsWith(QStringLiteral("/public/v1/characters/ch1/voices")));
+  QVERIFY(observed.at(10).second.startsWith(QStringLiteral("/public/v1/people/p1/staff")));
+  QVERIFY(observed.at(11).second.startsWith(QStringLiteral("/public/v1/collections/col1/anime")));
+  QVERIFY(observed.at(12).second.startsWith(QStringLiteral("/public/v1/comments/99/replies")));
 }
 
 int runTestApiClient(int argc, char** argv) {

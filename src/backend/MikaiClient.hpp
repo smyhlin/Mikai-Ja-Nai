@@ -160,23 +160,66 @@ public:
     QJsonObject getUaPosters(int page = 1, int limit = 20, const QString& author = {},
                              std::optional<qint64> teamId = std::nullopt) const;
 
+    // API v1.5 Tier 2 account (/me/*) & device-link authentication (/auth/device*).
+    QJsonObject startDeviceAuth(const QString& clientName = {}) const;
+    QJsonObject pollDeviceAuthToken(const QString& deviceCode) const;
+    QJsonObject cancelDeviceAuth(const QString& deviceCode) const;
+    QJsonObject revokeMyApiKey() const;
+
+    QJsonObject getMyList(const QString& status = {}, int page = 1, int limit = 20,
+                          const QString& sort = {}, const QString& order = {}) const;
+    QJsonObject getMyListEntry(const QString& ref) const;
+    QJsonObject putMyListEntry(const QString& ref, const QJsonObject& entry) const;
+    QJsonObject deleteMyListEntry(const QString& ref) const;
+    QJsonObject addMyListRewatch(const QString& ref, const QJsonObject& payload = {}) const;
+    QJsonObject deleteMyListRewatch(const QString& ref) const;
+
+    QJsonObject getMyHistory(int page = 1, int limit = 20) const;
+    QJsonObject getMySubscriptions(int page = 1, int limit = 20) const;
+    QJsonObject getMySubscription(const QString& ref) const;
+    QJsonObject putMySubscription(const QString& ref, const QJsonObject& payload = {}) const;
+    QJsonObject deleteMySubscription(const QString& ref) const;
+    QJsonObject getMyNotifications(int page = 1, int limit = 20, bool unreadOnly = false) const;
+    QJsonObject markMyNotificationsRead(const QJsonObject& payload = {}) const;
+
+    QJsonObject getMyCollections(int page = 1, int limit = 20) const;
+    QJsonObject createMyCollection(const QJsonObject& payload) const;
+    QJsonObject getMySavedCollections(int page = 1, int limit = 20) const;
+    QJsonObject getMyCollection(const QString& id) const;
+    QJsonObject updateMyCollection(const QString& id, const QJsonObject& payload) const;
+    QJsonObject deleteMyCollection(const QString& id) const;
+    QJsonObject getMyCollectionAnime(const QString& id, int page = 1, int limit = 20) const;
+    QJsonObject addAnimeToMyCollection(const QString& id, const QString& ref,
+                                       const QJsonObject& payload = {}) const;
+    QJsonObject removeAnimeFromMyCollection(const QString& id, const QString& ref) const;
+    QJsonObject reorderMyCollection(const QString& id, const QJsonObject& payload) const;
+
     // API v1.5 Tier 3 read-only endpoints (characters, people, collections, comments, blog, translit).
     QJsonObject getCharacters(const QString& search = {}, int page = 1, int limit = 20) const;
     QJsonObject getCharacter(const QString& ref) const;
     QJsonObject getCharacterAnime(const QString& ref, int page = 1, int limit = 20) const;
+    QJsonObject getCharacterVoices(const QString& ref, int page = 1, int limit = 20) const;
     QJsonObject getPeople(const QString& search = {}, int page = 1, int limit = 20) const;
     QJsonObject getPerson(const QString& ref) const;
     QJsonObject getPersonAnime(const QString& ref, int page = 1, int limit = 20) const;
+    QJsonObject getPersonVoices(const QString& ref, int page = 1, int limit = 20) const;
+    QJsonObject getPersonStaff(const QString& ref, int page = 1, int limit = 20) const;
     QJsonObject getAnimeCharacters(const QString& ref, int page = 1, int limit = 20) const;
     QJsonObject getAnimeStaff(const QString& ref, int page = 1, int limit = 20) const;
     QJsonObject getCollections(const QString& search = {}, int page = 1, int limit = 20,
                                const QString& sort = {}, const QString& order = {}) const;
     QJsonObject getCollection(const QString& ref) const;
+    QJsonObject getCollectionAnime(const QString& ref, int page = 1, int limit = 20) const;
+    QJsonObject getCollectionComments(const QString& ref, int page = 1, int limit = 20) const;
     QJsonObject getUserCollections(const QString& username, int page = 1, int limit = 20) const;
     QJsonObject getComments(const QString& targetType, const QString& targetRef,
                             int page = 1, int limit = 20) const;
+    QJsonObject getAnimeComments(const QString& ref, int page = 1, int limit = 20) const;
+    QJsonObject getBlogPostComments(const QString& slug, int page = 1, int limit = 20) const;
+    QJsonObject getCommentReplies(const QString& id, int page = 1, int limit = 20) const;
     QJsonObject getBlogPosts(int page = 1, int limit = 20, const QString& tag = {}) const;
     QJsonObject getBlogPost(const QString& slug) const;
+    QJsonArray getBlogTags() const;
     QJsonObject transliterate(const QString& text, const QString& system = {}) const;
     QJsonArray getTranslitSystems() const;
 
@@ -213,11 +256,16 @@ public:
 private:
     QNetworkAccessManager* managerForThread() const;
     QJsonObject get(const QString& path, const QMap<QString, QString>& params = {}) const;
-    QJsonObject post(const QString& path, const QJsonObject& body) const;
+    QJsonObject post(const QString& path, const QJsonObject& body = {}) const;
+    QJsonObject put(const QString& path, const QJsonObject& body = {}) const;
+    QJsonObject patch(const QString& path, const QJsonObject& body = {}) const;
+    QJsonObject del(const QString& path, const QJsonObject& body = {}) const;
     QJsonObject apiGet(const QString& url, const QMap<QString, QString>& params = {},
                        const QString& overrideKey = {}, int timeoutMs = 15000) const;
     QJsonObject apiPost(const QString& url, const QJsonObject& body,
                         int timeoutMs = 15000) const;
+    QJsonObject apiMutate(int methodEnum, const QString& url, const QJsonObject& body,
+                          int timeoutMs = 15000) const;
 
     // The credential snapshot and the limiter generation it was captured for,
     // read as one unit so a key change cannot hand a request the new epoch with
