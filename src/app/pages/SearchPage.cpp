@@ -4015,12 +4015,7 @@ void SearchPage::openTeamPicker() {
     connect(more, &QPushButton::clicked, &dialog, [fetch, paging, totalPages, currentTerm] {
         if (*paging < *totalPages) fetch(*currentTerm, *paging + 1);
     });
-    connect(rows, &QListWidget::itemChanged, &dialog, [pickedTeamIds](QListWidgetItem* item) {
-        const qint64 id = item->data(Qt::UserRole).toMap().value(QStringLiteral("id")).toLongLong();
-        if (item->checkState() == Qt::Checked) pickedTeamIds->insert(id);
-        else pickedTeamIds->remove(id);
-    });
-    connect(rows, &QListWidget::currentItemChanged, &dialog, [selected, browse](QListWidgetItem* item) {
+    const auto syncSelectedFromItem = [selected, browse](QListWidgetItem* item) {
         *selected = backend::Team{};
         browse->setEnabled(item != nullptr);
         if (item == nullptr) return;
@@ -4028,7 +4023,31 @@ void SearchPage::openTeamPicker() {
         selected->id = data.value(QStringLiteral("id")).toLongLong();
         selected->slug = data.value(QStringLiteral("slug")).toString();
         selected->name = data.value(QStringLiteral("name")).toString();
-    });
+    };
+    connect(rows, &QListWidget::itemChanged, &dialog,
+            [pickedTeamIds, selected, syncSelectedFromItem](QListWidgetItem* item) {
+                const qint64 id =
+                    item->data(Qt::UserRole).toMap().value(QStringLiteral("id")).toLongLong();
+                if (item->checkState() == Qt::Checked) {
+                    pickedTeamIds->insert(id);
+                    if (selected->name.isEmpty()) syncSelectedFromItem(item);
+                } else {
+                    pickedTeamIds->remove(id);
+                }
+            });
+    connect(rows, &QListWidget::currentItemChanged, &dialog, syncSelectedFromItem);
+    connect(rows, &QListWidget::itemDoubleClicked, &dialog,
+            [&dialog, syncSelectedFromItem](QListWidgetItem* item) {
+                if (item == nullptr) return;
+                syncSelectedFromItem(item);
+                dialog.accept();
+            });
+    connect(rows, &QListWidget::itemActivated, &dialog,
+            [&dialog, syncSelectedFromItem](QListWidgetItem* item) {
+                if (item == nullptr) return;
+                syncSelectedFromItem(item);
+                dialog.accept();
+            });
     bool filterSelected = false;
     connect(browse, &QPushButton::clicked, &dialog, [&dialog, selected] {
         if (!selected->name.isEmpty()) dialog.accept();
