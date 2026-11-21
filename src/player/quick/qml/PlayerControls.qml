@@ -271,7 +271,7 @@ Item {
                         compact: true
                         implicitWidth: 40
                         implicitHeight: 40
-                        visible: root.width >= 780
+                        visible: true
                         enabled: root.controller.hasVideo
                         onClicked: {
                             root.controller.noteUserActivity()
@@ -416,6 +416,22 @@ Item {
                     onClicked: {
                         root.controller.noteUserActivity()
                         root.controller.openSubtitlesMenu()
+                    }
+                }
+
+                PlayerButton {
+                    id: compactClipButton
+                    controller: root.controller
+                    iconName: "clapperboard"
+                    toolTip: qsTr("Cut a short clip from this video")
+                    Accessible.name: toolTip
+                    compact: true
+                    implicitWidth: 34
+                    implicitHeight: 34
+                    enabled: root.controller.hasVideo
+                    onClicked: {
+                        root.controller.noteUserActivity()
+                        root.controller.openClipWindow()
                     }
                 }
 
