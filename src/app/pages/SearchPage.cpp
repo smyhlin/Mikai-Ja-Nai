@@ -60,6 +60,7 @@
 #include <QResizeEvent>
 #include <QStyle>
 #include <QScrollArea>
+#include <QShortcut>
 #include <QStackedWidget>
 #include <QScrollBar>
 #include <QSizePolicy>
@@ -3720,6 +3721,22 @@ void SearchPage::showCatalogueFilters() {
     if (auto* cancel = buttons->button(QDialogButtonBox::Cancel))
         theme::applyActionRole(cancel, theme::ActionRole::Secondary);
     layout->addWidget(buttons);
+    // Whole-row click toggling on visible checkable lists + Ctrl+Enter apply shortcut.
+    for (QListWidget* list : {formatList, statusList, seasonList, studioList}) {
+        connect(list, &QListWidget::itemClicked, &dialog, [](QListWidgetItem* item) {
+            if (item == nullptr) return;
+            item->setCheckState(item->checkState() == Qt::Checked ? Qt::Unchecked : Qt::Checked);
+        });
+    }
+    auto* applyShortcut1 = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_Return), &dialog);
+    auto* applyShortcut2 = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_Enter), &dialog);
+    const auto triggerApply = [&dialog] {
+        dialog.setProperty("applyRequested", true);
+        dialog.accept();
+    };
+    connect(applyShortcut1, &QShortcut::activated, &dialog, triggerApply);
+    connect(applyShortcut2, &QShortcut::activated, &dialog, triggerApply);
+
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
     connect(buttons, &QDialogButtonBox::clicked, &dialog, [&dialog, buttons](QAbstractButton* button) {
         if (buttons->standardButton(button) == QDialogButtonBox::Reset) {
