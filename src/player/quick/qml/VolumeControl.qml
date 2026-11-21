@@ -6,6 +6,7 @@ Item {
     id: root
 
     required property PlayerController controller
+    property bool compact: false
 
     readonly property bool focusInside: {
         if (!root.Window.window) return false
@@ -58,8 +59,8 @@ Item {
             iconName: root.glyph
             toolTip: root.controller.muted ? qsTr("Unmute (M)") : qsTr("Mute (M)")
             Accessible.name: toolTip
-            implicitWidth: 40
-            implicitHeight: 40
+            implicitWidth: root.compact ? 30 : 40
+            implicitHeight: root.compact ? 30 : 40
             onClicked: {
                 root.controller.noteUserActivity()
                 root.controller.toggleMute()
@@ -76,9 +77,9 @@ Item {
             readonly property real stepSize: 0.1
 
             Layout.fillWidth: true
-            Layout.minimumWidth: 56
+            Layout.minimumWidth: root.compact ? 44 : 56
             Layout.maximumWidth: 152
-            Layout.preferredWidth: 140
+            Layout.preferredWidth: root.compact ? 72 : 140
             Layout.alignment: Qt.AlignVCenter
             implicitHeight: 24
 

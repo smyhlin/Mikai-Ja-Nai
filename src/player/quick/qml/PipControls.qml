@@ -148,12 +148,13 @@ Item {
         VolumeControl {
             id: volumeControl
             controller: root.controller
+            compact: true
             objectName: "player.pip.volume"
             anchors.left: parent.left
             anchors.top: parent.top
             anchors.leftMargin: 8
             anchors.topMargin: 6
-            width: Math.min(138, Math.max(92, parent.width * 0.32))
+            width: Math.min(138, Math.max(84, parent.width * 0.32))
             height: 32
         }
 
