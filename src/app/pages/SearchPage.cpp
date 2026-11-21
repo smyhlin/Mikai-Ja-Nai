@@ -3892,10 +3892,18 @@ void SearchPage::openTeamPicker() {
     theme::applyActionRole(teamOrderBtn, theme::ActionRole::Secondary);
     teamControlsRow->addWidget(teamOrderBtn);
 
+    auto* selectedStrip = new QWidget(&dialog);
+    selectedStrip->setObjectName(QStringLiteral("teamSelectedChipsStrip"));
+    auto* selectedFlow = new FlowLayout(theme::kSpacingXs, theme::kSpacingXs);
+    selectedFlow->setContentsMargins(0, 0, 0, 0);
+    selectedStrip->setLayout(selectedFlow);
+    selectedStrip->hide();
+
     auto* state = new QLabel(&dialog);
     state->setObjectName(QStringLiteral("muted"));
     layout->addWidget(search);
     layout->addLayout(teamControlsRow);
+    layout->addWidget(selectedStrip);
     layout->addWidget(state);
     layout->addWidget(rows, 1);
     auto* buttons = new QHBoxLayout();
@@ -3912,7 +3920,54 @@ void SearchPage::openTeamPicker() {
     auto request = std::make_shared<int>(0);
     auto selected = std::make_shared<backend::Team>();
     auto pickedTeamIds = std::make_shared<QSet<qint64>>();
+    auto pickedTeamNames = std::make_shared<QHash<qint64, QString>>();
     for (qint64 id : catalogueQuery_.teams) pickedTeamIds->insert(id);
+    const auto refreshSelectedChips = [selectedStrip, selectedFlow, pickedTeamIds, pickedTeamNames,
+                                       rows, filterTeam]() {
+        while (QLayoutItem* item = selectedFlow->takeAt(0)) {
+            if (QWidget* w = item->widget()) w->deleteLater();
+            delete item;
+        }
+        const int n = pickedTeamIds->size();
+        filterTeam->setText(n > 0 ? tr("Filter catalogue (%1)").arg(n) : tr("Filter catalogue"));
+        if (n == 0) {
+            selectedStrip->hide();
+            return;
+        }
+        for (qint64 id : *pickedTeamIds) {
+            const QString lbl = pickedTeamNames->value(id, tr("Team #%1").arg(id));
+            auto* chip = new QPushButton(lbl + QStringLiteral("  ×"), selectedStrip);
+            chip->setObjectName(QStringLiteral("pagerChipActive"));
+            chip->setCursor(Qt::PointingHandCursor);
+            QObject::connect(chip, &QPushButton::clicked, selectedStrip, [id, pickedTeamIds, rows]() {
+                pickedTeamIds->remove(id);
+                for (int r = 0; r < rows->count(); ++r) {
+                    QListWidgetItem* it = rows->item(r);
+                    if (it->data(Qt::UserRole).toMap().value(QStringLiteral("id")).toLongLong() == id) {
+                        it->setCheckState(Qt::Unchecked);
+                        return;
+                    }
+                }
+            });
+            selectedFlow->addWidget(chip);
+        }
+        auto* clearBtn = new QPushButton(tr("Clear selected"), selectedStrip);
+        theme::applyActionRole(clearBtn, theme::ActionRole::Ghost);
+        QObject::connect(clearBtn, &QPushButton::clicked, selectedStrip,
+                         [pickedTeamIds, rows, selectedStrip, filterTeam]() {
+                             pickedTeamIds->clear();
+                             for (int r = 0; r < rows->count(); ++r) {
+                                 if (rows->item(r)->checkState() == Qt::Checked) {
+                                     rows->item(r)->setCheckState(Qt::Unchecked);
+                                 }
+                             }
+                             selectedStrip->hide();
+                             filterTeam->setText(tr("Filter catalogue"));
+                         });
+        selectedFlow->addWidget(clearBtn);
+        selectedStrip->show();
+    };
+    refreshSelectedChips();
     const QPointer<QListWidget> guardedRows(rows);
     const QPointer<QPushButton> guardedMore(more);
     const QPointer<QLabel> guardedState(state);
@@ -4032,15 +4087,19 @@ void SearchPage::openTeamPicker() {
         selected->name = data.value(QStringLiteral("name")).toString();
     };
     connect(rows, &QListWidget::itemChanged, &dialog,
-            [pickedTeamIds, selected, syncSelectedFromItem](QListWidgetItem* item) {
-                const qint64 id =
-                    item->data(Qt::UserRole).toMap().value(QStringLiteral("id")).toLongLong();
+            [pickedTeamIds, pickedTeamNames, selected, syncSelectedFromItem,
+             refreshSelectedChips](QListWidgetItem* item) {
+                const QVariantMap data = item->data(Qt::UserRole).toMap();
+                const qint64 id = data.value(QStringLiteral("id")).toLongLong();
+                const QString name = data.value(QStringLiteral("name")).toString();
                 if (item->checkState() == Qt::Checked) {
                     pickedTeamIds->insert(id);
+                    if (!name.isEmpty()) pickedTeamNames->insert(id, name);
                     if (selected->name.isEmpty()) syncSelectedFromItem(item);
                 } else {
                     pickedTeamIds->remove(id);
                 }
+                refreshSelectedChips();
             });
     connect(rows, &QListWidget::currentItemChanged, &dialog, syncSelectedFromItem);
     connect(rows, &QListWidget::itemDoubleClicked, &dialog,
