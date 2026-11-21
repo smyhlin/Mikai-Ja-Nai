@@ -3846,12 +3846,18 @@ void SearchPage::openTeamPicker() {
     rows->setUniformItemSizes(true);
     auto* more = new QPushButton(tr("Load more"), &dialog);
     more->setObjectName(QStringLiteral("teamLoadMoreButton"));
+    theme::applyActionRole(more, theme::ActionRole::Ghost);
     auto* browse = new QPushButton(tr("Browse anime"), &dialog);
     browse->setObjectName(QStringLiteral("teamBrowseButton"));
+    theme::applyActionRole(browse, theme::ActionRole::Secondary);
     browse->setEnabled(false);
     auto* filterTeam = new QPushButton(tr("Filter catalogue"), &dialog);
     filterTeam->setObjectName(QStringLiteral("teamFilterButton"));
     theme::applyActionRole(filterTeam, theme::ActionRole::Primary);
+    auto* cancelBtn = new QPushButton(tr("Cancel"), &dialog);
+    cancelBtn->setObjectName(QStringLiteral("teamCancelButton"));
+    theme::applyActionRole(cancelBtn, theme::ActionRole::Ghost);
+    connect(cancelBtn, &QPushButton::clicked, &dialog, &QDialog::reject);
     auto* teamControlsRow = new QHBoxLayout();
     teamControlsRow->setContentsMargins(0, 0, 0, 0);
     teamControlsRow->setSpacing(theme::kSpacingSmall);
@@ -3896,6 +3902,7 @@ void SearchPage::openTeamPicker() {
     buttons->setSpacing(theme::kSpacingSmall);
     buttons->addWidget(more);
     buttons->addStretch();
+    buttons->addWidget(cancelBtn);
     buttons->addWidget(browse);
     buttons->addWidget(filterTeam);
     layout->addLayout(buttons);
