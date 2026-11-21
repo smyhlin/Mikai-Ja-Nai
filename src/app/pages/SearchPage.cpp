@@ -516,22 +516,50 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     theme::applyActionRole(searchButton_, theme::ActionRole::Primary);
     searchButton_->setFixedHeight(theme::kControlHeight);
     searchButton_->setIconSize(QSize(theme::kIconSize + theme::kIconGlyphPad, theme::kIconSize));
-    connect(query_, &QLineEdit::returnPressed, this, &SearchPage::search);
-    connect(searchButton_, &QPushButton::clicked, this, &SearchPage::search);
-    connect(query_, &QLineEdit::textChanged, this, [this](const QString& text) {
-        if (!text.trimmed().isEmpty() || browseMode_) {
+    clearResetTimer_ = new QTimer(this);
+    clearResetTimer_->setSingleShot(true);
+    clearResetTimer_->setInterval(350);
+    connect(clearResetTimer_, &QTimer::timeout, this, [this] {
+        if (query_ == nullptr || !query_->text().trimmed().isEmpty() || browseMode_) {
             return;
         }
-        // Clearing the text returns to the home collection only when no other
-        // criterion survives: a sort the viewer chose is one of them, and
-        // dropping it here would answer a different question than the one the
-        // filters hold. A criterion that does survive is asked for again, so
-        // the results on screen are the ones the surviving criteria name.
         if (hasExplicitCatalogueCriteria(catalogueQuery_)) {
             applyCatalogueFilters();
         } else {
             loadOngoing();
         }
+    });
+
+    connect(query_, &QLineEdit::returnPressed, this, [this] {
+        if (clearResetTimer_ != nullptr) clearResetTimer_->stop();
+        search();
+    });
+    connect(searchButton_, &QPushButton::clicked, this, [this] {
+        if (searchInFlight_) {
+            ++requestSeq_;
+            setSearchInFlight(false);
+            statusLine_ = Status::BrowseHint;
+            renderStatus();
+            return;
+        }
+        if (clearResetTimer_ != nullptr) clearResetTimer_->stop();
+        search();
+    });
+    connect(query_, &QLineEdit::textChanged, this, [this](const QString& text) {
+        if (searchKeycap_ != nullptr && searchField_ != nullptr) {
+            searchKeycap_->setVisible(!query_->hasFocus() && text.isEmpty() &&
+                                      searchField_->width() >= theme::kSearchKeycapMinFieldWidth);
+        }
+        if (!text.trimmed().isEmpty()) {
+            if (clearResetTimer_ != nullptr) clearResetTimer_->stop();
+            return;
+        }
+        if (browseMode_) {
+            return;
+        }
+        // Debounce empty-text reset so selecting all and typing a new query
+        // does not fire a stray reload on the transient empty frame.
+        if (clearResetTimer_ != nullptr) clearResetTimer_->start();
     });
     connect(rateLabel_, &RateLimitLabel::textChanged, this, &SearchPage::refreshHeaderActionWidths);
     headerLayout->addWidget(searchButton_, 0, Qt::AlignVCenter);
@@ -2978,6 +3006,7 @@ void SearchPage::runResultsRequest(int page) {
     // viewer chose (a sort, an order, a filter) never applied. The home
     // carousel blocks keep their own browse calls; the catalogue does not use
     // them.
+    setSearchInFlight(true);
     backend::MikaiClient* client = &client_;
     const QPointer<SearchPage> self(this);
     runner_.run(
@@ -2986,14 +3015,26 @@ void SearchPage::runResultsRequest(int page) {
             if (self.isNull() || seq != self->requestSeq_) {
                 return;
             }
+            self->setSearchInFlight(false);
             self->onResults(result.value<backend::SearchResult>(), page);
         },
         [self, seq](const backend::Failure& failure) {
             if (self.isNull() || seq != self->requestSeq_) {
                 return;
             }
+            self->setSearchInFlight(false);
             self->onError(failure);
         });
+}
+
+void SearchPage::setSearchInFlight(bool active) {
+    if (searchInFlight_ == active) return;
+    searchInFlight_ = active;
+    if (searchButton_ != nullptr) {
+        searchButton_->setText(active ? tr("Cancel") : tr("Search"));
+        searchButton_->setToolTip(active ? tr("Cancel in-flight search") : tr("Search"));
+        refreshHeaderActionWidths();
+    }
 }
 
 void SearchPage::search() {

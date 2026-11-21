@@ -426,6 +426,9 @@ private:
 
     QTimer* healTimer_ = nullptr;
     QTimer* thumbTimer_ = nullptr;
+    QTimer* clearResetTimer_ = nullptr;
+    bool searchInFlight_ = false;
+    void setSearchInFlight(bool active);
     QToolButton* homeButton_ = nullptr;
     QToolButton* mediaButton_ = nullptr;
     QAction* openFileAction_ = nullptr;
