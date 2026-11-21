@@ -3143,6 +3143,47 @@ void TitlePage::rebuildReleaseChips() {
         releaseRowsLayout_->addWidget(providerRow);
     }
 
+    // Add clickable team profile pills so users can jump directly from TitlePage
+    // to any participating dubbing/subbing team's profile and anime catalogue.
+    QSet<QString> seenTeamRefs;
+    QList<QPair<QString, QString>> uniqueTeams;
+    for (const backend::Release& rel : releases_) {
+        for (const backend::Team& team : rel.teams) {
+            const QString ref = teamReference(team);
+            const QString name = teamDisplayName(team);
+            if (!ref.isEmpty() && !name.isEmpty() && !seenTeamRefs.contains(ref)) {
+                seenTeamRefs.insert(ref);
+                uniqueTeams.append(qMakePair(ref, name));
+            }
+        }
+    }
+    if (!uniqueTeams.isEmpty()) {
+        auto* teamRow = new QWidget(releaseChipsHost_);
+        teamRow->setObjectName(QStringLiteral("titleTeamsRow"));
+        auto* teamLayout = new QHBoxLayout(teamRow);
+        teamLayout->setContentsMargins(0, theme::kSpacingXs, 0, 0);
+        teamLayout->setSpacing(theme::kSpacingXs);
+        auto* teamLbl = new QLabel(tr("Teams:"), teamRow);
+        teamLbl->setObjectName(QStringLiteral("muted"));
+        teamLayout->addWidget(teamLbl, 0, Qt::AlignVCenter);
+        auto* chipsWrap = new QWidget(teamRow);
+        auto* chipsFlow = new FlowLayout(theme::kSpacingXs, theme::kSpacingXs);
+        chipsFlow->setContentsMargins(0, 0, 0, 0);
+        chipsWrap->setLayout(chipsFlow);
+        for (const auto& pair : uniqueTeams) {
+            auto* btn = new QPushButton(pair.second, chipsWrap);
+            btn->setObjectName(QStringLiteral("pagerChip"));
+            btn->setCursor(Qt::PointingHandCursor);
+            btn->setToolTip(tr("Open %1 team profile and releases").arg(pair.second));
+            btn->setAccessibleName(tr("Browse team %1").arg(pair.second));
+            const QString ref = pair.first;
+            connect(btn, &QPushButton::clicked, this, [this, ref] { Q_EMIT teamRequested(ref); });
+            chipsFlow->addWidget(btn);
+        }
+        teamLayout->addWidget(chipsWrap, 1);
+        releaseRowsLayout_->addWidget(teamRow);
+    }
+
     int kindLabelWidth = 0;
     for (QLabel* label : kindLabels) {
         kindLabelWidth = qMax(kindLabelWidth, label->sizeHint().width());
