@@ -4291,8 +4291,11 @@ void SearchPage::renderTeamProfile() {
         details << profile.description.toHtmlEscaped().replace(QLatin1Char('\n'), QStringLiteral("<br>"));
     }
     if (!profile.birthday.isEmpty()) details << tr("Birthday: %1").arg(profile.birthday).toHtmlEscaped();
+    const QLocale loc;
     details << tr("%1 anime · %2 total views · %3 views this month")
-                   .arg(profile.anime_count).arg(profile.views_total).arg(profile.views_last_30_days)
+                   .arg(loc.toString(profile.anime_count),
+                        loc.toString(profile.views_total),
+                        loc.toString(profile.views_last_30_days))
                    .toHtmlEscaped();
     if (profile.has_voice) details << tr("Voice").toHtmlEscaped();
     if (profile.has_subs) details << tr("Subtitles").toHtmlEscaped();
