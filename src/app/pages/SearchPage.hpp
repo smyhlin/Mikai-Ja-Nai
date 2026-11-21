@@ -481,6 +481,7 @@ private:
     QToolButton* gridViewButton_ = nullptr;
     QToolButton* listViewButton_ = nullptr;
     bool syncingSortToolbar_ = false;
+    QWidget* resultsSkeleton_ = nullptr;
     QScrollArea* resultsGridScroll_ = nullptr;
     QWidget* resultsGridHost_ = nullptr;
     FlowLayout* resultsGridLayout_ = nullptr;

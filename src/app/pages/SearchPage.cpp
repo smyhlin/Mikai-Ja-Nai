@@ -772,6 +772,36 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     resultsGridScroll_->hide();
     rootLayout_->addWidget(resultsGridScroll_, 1);
 
+    resultsSkeleton_ = new QWidget(this);
+    resultsSkeleton_->setObjectName(QStringLiteral("searchResultsSkeleton"));
+    auto* skeletonFlow = new FlowLayout(theme::kSpacingMedium, theme::kSpacingMedium);
+    skeletonFlow->setContentsMargins(0, theme::kSpacingXs, theme::kSpacingSmall,
+                                     theme::kSpacingSmall);
+    resultsSkeleton_->setLayout(skeletonFlow);
+    for (int i = 0; i < 8; ++i) {
+        auto* skel = new QFrame(resultsSkeleton_);
+        skel->setObjectName(QStringLiteral("settingsCard"));
+        skel->setFixedSize(theme::kHomeCardWidth, theme::kHomeCardHeight);
+        auto* sl = new QHBoxLayout(skel);
+        sl->setContentsMargins(theme::kSpacingMedium, theme::kSpacingMedium,
+                               theme::kSpacingLarge, theme::kSpacingMedium);
+        sl->setSpacing(theme::kSpacingMedium);
+        auto* posterBox = new QFrame(skel);
+        posterBox->setObjectName(QStringLiteral("carouselPoster"));
+        posterBox->setFixedSize(theme::kHomePosterWidth, theme::kHomePosterHeight);
+        sl->addWidget(posterBox, 0, Qt::AlignTop | Qt::AlignLeft);
+        auto* textCol = new QVBoxLayout();
+        textCol->setSpacing(theme::kSpacingSmall);
+        auto* line1 = new QLabel(tr("Loading…"), skel);
+        line1->setObjectName(QStringLiteral("muted"));
+        textCol->addWidget(line1);
+        textCol->addStretch(1);
+        sl->addLayout(textCol, 1);
+        skeletonFlow->addWidget(skel);
+    }
+    resultsSkeleton_->hide();
+    rootLayout_->addWidget(resultsSkeleton_, 1);
+
     {
         QSettings settings;
         const int savedSize = settings.value(QStringLiteral("search/pageSize"),
@@ -3245,6 +3275,16 @@ void SearchPage::setSearchInFlight(bool active) {
         searchButton_->setToolTip(active ? tr("Cancel in-flight search") : tr("Search"));
         refreshHeaderActionWidths();
     }
+    if (!homeCurrent_ && resultsSkeleton_ != nullptr) {
+        resultsSkeleton_->setVisible(active);
+        if (active) {
+            if (resultsGridScroll_ != nullptr) resultsGridScroll_->hide();
+            if (results_ != nullptr) results_->hide();
+        } else {
+            if (resultsGridScroll_ != nullptr) resultsGridScroll_->setVisible(gridViewMode_);
+            if (results_ != nullptr) results_->setVisible(!gridViewMode_);
+        }
+    }
 }
 
 void SearchPage::search() {
@@ -3281,6 +3321,7 @@ void SearchPage::showDiscovery() {
     placeIntro(true);
     discoveryScroll_->show();
     results_->hide();
+    if (resultsSkeleton_ != nullptr) resultsSkeleton_->hide();
     if (resultsGridScroll_ != nullptr) resultsGridScroll_->hide();
     if (resultsToolbar_ != nullptr) resultsToolbar_->hide();
     formatBar_->hide();
