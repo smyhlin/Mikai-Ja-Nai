@@ -357,6 +357,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     filtersButton_->setText(tr("Filters"));
     filtersButton_->setToolTip(tr("Filters"));
     filtersButton_->setAccessibleName(tr("Filters"));
+    filtersButton_->setCheckable(true);
     filtersButton_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     filtersButton_->setIconSize(sidebarGlyphBox);
     filtersButton_->setFixedHeight(theme::kControlHeight);
@@ -369,6 +370,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     teamsButton_->setText(tr("Teams…"));
     teamsButton_->setToolTip(tr("Teams…"));
     teamsButton_->setAccessibleName(tr("Teams…"));
+    teamsButton_->setCheckable(true);
     teamsButton_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     teamsButton_->setIconSize(sidebarGlyphBox);
     teamsButton_->setFixedHeight(theme::kControlHeight);
@@ -569,8 +571,14 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
 
     rootLayout_->addWidget(header);
 
-    connect(filtersButton_, &QToolButton::clicked, this, &SearchPage::showCatalogueFilters);
-    connect(teamsButton_, &QToolButton::clicked, this, &SearchPage::openTeamPicker);
+    connect(filtersButton_, &QToolButton::clicked, this, [this] {
+        showCatalogueFilters();
+        updateHomeIndicator();
+    });
+    connect(teamsButton_, &QToolButton::clicked, this, [this] {
+        openTeamPicker();
+        updateHomeIndicator();
+    });
     refreshHeaderIcons();
     loadDictionaries();
 
@@ -927,8 +935,14 @@ void SearchPage::updateSidebarPresentation(bool force) {
 }
 
 void SearchPage::updateHomeIndicator() {
-    // Stack visibility is not the Home navigation state.
+    // Synchronize primary sidebar navigation states across Home, Filtered
+    // Catalogue, Search Results, and Teams browse modes.
     if (homeButton_ != nullptr) homeButton_->setChecked(homeCurrent_);
+    if (teamsButton_ != nullptr) teamsButton_->setChecked(!homeCurrent_ && teamBrowseMode_);
+    if (filtersButton_ != nullptr) {
+        filtersButton_->setChecked(!homeCurrent_ && !teamBrowseMode_ &&
+                                   hasExplicitCatalogueCriteria(catalogueQuery_));
+    }
 }
 
 void SearchPage::retranslateUi() {
