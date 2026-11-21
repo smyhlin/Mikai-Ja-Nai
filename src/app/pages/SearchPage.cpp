@@ -672,6 +672,59 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     // The right gap keeps the content clear of the dedicated scrollbar track.
     discoveryLayout->setContentsMargins(0, 0, theme::kHomeScrollContentGap, 0);
     discoveryLayout->setSpacing(theme::kSpacingMedium);
+    quickCategoriesBar_ = new QWidget(discovery);
+    quickCategoriesBar_->setObjectName(QStringLiteral("quickCategoriesBar"));
+    auto* qcFlow = new FlowLayout(theme::kSpacingXs, theme::kSpacingXs);
+    qcFlow->setContentsMargins(0, 0, 0, theme::kSpacingXs);
+    quickCategoriesBar_->setLayout(qcFlow);
+    auto addQuickCat = [this, qcFlow](const QString& label, std::function<void(backend::AnimeQuery&)> configure) {
+        auto* btn = new QPushButton(label, quickCategoriesBar_);
+        btn->setObjectName(QStringLiteral("pagerChip"));
+        btn->setCursor(Qt::PointingHandCursor);
+        connect(btn, &QPushButton::clicked, this, [this, fn = std::move(configure)] {
+            catalogueQuery_ = backend::AnimeQuery{};
+            activeFormat_.clear();
+            if (query_ != nullptr) query_->clear();
+            currentQuery_.clear();
+            fn(catalogueQuery_);
+            applyCatalogueFilters();
+        });
+        qcFlow->addWidget(btn);
+    };
+    addQuickCat(tr("Top Rated"), [](backend::AnimeQuery& q) {
+        q.sort = QStringLiteral("score");
+        q.order = QStringLiteral("desc");
+    });
+    addQuickCat(tr("This Season"), [](backend::AnimeQuery& q) {
+        q.statuses = {QStringLiteral("ongoing")};
+        q.sort = QStringLiteral("views");
+        q.order = QStringLiteral("desc");
+    });
+    addQuickCat(tr("Movies"), [](backend::AnimeQuery& q) {
+        q.formats = {QStringLiteral("movie")};
+        q.sort = QStringLiteral("score");
+        q.order = QStringLiteral("desc");
+    });
+    addQuickCat(tr("Completed"), [](backend::AnimeQuery& q) {
+        q.statuses = {QStringLiteral("completed")};
+        q.sort = QStringLiteral("score");
+        q.order = QStringLiteral("desc");
+    });
+    for (const QString& genre : {QStringLiteral("Action"), QStringLiteral("Fantasy"),
+                                 QStringLiteral("Romance"), QStringLiteral("Comedy"),
+                                 QStringLiteral("Sci-Fi")}) {
+        addQuickCat(genre, [genre](backend::AnimeQuery& q) {
+            q.genres = {genre};
+            q.sort = QStringLiteral("score");
+            q.order = QStringLiteral("desc");
+        });
+    }
+    auto* moreFiltersBtn = new QPushButton(tr("More filters…"), quickCategoriesBar_);
+    theme::applyActionRole(moreFiltersBtn, theme::ActionRole::Ghost);
+    connect(moreFiltersBtn, &QPushButton::clicked, this, &SearchPage::showCatalogueFilters);
+    qcFlow->addWidget(moreFiltersBtn);
+    discoveryLayout->addWidget(quickCategoriesBar_);
+
     CarouselSection* recent = buildCarousel(kRecentKey);
     CarouselSection* ongoing = buildCarousel(QStringLiteral("ongoing"));
     CarouselSection* popular = buildCarousel(QStringLiteral("popular"));

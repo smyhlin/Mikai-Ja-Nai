@@ -483,6 +483,7 @@ private:
     bool homeCurrent_ = true;
     QVBoxLayout* rootLayout_ = nullptr;
     QVBoxLayout* discoveryLayout_ = nullptr;
+    QWidget* quickCategoriesBar_ = nullptr;
     QScrollArea* discoveryScroll_ = nullptr;
     QWidget* activeFiltersBar_ = nullptr;
     FlowLayout* activeFiltersLayout_ = nullptr;
