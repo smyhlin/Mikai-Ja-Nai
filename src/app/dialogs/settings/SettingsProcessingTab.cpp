@@ -70,7 +70,7 @@ QWidget* SettingsDialog::buildProcessingTab() {
     QFrame* pageHeader = makeSettingsPageHeader(
         page, &nativeHeading_, &nativeDescription_, tr("Processing runtime"),
 #ifdef Q_OS_LINUX
-        tr("Standard AnimeJaNai runs on TensorRT here. DirectML, TensorRT for RTX, and the private Native runtime are Windows-only."));
+        tr("Standard AnimeJaNai runs on native GPU kernels and TensorRT here. DirectML, TensorRT for RTX, and the private Native runtime are Windows-only."));
 #else
         tr("Standard manages official AnimeJaNai models and profiles, including TensorRT for RTX. "
            "Select Native to configure the separate private Native workflow."));
@@ -492,8 +492,8 @@ void SettingsDialog::retranslateProcessingTab() {
     nativeHeading_->setText(tr("Processing runtime"));
 #ifdef Q_OS_LINUX
     nativeDescription_->setText(
-        tr("Standard AnimeJaNai runs on TensorRT here. DirectML, TensorRT for RTX, and the "
-           "private Native runtime are Windows-only."));
+        tr("Standard AnimeJaNai runs on native GPU kernels and TensorRT here. DirectML, TensorRT "
+           "for RTX, and the private Native runtime are Windows-only."));
 #else
     nativeDescription_->setText(
         tr("Standard manages official AnimeJaNai models and profiles, including TensorRT for RTX. "

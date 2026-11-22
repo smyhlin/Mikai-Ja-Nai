@@ -936,7 +936,7 @@ void ComponentStoreTab::buildUi() {
 }
 
 void ComponentStoreTab::retranslateUi() {
-    heading_->setText(tr("native::Backend components"));
+    heading_->setText(tr("Backend components"));
     hint_->setText(tr("Choose which recommended components, AnimeJaNai upscaling models and optional RIFE models to install."));
     auto setCardText = [this](const QString& objectName, const QString& title,
                               const QString& description) {
@@ -1426,10 +1426,11 @@ void ComponentStoreTab::updateRuntimeCardText() {
         case native::Backend::TensorRT:
             title = tr("TensorRT runtime");
 #ifdef Q_OS_WIN
-            description = tr("NVIDIA TensorRT with a shared runtime and GPU-matched builder kernels.");
+            description = tr("libaji v0.32 native GPU kernels and NVIDIA TensorRT with a shared "
+                             "runtime and GPU-matched builder kernels.");
 #else
-            description = tr("Required for AnimeJaNai on Linux with an NVIDIA GPU; DirectML "
-                             "is Windows-only.");
+            description = tr("libaji v0.32 native GPU kernels and NVIDIA TensorRT for AnimeJaNai "
+                             "on Linux; DirectML is Windows-only.");
 #endif
             break;
         case native::Backend::DirectML:

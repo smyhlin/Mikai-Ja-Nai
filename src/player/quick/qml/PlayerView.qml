@@ -460,7 +460,7 @@ Item {
         anchors.right: parent.right
         anchors.top: windowControls.visible ? windowControls.bottom : parent.top
         anchors.margins: 12
-        width: Math.min(root.width - 32, 320)
+        width: Math.min(root.width - 32, 380)
         height: hudColumn.implicitHeight + 16
         radius: Math.max(2, root.controller.cornerRadius)
         color: root.controller.darkTheme ? Qt.rgba(0.07, 0.08, 0.10, 0.82)
@@ -498,10 +498,18 @@ Item {
                 width: parent.width
                 visible: text !== ""
                 text: [root.controller.nativeHudProvider,
-                       root.controller.nativeHudGpu,
-                       root.controller.nativeHudModel,
-                       root.controller.nativeHudGeometry].filter(part => part !== "").join(" · ")
+                       root.controller.nativeHudGpu].filter(part => part !== "").join(" · ")
                 color: root.controller.darkTheme ? "#a1a1aa" : "#52525b"
+                font.pixelSize: 10
+                elide: Text.ElideRight
+            }
+
+            Label {
+                width: parent.width
+                visible: text !== ""
+                text: [root.controller.nativeHudModel,
+                       root.controller.nativeHudGeometry].filter(part => part !== "").join(" · ")
+                color: root.controller.darkTheme ? "#d4d4d8" : "#3f3f46"
                 font.pixelSize: 10
                 elide: Text.ElideRight
             }
@@ -517,6 +525,7 @@ Item {
                       .filter(part => part !== "").join(" · ")
                 color: root.controller.darkTheme ? "#a1a1aa" : "#52525b"
                 font.pixelSize: 10
+                font.features: ({ "tnum": 1 })
                 elide: Text.ElideRight
             }
 

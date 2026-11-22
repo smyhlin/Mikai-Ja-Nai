@@ -74,6 +74,7 @@ private:
     void buildUi();
     void loadConfigIntoWidgets(const mplayer::native::AnimeJanaiConfig& config);
     void syncTrtWidgetsFromText(const QString& settingsText);
+    void updateNativeKernelsTrtNote();
     void rebuildSlotCombo();
     void loadSelectedSlotIntoEditor();
     void rebuildChainCombo();
@@ -143,7 +144,10 @@ private:
     QComboBox* performanceVariantCombo_ = nullptr;
     QCheckBox* loggingCheck_ = nullptr;
     QCheckBox* nativeKernelsCheck_ = nullptr;
+    QLabel* nativeKernelsHint_ = nullptr;
     QCheckBox* reuseHeldFramesCheck_ = nullptr;
+    QLabel* reuseHeldFramesHint_ = nullptr;
+    QLabel* nativeKernelsTrtNote_ = nullptr;
     QLabel* trtModeLabel_ = nullptr;
     QComboBox* trtModeCombo_ = nullptr;
     QWidget* trtDynamicContainer_ = nullptr;

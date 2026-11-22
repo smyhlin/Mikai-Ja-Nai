@@ -1154,10 +1154,18 @@ void SettingsDialog::refreshBenchmarkEngineChoice() {
 #else
     const mplayer::native::Backend engine = storedStandardAnimeJanaiBackend();
 #endif
+    const bool nativeKernelsActive =
+        mplayer::native::isTensorRtFamily(engine) &&
+        mplayer::native::AnimeJanaiConfigStore::load().useNativeKernels;
     benchmarkEngineChoice_->setText(
-        tr("Engine: %1").arg(benchmarkEngineName(engine)));
+        nativeKernelsActive
+            ? tr("Engine: %1 (Native kernels)").arg(benchmarkEngineName(engine))
+            : tr("Engine: %1").arg(benchmarkEngineName(engine)));
     benchmarkEngineChoice_->setToolTip(
-        tr("The benchmark runs the engine selected in Settings › Components."));
+        nativeKernelsActive
+            ? tr("The benchmark runs the engine selected in Settings › Components with "
+                 "libaji v0.32 native GPU kernels enabled (Settings › Processing).")
+            : tr("The benchmark runs the engine selected in Settings › Components."));
 }
 
 void SettingsDialog::runBenchmark() {

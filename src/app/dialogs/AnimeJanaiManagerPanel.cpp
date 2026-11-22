@@ -317,13 +317,14 @@ void AnimeJanaiManagerPanel::buildUi() {
     globalLayout->setSpacing(theme::kSpacingSmall);
 
     globalHeading_ =
-        new QLabel(tr("Built-in preset variants & TensorRT engine settings"), globalCard);
+        new QLabel(tr("Built-in preset variants & inference engine settings"), globalCard);
     styleSectionHeading(globalHeading_);
     globalLayout->addWidget(globalHeading_);
 
     globalSubtitle_ = new QLabel(
         tr("Switch built-in Quality, Balanced, and Performance profiles between Standard (V3.1) "
-           "and Sharp (V3.1Sharp1) models, and customize how TensorRT compiles ONNX graphs."),
+           "and Sharp (V3.1Sharp1) models, configure libaji v0.32 native GPU kernels and "
+           "held-frame reuse, and customize TensorRT engine compilation."),
         globalCard);
     styleMutedCaption(globalSubtitle_);
     globalLayout->addWidget(globalSubtitle_);
@@ -370,6 +371,14 @@ void AnimeJanaiManagerPanel::buildUi() {
     polishInteractiveControl(nativeKernelsCheck_, 0);
     globalLayout->addWidget(nativeKernelsCheck_);
 
+    nativeKernelsHint_ = new QLabel(globalCard);
+    nativeKernelsHint_->setObjectName(QStringLiteral("animeJanaiNativeKernelsHint"));
+    nativeKernelsHint_->setWordWrap(true);
+    nativeKernelsHint_->setContentsMargins(theme::kSpacingLarge, 0, 0, 0);
+    yieldCaptionWidth(nativeKernelsHint_);
+    styleMutedCaption(nativeKernelsHint_);
+    globalLayout->addWidget(nativeKernelsHint_);
+
     reuseHeldFramesCheck_ = new QCheckBox(tr("Reuse upscales of unchanged frames"), globalCard);
     reuseHeldFramesCheck_->setObjectName(QStringLiteral("animeJanaiReuseHeldFramesCheck"));
     reuseHeldFramesCheck_->setToolTip(
@@ -377,7 +386,22 @@ void AnimeJanaiManagerPanel::buildUi() {
     polishInteractiveControl(reuseHeldFramesCheck_, 0);
     globalLayout->addWidget(reuseHeldFramesCheck_);
 
+    reuseHeldFramesHint_ = new QLabel(globalCard);
+    reuseHeldFramesHint_->setObjectName(QStringLiteral("animeJanaiReuseHeldFramesHint"));
+    reuseHeldFramesHint_->setWordWrap(true);
+    reuseHeldFramesHint_->setContentsMargins(theme::kSpacingLarge, 0, 0, 0);
+    yieldCaptionWidth(reuseHeldFramesHint_);
+    styleMutedCaption(reuseHeldFramesHint_);
+    globalLayout->addWidget(reuseHeldFramesHint_);
+
     globalLayout->addWidget(makeSettingsDivider(globalCard));
+
+    nativeKernelsTrtNote_ = new QLabel(globalCard);
+    nativeKernelsTrtNote_->setObjectName(QStringLiteral("animeJanaiNativeKernelsTrtNote"));
+    nativeKernelsTrtNote_->setWordWrap(true);
+    yieldCaptionWidth(nativeKernelsTrtNote_);
+    styleMutedCaption(nativeKernelsTrtNote_);
+    globalLayout->addWidget(nativeKernelsTrtNote_);
 
     auto* trtForm = new QFormLayout();
     trtForm->setContentsMargins(0, 0, 0, 0);
@@ -792,6 +816,7 @@ void AnimeJanaiManagerPanel::buildUi() {
         markDirty();
     });
     connect(nativeKernelsCheck_, &QCheckBox::toggled, this, [this](bool checked) {
+        updateNativeKernelsTrtNote();
         if (updatingUi_) return;
         config_.useNativeKernels = checked;
         markDirty();
@@ -960,12 +985,26 @@ void AnimeJanaiManagerPanel::loadConfigIntoWidgets(
     loggingCheck_->setChecked(config.enableLogging);
     nativeKernelsCheck_->setChecked(config.useNativeKernels);
     reuseHeldFramesCheck_->setChecked(config.reuseHeldFrames);
+    updateNativeKernelsTrtNote();
 
     syncTrtWidgetsFromText(config.trtEngineSettings);
     rebuildSlotCombo();
     loadSelectedSlotIntoEditor();
 
     updatingUi_ = prevUpdating;
+}
+
+void AnimeJanaiManagerPanel::updateNativeKernelsTrtNote() {
+    if (nativeKernelsTrtNote_ == nullptr || nativeKernelsCheck_ == nullptr) return;
+    if (nativeKernelsCheck_->isChecked()) {
+        nativeKernelsTrtNote_->setText(
+            tr("Native GPU kernels are enabled — the TensorRT engine settings below apply only "
+               "when a model falls back to TensorRT."));
+    } else {
+        nativeKernelsTrtNote_->setText(
+            tr("Native GPU kernels are disabled — all models compile and run through TensorRT "
+               "using the settings below."));
+    }
 }
 
 void AnimeJanaiManagerPanel::syncTrtWidgetsFromText(const QString& settingsText) {
@@ -2131,10 +2170,11 @@ void AnimeJanaiManagerPanel::retranslateUi() {
     browseExternalDirButton_->setText(tr("Browse…"));
     clearExternalDirButton_->setText(tr("Clear"));
 
-    globalHeading_->setText(tr("Built-in preset variants & TensorRT engine settings"));
+    globalHeading_->setText(tr("Built-in preset variants & inference engine settings"));
     globalSubtitle_->setText(
         tr("Switch built-in Quality, Balanced, and Performance profiles between Standard (V3.1) "
-           "and Sharp (V3.1Sharp1) models, and customize how TensorRT compiles ONNX graphs."));
+           "and Sharp (V3.1Sharp1) models, configure libaji v0.32 native GPU kernels and "
+           "held-frame reuse, and customize TensorRT engine compilation."));
     qualityVariantLabel_->setText(tr("Quality preset (Slot 1001)"));
     balancedVariantLabel_->setText(tr("Balanced preset (Slot 1002)"));
     performanceVariantLabel_->setText(tr("Performance preset (Slot 1003)"));
@@ -2143,9 +2183,20 @@ void AnimeJanaiManagerPanel::retranslateUi() {
     nativeKernelsCheck_->setToolTip(
         tr("Run supported models directly on libaji v0.32 native tensor-core kernels on NVIDIA "
            "RTX 30/40/50 GPUs without building TensorRT engines. Uncheck to force TensorRT engines."));
+    if (nativeKernelsHint_ != nullptr) {
+        nativeKernelsHint_->setText(
+            tr("Runs supported ONNX models directly on libaji v0.32 native tensor-core kernels "
+               "(NVIDIA RTX 30/40/50) with zero engine build wait and faster inference."));
+    }
     reuseHeldFramesCheck_->setText(tr("Reuse upscales of unchanged frames"));
     reuseHeldFramesCheck_->setToolTip(
         tr("Reuse upscaled output for held frames and still shots to reduce GPU power by up to 40%."));
+    if (reuseHeldFramesHint_ != nullptr) {
+        reuseHeldFramesHint_->setText(
+            tr("Reuses the upscaled output for unchanged anime frames and still shots to reduce "
+               "GPU load and power draw."));
+    }
+    updateNativeKernelsTrtNote();
     trtModeLabel_->setText(tr("TensorRT engine type"));
     trtOptLevelLabel_->setText(tr("Builder optimization level"));
     trtMinResLabel_->setText(tr("Dynamic minimum resolution"));

@@ -634,6 +634,10 @@ QVector<PlayerMenuModel::Row> PlayerController::enhancementLevelRows(const QStri
                 row.tooltip = tr("In-process TensorRT-RTX 1.7 engine builds; CUDA GPUs, "
                                  "Windows only.");
                 if (!backendNote.isEmpty()) row.tooltip += QStringLiteral("\n\n") + backendNote;
+            } else if (entry.backend == native::Backend::TensorRT) {
+                row.tooltip = tr("libaji v0.32 native GPU kernels with TensorRT fallback; "
+                                 "configure in Settings › Processing.");
+                if (!backendNote.isEmpty()) row.tooltip += QStringLiteral("\n\n") + backendNote;
             }
 #else
             if (entry.backend == native::Backend::TensorRTRTX) {
@@ -643,6 +647,10 @@ QVector<PlayerMenuModel::Row> PlayerController::enhancementLevelRows(const QStri
             } else if (!installed) {
                 row.enabled = false;
                 row.tooltip = tr("Not installed. Install it in Settings › Components.");
+            } else if (entry.backend == native::Backend::TensorRT) {
+                row.tooltip = tr("libaji v0.32 native GPU kernels with TensorRT fallback; "
+                                 "configure in Settings › Processing.");
+                if (!backendNote.isEmpty()) row.tooltip += QStringLiteral("\n\n") + backendNote;
             }
 #endif
             rows.append(row);
