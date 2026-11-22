@@ -380,18 +380,21 @@ bool downloadAndVerifyUpdate(const UpdateCheckResult& release, InstallKind kind,
         return false;
     };
     if (cancelled && cancelled()) {
-        return fail(QStringLiteral("Update download was cancelled."));
+        return fail(QCoreApplication::translate("UpdateCheck", "Update download was cancelled."));
     }
     if (!isSelfUpdatable(kind)) {
-        return fail(QStringLiteral("This installation is managed externally and cannot self-update."));
+        return fail(QCoreApplication::translate(
+            "UpdateCheck", "This installation is managed externally and cannot self-update."));
     }
     const auto asset = selectUpdateAsset(release.assets, kind);
     if (!asset) {
-        return fail(QStringLiteral("No matching release package was found for this platform."));
+        return fail(QCoreApplication::translate(
+            "UpdateCheck", "No matching release package was found for this platform."));
     }
     const auto checksums = findChecksumsAsset(release.assets);
     if (!checksums) {
-        return fail(QStringLiteral("Release checksums (SHA256SUMS) are missing; refusing unverified update."));
+        return fail(QCoreApplication::translate(
+            "UpdateCheck", "Release checksums (SHA256SUMS) are missing; refusing unverified update."));
     }
 
     QNetworkRequest sumRequest(checksums->downloadUrl);
@@ -404,22 +407,26 @@ bool downloadAndVerifyUpdate(const UpdateCheckResult& release, InstallKind kind,
     const HttpFetchResult sumFetch =
         runBlockingFetch(transportManagerForThread(), sumRequest, sumOptions);
     if (sumFetch.cancelled || (cancelled && cancelled())) {
-        return fail(QStringLiteral("Update download was cancelled."));
+        return fail(QCoreApplication::translate("UpdateCheck", "Update download was cancelled."));
     }
     if (sumFetch.timedOut || sumFetch.status < 200 || sumFetch.status >= 300) {
-        return fail(QStringLiteral("Could not download release SHA256SUMS."));
+        return fail(QCoreApplication::translate(
+            "UpdateCheck", "Could not download release SHA256SUMS."));
     }
     const QString expectedSha = parseSha256Sums(sumFetch.body, asset->name);
     if (expectedSha.isEmpty()) {
-        return fail(QStringLiteral("SHA256SUMS does not contain a checksum for %1.").arg(asset->name));
+        return fail(QCoreApplication::translate(
+                        "UpdateCheck", "SHA256SUMS does not contain a checksum for %1.")
+                        .arg(asset->name));
     }
 
     const QString baseData = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-    const QString safeVersion =
-        QString(release.version).replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9._+-]")), QStringLiteral("_"));
+    static const QRegularExpression kSafeVersionRe(QStringLiteral("[^A-Za-z0-9._+-]"));
+    const QString safeVersion = QString(release.version).replace(kSafeVersionRe, QStringLiteral("_"));
     const QString stagingDir = QDir(baseData).filePath(QStringLiteral("updates/%1").arg(safeVersion));
     if (!QDir().mkpath(stagingDir)) {
-        return fail(QStringLiteral("Could not create update staging directory."));
+        return fail(QCoreApplication::translate(
+            "UpdateCheck", "Could not create update staging directory."));
     }
     const QString destPath = QDir(stagingDir).filePath(asset->name);
     if (QFileInfo::exists(destPath)) {
@@ -429,10 +436,12 @@ bool downloadAndVerifyUpdate(const UpdateCheckResult& release, InstallKind kind,
     QString dlReason;
     if (!downloadToFile(asset->downloadUrl, destPath, asset->size, expectedSha, progress, cancelled, &dlReason)) {
         if (cancelled && cancelled()) {
-            return fail(QStringLiteral("Update download was cancelled."));
+            return fail(QCoreApplication::translate("UpdateCheck", "Update download was cancelled."));
         }
-        return fail(dlReason.isEmpty() ? QStringLiteral("Failed to download or verify update package.")
-                                       : dlReason);
+        return fail(dlReason.isEmpty()
+                        ? QCoreApplication::translate(
+                              "UpdateCheck", "Failed to download or verify update package.")
+                        : dlReason);
     }
 
     if (out != nullptr) {
@@ -451,7 +460,8 @@ bool launchUpdateInstaller(const StagedUpdate& staged, qint64 currentPid, QStrin
         return false;
     };
     if (!QFileInfo::exists(staged.stagedPath)) {
-        return fail(QStringLiteral("Staged update file no longer exists."));
+        return fail(QCoreApplication::translate(
+            "UpdateCheck", "Staged update file no longer exists."));
     }
 
 #ifdef Q_OS_WIN
@@ -461,7 +471,8 @@ bool launchUpdateInstaller(const StagedUpdate& staged, qint64 currentPid, QStrin
         proc.setArguments({QStringLiteral("/SILENT"), QStringLiteral("/CLOSEAPPLICATIONS"),
                            QStringLiteral("/RESTARTAPPLICATIONS")});
         if (!proc.startDetached()) {
-            return fail(QStringLiteral("Could not start the Windows update installer."));
+            return fail(QCoreApplication::translate(
+                "UpdateCheck", "Could not start the Windows update installer."));
         }
         return true;
     }
@@ -471,7 +482,8 @@ bool launchUpdateInstaller(const StagedUpdate& staged, qint64 currentPid, QStrin
         const QString scriptPath = QDir(staged.stagingDir).filePath(QStringLiteral("apply-update.ps1"));
         QFile script(scriptPath);
         if (!script.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
-            return fail(QStringLiteral("Could not write portable updater script."));
+            return fail(QCoreApplication::translate(
+                "UpdateCheck", "Could not write portable updater script."));
         }
         const QString ps = QStringLiteral(
             "param([int]$PidToWait, [string]$ZipPath, [string]$TargetDir, [string]$ExePath)\n"
@@ -492,21 +504,25 @@ bool launchUpdateInstaller(const StagedUpdate& staged, qint64 currentPid, QStrin
                            QStringLiteral("Bypass"), QStringLiteral("-File"), scriptPath,
                            QString::number(currentPid), staged.stagedPath, installDir, exePath});
         if (!proc.startDetached()) {
-            return fail(QStringLiteral("Could not launch portable updater helper."));
+            return fail(QCoreApplication::translate(
+                "UpdateCheck", "Could not launch portable updater helper."));
         }
         return true;
     }
-    return fail(QStringLiteral("Unsupported Windows installation type for automatic updates."));
+    return fail(QCoreApplication::translate(
+        "UpdateCheck", "Unsupported Windows installation type for automatic updates."));
 #elif defined(Q_OS_LINUX)
     if (staged.installKind == InstallKind::LinuxAppImage) {
         const QString targetAppImage = qEnvironmentVariable("APPIMAGE");
         if (targetAppImage.isEmpty()) {
-            return fail(QStringLiteral("APPIMAGE path is unavailable."));
+            return fail(QCoreApplication::translate(
+                "UpdateCheck", "APPIMAGE path is unavailable."));
         }
         const QString scriptPath = QDir(staged.stagingDir).filePath(QStringLiteral("apply-update.sh"));
         QFile script(scriptPath);
         if (!script.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
-            return fail(QStringLiteral("Could not write AppImage updater script."));
+            return fail(QCoreApplication::translate(
+                "UpdateCheck", "Could not write AppImage updater script."));
         }
         const QByteArray sh =
             "#!/bin/sh\n"
@@ -528,7 +544,8 @@ bool launchUpdateInstaller(const StagedUpdate& staged, qint64 currentPid, QStrin
         QFile::setPermissions(scriptPath, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
         if (!startDetachedHostTool(QStringLiteral("/bin/sh"),
                                    {scriptPath, QString::number(currentPid), staged.stagedPath, targetAppImage})) {
-            return fail(QStringLiteral("Could not launch AppImage updater helper."));
+            return fail(QCoreApplication::translate(
+                "UpdateCheck", "Could not launch AppImage updater helper."));
         }
         return true;
     }
@@ -538,7 +555,8 @@ bool launchUpdateInstaller(const StagedUpdate& staged, qint64 currentPid, QStrin
         const QString scriptPath = QDir(staged.stagingDir).filePath(QStringLiteral("apply-update.sh"));
         QFile script(scriptPath);
         if (!script.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
-            return fail(QStringLiteral("Could not write tarball updater script."));
+            return fail(QCoreApplication::translate(
+                "UpdateCheck", "Could not write tarball updater script."));
         }
         const QByteArray sh =
             "#!/bin/sh\n"
@@ -556,14 +574,18 @@ bool launchUpdateInstaller(const StagedUpdate& staged, qint64 currentPid, QStrin
         QFile::setPermissions(scriptPath, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
         if (!startDetachedHostTool(QStringLiteral("/bin/sh"),
                                    {scriptPath, QString::number(currentPid), staged.stagedPath, installDir, exePath})) {
-            return fail(QStringLiteral("Could not launch tarball updater helper."));
+            return fail(QCoreApplication::translate(
+                "UpdateCheck", "Could not launch tarball updater helper."));
         }
         return true;
     }
-    return fail(QStringLiteral("This Linux installation cannot be self-updated; please update via your package manager or GitHub Releases."));
+    return fail(QCoreApplication::translate(
+        "UpdateCheck",
+        "This Linux installation cannot be self-updated; please update via your package manager or GitHub Releases."));
 #else
     Q_UNUSED(currentPid);
-    return fail(QStringLiteral("Automatic updates are not supported on this platform."));
+    return fail(QCoreApplication::translate(
+        "UpdateCheck", "Automatic updates are not supported on this platform."));
 #endif
 }
 
