@@ -373,11 +373,15 @@ QString parseSha256Sums(const QByteArray& content, const QString& assetName) {
 
 bool downloadAndVerifyUpdate(const UpdateCheckResult& release, InstallKind kind,
                              const std::function<void(qint64 received, qint64 total)>& progress,
-                             StagedUpdate* out, QString* error) {
+                             StagedUpdate* out, QString* error,
+                             const std::function<bool()>& cancelled) {
     auto fail = [error](const QString& msg) {
         if (error != nullptr) *error = msg;
         return false;
     };
+    if (cancelled && cancelled()) {
+        return fail(QStringLiteral("Update download was cancelled."));
+    }
     if (!isSelfUpdatable(kind)) {
         return fail(QStringLiteral("This installation is managed externally and cannot self-update."));
     }
@@ -399,7 +403,9 @@ bool downloadAndVerifyUpdate(const UpdateCheckResult& release, InstallKind kind,
     sumOptions.maxResponseBytes = 256 * 1024;
     const HttpFetchResult sumFetch =
         runBlockingFetch(transportManagerForThread(), sumRequest, sumOptions);
-    if (sumFetch.cancelled) return fail(QStringLiteral("Update download was cancelled."));
+    if (sumFetch.cancelled || (cancelled && cancelled())) {
+        return fail(QStringLiteral("Update download was cancelled."));
+    }
     if (sumFetch.timedOut || sumFetch.status < 200 || sumFetch.status >= 300) {
         return fail(QStringLiteral("Could not download release SHA256SUMS."));
     }
@@ -421,7 +427,10 @@ bool downloadAndVerifyUpdate(const UpdateCheckResult& release, InstallKind kind,
     }
 
     QString dlReason;
-    if (!downloadToFile(asset->downloadUrl, destPath, asset->size, expectedSha, progress, {}, &dlReason)) {
+    if (!downloadToFile(asset->downloadUrl, destPath, asset->size, expectedSha, progress, cancelled, &dlReason)) {
+        if (cancelled && cancelled()) {
+            return fail(QStringLiteral("Update download was cancelled."));
+        }
         return fail(dlReason.isEmpty() ? QStringLiteral("Failed to download or verify update package.")
                                        : dlReason);
     }

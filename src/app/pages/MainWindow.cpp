@@ -1125,9 +1125,17 @@ void MainWindow::startUpdateDownload(const QString& version, const QUrl& release
     progress->show();
 
     const auto alive = updateCheckAlive_;
+    auto cancelRequested = std::make_shared<std::atomic_bool>(false);
+    connect(progress, &QProgressDialog::canceled, this, [cancelRequested] {
+        cancelRequested->store(true, std::memory_order_release);
+    });
     QPointer<QProgressDialog> progressGuard(progress);
     runner_->run(
-        [kind, progressGuard, channel, forceChannelSwitch] {
+        [kind, progressGuard, channel, forceChannelSwitch, alive, cancelRequested] {
+            const auto isCancelled = [alive, cancelRequested]() {
+                return cancelRequested->load(std::memory_order_acquire) ||
+                       !alive->load(std::memory_order_acquire);
+            };
             const backend::UpdateCheckResult latest = backend::checkForUpdates(
                 QStringLiteral(MIKAI_PROJECT_VERSION), channel,
                 QStringLiteral(MIKAI_BUILD_REVISION), forceChannelSwitch);
@@ -1145,7 +1153,7 @@ void MainWindow::startUpdateDownload(const QString& version, const QUrl& release
                         },
                         Qt::QueuedConnection);
                 },
-                &staged, &error);
+                &staged, &error, isCancelled);
             QVariantMap result;
             result.insert(QStringLiteral("ok"), ok);
             result.insert(QStringLiteral("error"), error);

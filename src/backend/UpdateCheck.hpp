@@ -91,7 +91,8 @@ QString parseSha256Sums(const QByteArray& content, const QString& assetName);
 // a worker thread.
 bool downloadAndVerifyUpdate(const UpdateCheckResult& release, InstallKind kind,
                              const std::function<void(qint64 received, qint64 total)>& progress,
-                             StagedUpdate* out, QString* error);
+                             StagedUpdate* out, QString* error,
+                             const std::function<bool()>& cancelled = {});
 
 // Launch a detached platform updater helper that waits for `currentPid`, backs
 // up the previous binary/tree for rollback, applies `staged`, and relaunches.
