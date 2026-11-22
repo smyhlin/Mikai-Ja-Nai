@@ -40,7 +40,7 @@ QString mediaInformationPlainText(const MediaInformationDocument& document);
 /// it without bound.
 template <typename Edit>
 void updateTextEditPreservingSelection(Edit* edit, const QString& value) {
-    if (edit == nullptr) return;
+    if (edit == nullptr || edit->document() == nullptr) return;
     edit->setUndoRedoEnabled(false);
     QString normalized = value;
     normalized.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));

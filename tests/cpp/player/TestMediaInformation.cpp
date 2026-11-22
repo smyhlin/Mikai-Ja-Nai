@@ -12,6 +12,7 @@
 #include <QHeaderView>
 #include <QLineEdit>
 #include <QLocale>
+#include <QPlainTextEdit>
 #include <QPointer>
 #include <QRegularExpression>
 #include <QScrollBar>
@@ -415,4 +416,29 @@ void TestMediaInformation::maximumIntegerMetadataRetainsItsExactValue() {
     const auto* idNode = findNode(document, id);
     QVERIFY(idNode != nullptr);
     QCOMPARE(idNode->value, exact);
+}
+
+void TestMediaInformation::plainTextShrinksAndGrowsWithoutCursorWarnings() {
+    QPlainTextEdit plain;
+    QTest::failOnWarning(QRegularExpression(QStringLiteral("QTextCursor::setPosition.*out of range")));
+
+    updateTextEditPreservingSelection(&plain, QStringLiteral("Track 1: 1920x1080\r\nAudio: Japanese 2.0\r\nSubtitles: Ukrainian"));
+    plain.selectAll();
+    updateTextEditPreservingSelection(&plain, QStringLiteral("Loading…"));
+    QCOMPARE(plain.toPlainText(), QStringLiteral("Loading…"));
+
+    // Shrink to empty while selection spans the entire document.
+    plain.selectAll();
+    updateTextEditPreservingSelection(&plain, QString());
+    QCOMPARE(plain.toPlainText(), QString());
+
+    // Grow with surrogate pairs and Unicode line separators, then shrink across them.
+    const QString emoji = QString::fromUtf8("🎬 Scene") + QChar(0x2028) + QString::fromUtf8("🎵 Track");
+    updateTextEditPreservingSelection(&plain, emoji);
+    QTextCursor cursor(plain.document());
+    cursor.setPosition(1);
+    cursor.setPosition(plain.document()->characterCount() - 1, QTextCursor::KeepAnchor);
+    plain.setTextCursor(cursor);
+    updateTextEditPreservingSelection(&plain, QStringLiteral("Done"));
+    QCOMPARE(plain.toPlainText(), QStringLiteral("Done"));
 }

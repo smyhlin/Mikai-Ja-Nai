@@ -22,4 +22,5 @@ private slots:
     void localizedDurationCarriesWithoutIntegerOverflow();
     void unavailableNumbersAndUnknownFlagsAreNotReportedAsZeroOrNo();
     void maximumIntegerMetadataRetainsItsExactValue();
+    void plainTextShrinksAndGrowsWithoutCursorWarnings();
 };
