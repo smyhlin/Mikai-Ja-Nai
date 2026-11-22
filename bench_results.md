@@ -23,6 +23,35 @@ Measured results from **Settings → Benchmark**, grouped by machine and model. 
 
 > **Workload limitation:** the historical clips are synthetic black-frame H.264 fixtures, not anime footage. These measurements describe that fixture workload; they are **not a guarantee of real-scene playback performance**. Black frames omit motion, scene changes, and real-scene complexity. A runtime refusal is not evidence that a GPU lacks performance or VRAM.
 
+## 2026-11-22 — libaji v0.32.0 native tensor-core GPU kernels vs. TensorRT 11.4.0.106 (RTX 5090)
+
+Hardware and runtime verification of [`animejanai-inference v0.32.0`](https://github.com/the-database/animejanai-inference/releases/tag/v0.32.0) (`libaji.so` SHA-256 `0b04cd0737d33c45802edbbbeee16411c700aa291b9ba2f245ae0fddba73f7ae`, `libaji_trt.so` SHA-256 `373921ac48266e31ff766712ed3c6170d1fef3c346d44ffd70484c1b69b0638d`), [`aji-runtime v0.3.0`](https://github.com/the-database/aji-runtime/releases/tag/v0.3.0), and [`mpv-AnimeJaNai 3.12.5`](https://github.com/the-database/mpv-AnimeJaNai/releases/tag/3.12.5) RIFE model archives on **NVIDIA GeForce RTX 5090 (SM 12.0, 32,607 MiB, driver 620.73.04)** with shared runtime pack **TensorRT 11.4.0.106 (CUDA 13.4)** + `trt-sm120/11.4.0.106`.
+
+Each model was benchmarked across **30 distinct NV12 frames** (27 timed steady-state device frames after 3 warm-up frames) via `aji_harness` in two configurations:
+1. **`[global] native=yes`** — `libaji v0.32.0` native tensor-core GPU kernels (`0 B` serialized engine, instant startup without `trtexec`).
+2. **`[global] native=no`** — classic TensorRT 11.4.0.106 (`--builderOptimizationLevel=5 --optShapes=input:%video_resolution% --skipInference`), measuring cold engine compilation, serialized `.engine` size, and warm cached execution.
+
+### Spatial & Custom ONNX Upscalers (7/7 models)
+
+| Model | Input → Output | Native `configure` | TRT Cold Build | TRT `.engine` Size | Native Device Time (FPS) | TRT Device Time (FPS) | Native Speedup | Luma MAE (0–255) |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| `2x_AnimeJaNai_HD_V3.1_Performance_SPANF3` (FP16) | 1920×1080 → 3840×2160 | 7.0 ms | 12.495 s | 1,796,612 B | **1.776 ms** (563.1 FPS) | 3.201 ms (312.4 FPS) | **1.80×** | 0.061 |
+| `2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3` (FP16) | 1920×1080 → 3840×2160 | 18.2 ms | 12.556 s | 3,112,164 B | **3.588 ms** (278.7 FPS) | 6.115 ms (163.5 FPS) | **1.70×** | 0.149 |
+| `2x_AnimeJaNai_SD_V1beta34_Compact` (FP16) | 1280×720 → 2560×1440 | 11.5 ms | 11.443 s | 4,571,836 B | **3.456 ms** (289.4 FPS) | 4.986 ms (200.6 FPS) | **1.44×** | 0.038 |
+| `2xHFA2kCompact` (custom FP32, opset 17) | 1920×1080 → 3840×2160 | 16.8 ms | 7.507 s | 2,589,652 B | **7.520 ms** (133.0 FPS) | 40.791 ms (24.5 FPS) | **5.42×** | 0.141 |
+| `2xHFA2k-compact-multijpg` (custom FP32, opset 17) | 1920×1080 → 3840×2160 | 16.6 ms | 7.459 s | 2,551,580 B | **7.537 ms** (132.7 FPS) | 40.728 ms (24.6 FPS) | **5.40×** | 0.116 |
+| `realesr-animevideov3-4x-fp16` (4× Compact) | 1280×720 → 5120×2880 | 11.9 ms | 11.289 s | 4,622,188 B | **3.795 ms** (263.5 FPS) | 5.874 ms (170.2 FPS) | **1.55×** | 0.070 |
+| `realesr-animevideov3-4x-fp32` (4× Compact) | 1280×720 → 5120×2880 | 19.6 ms | 6.327 s | 2,625,124 B | **3.792 ms** (263.7 FPS) | 19.374 ms (51.6 FPS) | **5.11×** | 0.071 |
+
+### RIFE Frame Interpolation (`rife_v4.25` & `rife_v4.26`, 2× factor, 1920×1080 NV12)
+
+| RIFE Model (Code) | Input (30 src → 29 interp) | Native `configure` | TRT Cold Build (`trtexec`) | TRT `.engine` Size | Native Time / Interp Frame (FPS) | TRT Time / Interp Frame (FPS) | Native Speedup | Luma MAE (0–255) |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| `rife_v4.25.onnx` (`425`) | 1920×1080 (padded 1920×1088) | 104.7 ms | 41.828 s | 56,686,324 B | **2.179 ms** (458.9 FPS) | 3.518 ms (284.3 FPS) | **1.61×** | 0.020 |
+| `rife_v4.26.onnx` (`426`) | 1920×1080 (padded 1920×1088) | 103.5 ms | 42.951 s | 56,581,556 B | **2.078 ms** (481.2 FPS) | 3.526 ms (283.6 FPS) | **1.70×** | 0.013 |
+
+All 9 models succeeded with `rc=0` in both `native=yes` and `native=no` modes; pixel-level luma MAE between native tensor-core kernels and TensorRT 11.4.0 engines stayed within **0.013–0.149 / 255** (sub-1/6th of an 8-bit code value).
+
 ## 2026-11-13 — AnimeJaNai 3.11.0 shared-runtime verification
 
 Windows x64 and Ubuntu 24.04 under WSL on the same RTX 5090 host, driver 616.92;
