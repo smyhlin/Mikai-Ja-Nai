@@ -1198,7 +1198,7 @@ AnimeJanaiPlan prepareMixedProfile(const QString& presetId, Backend backend,
                 return false;
             }
             const QJsonObject provenance{
-                {QStringLiteral("source"), QStringLiteral("https://github.com/the-database/mpv-AnimeJaNai/releases/tag/3.7.0")},
+                {QStringLiteral("source"), QStringLiteral("https://github.com/the-database/mpv-AnimeJaNai/releases/tag/3.12.5")},
                 {QStringLiteral("upstreamFile"), rifePin->fileName},
                 {QStringLiteral("sha256"), rifePin->graphSha256},
                 {QStringLiteral("terms"), QStringLiteral("upstream terms not verified")}};
@@ -1636,7 +1636,7 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
                     }
                     const QJsonObject provenance{
                         {QStringLiteral("source"),
-                         QStringLiteral("https://github.com/the-database/mpv-AnimeJaNai/releases/tag/3.7.0")},
+                         QStringLiteral("https://github.com/the-database/mpv-AnimeJaNai/releases/tag/3.12.5")},
                         {QStringLiteral("upstreamFile"), pin->fileName},
                         {QStringLiteral("sha256"), pin->graphSha256},
                         {QStringLiteral("terms"), QStringLiteral("upstream terms not verified")}};
@@ -1703,7 +1703,7 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
             fail(plan, QStringLiteral("animejanai.model.stage"), copyError); return plan;
         }
         const QJsonObject provenance{
-            {QStringLiteral("source"), QStringLiteral("https://github.com/the-database/mpv-AnimeJaNai/releases/tag/3.7.0")},
+            {QStringLiteral("source"), QStringLiteral("https://github.com/the-database/mpv-AnimeJaNai/releases/tag/3.12.5")},
             {QStringLiteral("upstreamFile"), pin->fileName},
             {QStringLiteral("sha256"), pin->graphSha256},
             {QStringLiteral("terms"), QStringLiteral("upstream terms not verified")}};

@@ -11,7 +11,7 @@ namespace native {
 
 namespace {
 
-constexpr char kReleaseTag[] = "3.11.0";
+constexpr char kReleaseTag[] = "3.12.5";
 constexpr char kRepository[] = "the-database/mpv-AnimeJaNai";
 
 constexpr int kMaxRowFiles = 7;
@@ -198,22 +198,22 @@ const ComponentPack* tensorRtRtxRuntimePack() {
 
 const RifeArchivePack& rifeWindowsArchivePack() {
     static const RifeArchivePack pack{
-        QStringLiteral("rife-3.11.0"),
+        QStringLiteral("rife-3.12.5"),
         QStringLiteral("component-rife.7z"),
-        QStringLiteral("https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.11.0/component-rife.7z"),
-        462444571,
-        QStringLiteral("d8d4ba94b56059de085622e46b3730934dd6996583cd5eaee38000518baff0d5"),
+        QStringLiteral("https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.12.5/component-rife.7z"),
+        462444572,
+        QStringLiteral("6605c66e25286528854dbaa71b28b60ff67607d717ec10d4f253c90868e16d72"),
         true};
     return pack;
 }
 
 const RifeArchivePack& rifeLinuxArchivePack() {
     static const RifeArchivePack pack{
-        QStringLiteral("rife-3.11.0"),
+        QStringLiteral("rife-3.12.5"),
         QStringLiteral("component-rife-linux-x64.7z"),
-        QStringLiteral("https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.11.0/component-rife-linux-x64.7z"),
+        QStringLiteral("https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.12.5/component-rife-linux-x64.7z"),
         462444582,
-        QStringLiteral("6fd21cdde1bcc5f36107e147c9d024c4eebf300f57952375fca89ccb90a93146"),
+        QStringLiteral("e30f50c2671f4020af46a66334d3b4443e4b5c0e3f1310ba7a94ee505b18b684"),
         true};
     return pack;
 }
