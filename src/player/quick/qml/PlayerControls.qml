@@ -323,22 +323,6 @@ Item {
                         implicitHeight: 40
                         onClicked: root.requestMenu(settingsButton, "settings")
                     }
-
-                    PlayerButton {
-                        id: fullscreenButton
-                        controller: root.controller
-                        objectName: "player.fullscreen.button"
-                        iconName: root.controller.fullscreen ? "compress" : "expand"
-                        toolTip: root.controller.fullscreen ? qsTr("Exit fullscreen (F)") : qsTr("Fullscreen (F)")
-                        Accessible.name: toolTip
-                        compact: true
-                        implicitWidth: 40
-                        implicitHeight: 40
-                        onClicked: {
-                            root.controller.noteUserActivity()
-                            root.controller.toggleFullscreen()
-                        }
-                    }
                 }
             }
 
@@ -492,22 +476,6 @@ Item {
                     implicitWidth: 34
                     implicitHeight: 34
                     onClicked: root.requestMenu(compactSettingsButton, "settings")
-                }
-
-                PlayerButton {
-                    id: compactFullscreenButton
-                    controller: root.controller
-                    objectName: "player.fullscreen.button.compact"
-                    iconName: root.controller.fullscreen ? "compress" : "expand"
-                    toolTip: root.controller.fullscreen ? qsTr("Exit fullscreen (F)") : qsTr("Fullscreen (F)")
-                    Accessible.name: toolTip
-                    compact: true
-                    implicitWidth: 34
-                    implicitHeight: 34
-                    onClicked: {
-                        root.controller.noteUserActivity()
-                        root.controller.toggleFullscreen()
-                    }
                 }
             }
 

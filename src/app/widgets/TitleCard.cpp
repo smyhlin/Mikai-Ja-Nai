@@ -35,14 +35,18 @@ const char* kPending = "…";
 /// singular/plural wording.
 QString episodeCountText(int aired, int planned) {
     if (aired > 0 && planned > 0) {
-        return QCoreApplication::translate("TitleCard", "%1 / %n episode(s)", nullptr, planned)
-            .arg(aired);
+        return planned == 1
+                   ? QCoreApplication::translate("TitleCard", "%1 / 1 episode").arg(aired)
+                   : QCoreApplication::translate("TitleCard", "%1 / %2 episodes")
+                         .arg(aired)
+                         .arg(planned);
     }
     const int count = aired > 0 ? aired : planned;
     if (count <= 0) {
         return {};
     }
-    return QCoreApplication::translate("TitleCard", "%n episode(s)", nullptr, count);
+    return count == 1 ? QCoreApplication::translate("TitleCard", "1 episode")
+                      : QCoreApplication::translate("TitleCard", "%1 episodes").arg(count);
 }
 
 }  // namespace

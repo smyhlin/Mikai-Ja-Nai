@@ -1071,8 +1071,10 @@ QString SearchPage::feedEmptyLine(const QString& key) const {
 }
 
 QString SearchPage::feedCountLine(const QString& key, int count) const {
-    return key == QLatin1String("updates") ? tr("%n recent update(s)", nullptr, count)
-                                           : tr("%n upcoming airing(s)", nullptr, count);
+    if (key == QLatin1String("updates")) {
+        return count == 1 ? tr("1 recent update") : tr("%1 recent updates").arg(count);
+    }
+    return count == 1 ? tr("1 upcoming airing") : tr("%1 upcoming airings").arg(count);
 }
 
 QString SearchPage::blockFailureContext(const QString& key) const {
@@ -1566,7 +1568,9 @@ void SearchPage::renderCarouselLine(CarouselSection& section) {
             section.state->setText(tr("No titles in this collection yet."));
             break;
         case CarouselSection::Line::Count:
-            section.state->setText(tr("%n title(s)", nullptr, section.lineCount));
+            section.state->setText(section.lineCount == 1
+                                       ? tr("1 title")
+                                       : tr("%1 titles").arg(section.lineCount));
             break;
     }
 }
@@ -1698,7 +1702,8 @@ QString SearchPage::resultRowText(const backend::AnimeSummary& entry) const {
         parts << statusText;
     }
     if (entry.episodes.has_value() && *entry.episodes > 0) {
-        parts << tr("%n episode(s)", nullptr, *entry.episodes);
+        parts << (*entry.episodes == 1 ? tr("1 episode")
+                                       : tr("%1 episodes").arg(*entry.episodes));
     }
     return parts.join(QStringLiteral(" · "));
 }
