@@ -50,8 +50,13 @@ inline constexpr std::string_view kHomeRecentTitles = "home/recentTitles";
 // Watch history (WatchHistory.cpp).
 inline constexpr std::string_view kWatchHistoryKey = "title/watchHistory";
 
-// Open video by URL history (MainWindow.cpp).
+// Open video by URL history & file picker state (MainWindow.cpp).
 inline constexpr std::string_view kMediaOpenUrlHistory = "media/openUrlHistory";
+inline constexpr std::string_view kMediaLastOpenDir = "media/lastOpenDir";
+
+// Search results presentation preferences (SearchPage.cpp).
+inline constexpr std::string_view kSearchViewMode = "search/viewMode";
+inline constexpr std::string_view kSearchPageSize = "search/pageSize";
 
 
 // Quality cache backing key (QualityCache.cpp).

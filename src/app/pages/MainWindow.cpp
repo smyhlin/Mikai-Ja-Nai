@@ -425,14 +425,15 @@ void MainWindow::keyPressEvent(QKeyEvent* event) {
 
 void MainWindow::chooseMediaFile() {
     QSettings settings;
-    const QString lastDir = settings.value(QStringLiteral("media/lastOpenDir")).toString();
+    const QString lastDirKey = QString::fromUtf8(kMediaLastOpenDir);
+    const QString lastDir = settings.value(lastDirKey).toString();
     const QString file = QFileDialog::getOpenFileName(
         this, tr("Open video file"), lastDir,
         tr("Videos (*.mkv *.mp4 *.webm *.avi *.mov *.m4v *.ts *.m2ts *.mpeg *.mpg "
            "*.flv *.wmv *.ogv *.vob *.3gp *.m3u8 *.m3u);;"
            "All files (*)"));
     if (!file.isEmpty()) {
-        settings.setValue(QStringLiteral("media/lastOpenDir"), QFileInfo(file).absolutePath());
+        settings.setValue(lastDirKey, QFileInfo(file).absolutePath());
         openMedia(file);
     }
 }

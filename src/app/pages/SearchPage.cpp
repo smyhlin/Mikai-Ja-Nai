@@ -843,7 +843,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
 
     {
         QSettings settings;
-        gridViewMode_ = settings.value(QStringLiteral("search/viewMode"), QStringLiteral("grid"))
+        gridViewMode_ = settings.value(QString::fromUtf8(kSearchViewMode), QStringLiteral("grid"))
                             .toString() != QLatin1String("list");
     }
 
@@ -997,7 +997,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
 
     {
         QSettings settings;
-        const int savedSize = settings.value(QStringLiteral("search/pageSize"),
+        const int savedSize = settings.value(QString::fromUtf8(kSearchPageSize),
                                              theme::kSearchResultsPerPage).toInt();
         if (savedSize == 20 || savedSize == 40 || savedSize == 60) {
             pageSize_ = savedSize;
@@ -1010,7 +1010,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     connect(pager_, &RangePager::pageSizeChanged, this, [this](int newSize) {
         pageSize_ = newSize;
         QSettings settings;
-        settings.setValue(QStringLiteral("search/pageSize"), newSize);
+        settings.setValue(QString::fromUtf8(kSearchPageSize), newSize);
         if (!homeCurrent_) {
             page_ = 1;
             fetchPage(1);
@@ -1293,7 +1293,7 @@ void SearchPage::updateResultsHeading() {
 void SearchPage::setResultsGridMode(bool grid) {
     gridViewMode_ = grid;
     QSettings settings;
-    settings.setValue(QStringLiteral("search/viewMode"),
+    settings.setValue(QString::fromUtf8(kSearchViewMode),
                       grid ? QStringLiteral("grid") : QStringLiteral("list"));
     if (gridViewButton_ != nullptr) gridViewButton_->setChecked(grid);
     if (listViewButton_ != nullptr) listViewButton_->setChecked(!grid);
