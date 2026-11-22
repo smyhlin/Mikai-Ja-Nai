@@ -128,6 +128,7 @@ struct AnimeJanaiSlot {
 
 struct AnimeJanaiConfig {
     bool enableLogging = true;
+    bool useNativeKernels = true;
     bool qualitySharp = false;
     bool balancedSharp = false;
     bool performanceSharp = false;

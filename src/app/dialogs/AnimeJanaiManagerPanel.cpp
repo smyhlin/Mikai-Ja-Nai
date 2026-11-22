@@ -362,6 +362,14 @@ void AnimeJanaiManagerPanel::buildUi() {
     polishInteractiveControl(loggingCheck_, 0);
     globalLayout->addWidget(loggingCheck_);
 
+    nativeKernelsCheck_ = new QCheckBox(tr("Use native GPU kernels"), globalCard);
+    nativeKernelsCheck_->setObjectName(QStringLiteral("animeJanaiNativeKernelsCheck"));
+    nativeKernelsCheck_->setToolTip(
+        tr("Run supported models directly on libaji v0.32 native tensor-core kernels on NVIDIA "
+           "RTX 30/40/50 GPUs without building TensorRT engines. Uncheck to force TensorRT engines."));
+    polishInteractiveControl(nativeKernelsCheck_, 0);
+    globalLayout->addWidget(nativeKernelsCheck_);
+
     globalLayout->addWidget(makeSettingsDivider(globalCard));
 
     auto* trtForm = new QFormLayout();
@@ -776,6 +784,11 @@ void AnimeJanaiManagerPanel::buildUi() {
         config_.enableLogging = checked;
         markDirty();
     });
+    connect(nativeKernelsCheck_, &QCheckBox::toggled, this, [this](bool checked) {
+        if (updatingUi_) return;
+        config_.useNativeKernels = checked;
+        markDirty();
+    });
 
     connect(trtModeCombo_, &QComboBox::currentIndexChanged, this, [this](int) {
         if (updatingUi_) return;
@@ -933,6 +946,7 @@ void AnimeJanaiManagerPanel::loadConfigIntoWidgets(
     performanceVariantCombo_->setCurrentIndex(
         performanceVariantCombo_->findData(config.performanceSharp));
     loggingCheck_->setChecked(config.enableLogging);
+    nativeKernelsCheck_->setChecked(config.useNativeKernels);
 
     syncTrtWidgetsFromText(config.trtEngineSettings);
     rebuildSlotCombo();
@@ -2112,6 +2126,10 @@ void AnimeJanaiManagerPanel::retranslateUi() {
     balancedVariantLabel_->setText(tr("Balanced preset (Slot 1002)"));
     performanceVariantLabel_->setText(tr("Performance preset (Slot 1003)"));
     loggingCheck_->setText(tr("Backend logging"));
+    nativeKernelsCheck_->setText(tr("Use native GPU kernels"));
+    nativeKernelsCheck_->setToolTip(
+        tr("Run supported models directly on libaji v0.32 native tensor-core kernels on NVIDIA "
+           "RTX 30/40/50 GPUs without building TensorRT engines. Uncheck to force TensorRT engines."));
     trtModeLabel_->setText(tr("TensorRT engine type"));
     trtOptLevelLabel_->setText(tr("Builder optimization level"));
     trtMinResLabel_->setText(tr("Dynamic minimum resolution"));

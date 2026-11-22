@@ -579,6 +579,17 @@ bool isYes(QStringView input) {
     return input.trimmed().compare(u"yes", Qt::CaseInsensitive) == 0;
 }
 
+/// Matches libaji's boolean parser for default-on `[global]` flags (`native`,
+/// `reuse_held_frames`): `no`, `off`, `false`, and `0` disable; everything else
+/// (including `yes`, `on`, `true`, `1`, or empty) stays enabled.
+bool isEnabledFlag(QStringView input) {
+    const QStringView trimmed = input.trimmed();
+    return trimmed.compare(u"no", Qt::CaseInsensitive) != 0 &&
+           trimmed.compare(u"off", Qt::CaseInsensitive) != 0 &&
+           trimmed.compare(u"false", Qt::CaseInsensitive) != 0 &&
+           trimmed != u"0";
+}
+
 int toInt(const QString& input, int fallback = 0) {
     bool ok = false;
     const int result = input.trimmed().toInt(&ok, 10);
@@ -1786,6 +1797,8 @@ AnimeJanaiConfig AnimeJanaiConfigStore::parse(QStringView text, QString* error) 
     AnimeJanaiConfig config;
     config.enableLogging =
         isYes(iniValue(ini, QStringLiteral("global"), QStringLiteral("logging"), QStringLiteral("yes")));
+    config.useNativeKernels =
+        isEnabledFlag(iniValue(ini, QStringLiteral("global"), QStringLiteral("native"), QStringLiteral("yes")));
     config.externalModelsDir =
         iniValue(ini, QStringLiteral("global"), QStringLiteral("external_models_dir"));
 
@@ -1956,6 +1969,8 @@ QString AnimeJanaiConfigStore::serialize(const AnimeJanaiConfig& config) {
         putLine(output, QStringLiteral("mikai_chain_steps_version"), QStringLiteral("1"));
     putLine(output, QStringLiteral("logging"),
             config.enableLogging ? QStringLiteral("yes") : QStringLiteral("no"));
+    putLine(output, QStringLiteral("native"),
+            config.useNativeKernels ? QStringLiteral("yes") : QStringLiteral("no"));
     if (!config.externalModelsDir.trimmed().isEmpty()) {
         putLine(output, QStringLiteral("external_models_dir"), config.externalModelsDir.trimmed());
     }
