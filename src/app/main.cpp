@@ -1,3 +1,4 @@
+#include "backend/UpdateCheck.hpp"
 #include "CrashLog.hpp"
 #include "I18n.hpp"
 #include "WindowRaisePolicy.hpp"
@@ -300,6 +301,11 @@ int main(int argc, char** argv) {
     app.setOrganizationName(QStringLiteral("Mikai"));
     app.setWindowIcon(QIcon(QStringLiteral(":/app/mikai.png")));
     app.setDesktopFileName(QStringLiteral("mikai"));
+    if (const QStringList prunedUpdates = mikai::backend::pruneStagedUpdates();
+        !prunedUpdates.isEmpty()) {
+        qInfo("mikai: pruned %lld stale staged update(s)",
+              static_cast<long long>(prunedUpdates.size()));
+    }
 
     // After the identity, which the preference and catalog paths resolve through,
     // and before the runtime selection whose log lines go through these

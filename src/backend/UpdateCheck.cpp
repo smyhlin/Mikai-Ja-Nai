@@ -1,3 +1,4 @@
+#include <QDateTime>
 #include "UpdateCheck.hpp"
 
 #include "Downloads.hpp"
@@ -555,6 +556,24 @@ bool launchUpdateInstaller(const StagedUpdate& staged, qint64 currentPid, QStrin
     Q_UNUSED(currentPid);
     return fail(QStringLiteral("Automatic updates are not supported on this platform."));
 #endif
+}
+
+QStringList pruneStagedUpdates(qint64 maxAgeSeconds) {
+    QStringList removed;
+    const QString baseData = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    if (baseData.isEmpty()) return removed;
+    QDir updatesDir(QDir(baseData).filePath(QStringLiteral("updates")));
+    if (!updatesDir.exists()) return removed;
+    const QDateTime cutoff = QDateTime::currentDateTimeUtc().addSecs(-qMax<qint64>(0, maxAgeSeconds));
+    const QFileInfoList entries =
+        updatesDir.entryInfoList(QDir::Dirs | QDir::Files | QDir::NoDotAndDotDot);
+    for (const QFileInfo& info : entries) {
+        if (info.lastModified().toUTC() > cutoff) continue;
+        const QString path = info.absoluteFilePath();
+        const bool ok = info.isDir() ? QDir(path).removeRecursively() : QFile::remove(path);
+        if (ok) removed.append(info.fileName());
+    }
+    return removed;
 }
 
 }  // namespace mikai::backend

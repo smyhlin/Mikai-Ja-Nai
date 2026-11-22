@@ -97,4 +97,8 @@ bool downloadAndVerifyUpdate(const UpdateCheckResult& release, InstallKind kind,
 // up the previous binary/tree for rollback, applies `staged`, and relaunches.
 bool launchUpdateInstaller(const StagedUpdate& staged, qint64 currentPid, QString* error);
 
+// Remove stale staged update directories under AppDataLocation/updates/ older
+// than `maxAgeSeconds` (default 24 h) so previous installers do not accumulate.
+QStringList pruneStagedUpdates(qint64 maxAgeSeconds = 24 * 3600);
+
 }  // namespace mikai::backend
