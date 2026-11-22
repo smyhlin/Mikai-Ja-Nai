@@ -1629,7 +1629,7 @@ void TestPublicApiUi::teamBrowsingAndFilteringKeepSelectionsConsistent() {
     auto* rows = modal->findChild<QListWidget*>(QStringLiteral("teamResultsList"));
     if (rows == nullptr || rows->count() == 0) return;
     for (int row = 0; row < rows->count(); ++row) {
-      if (rows->item(row)->text() == QStringLiteral("Fixture Team")) {
+      if (rows->item(row)->text().startsWith(QStringLiteral("Fixture Team"))) {
         rows->item(row)->setCheckState(Qt::Checked);
       }
     }
@@ -1651,7 +1651,7 @@ void TestPublicApiUi::teamBrowsingAndFilteringKeepSelectionsConsistent() {
     if (filter == nullptr) return;
     for (int row = 0; row < rows->count(); ++row) {
       QListWidgetItem* item = rows->item(row);
-      if (item->text() != QStringLiteral("Fixture Team")) continue;
+      if (!item->text().startsWith(QStringLiteral("Fixture Team"))) continue;
       if (item->checkState() != Qt::Checked) return;
       sawTheAppliedTeamChecked = true;
       item->setCheckState(Qt::Unchecked);
