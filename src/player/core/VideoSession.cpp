@@ -84,6 +84,9 @@ auto hdrPolicyOptionList(VideoSession::HdrToneMappingPolicy policy) {
     // and bt.2390 ignores the parameter anyway.
     if (vivid) options.emplace_back("tone-mapping-param", "0.3");
     options.emplace_back("hdr-compute-peak", stable ? "no" : "yes");
+    // KB-29: disable 1-frame-delayed SSBO peak readback under vo=libmpv so
+    // bright-to-dark scene cuts cannot flash black or pump dark frames.
+    options.emplace_back("allow-delayed-peak-detect", "no");
     options.emplace_back("hdr-peak-percentile", "99.995");
     options.emplace_back("gamut-mapping-mode", stable ? "clip" : "auto");
     return options;

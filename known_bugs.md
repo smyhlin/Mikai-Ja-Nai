@@ -6,8 +6,6 @@
 
 | Issue | Evidence and current status |
 |---|---|
-| KB-29 — HDR dark-scene instability | A playback observation remains under measurement; tone-mapping/FBO behavior and the cause of black flashes are not established. A historical Linux stock-runtime hour run ended black and frozen, with no established cause. See [playback observation tracking](docs/release-status.md#playback-observation-tracking). |
-| KB-30 — Periodic frame substitution / uneven pacing | Presentation changes landed, but the cause of the reported fast/slow playback and a general fix are not established. Existing before/after paint measurements used different device-pixel ratios and do not prove an improvement. See [playback observation tracking](docs/release-status.md#playback-observation-tracking). |
 | Settings page overflow at minimum dialog width | The measured overflow of the Components tab (62 px English / 135 px Ukrainian at `kSettingsDialogMinWidth`) was addressed by splitting its action bar into a selection row and an action row, and the Benchmark tab was re-measured at 8 px Ukrainian overflow. Neither value has been re-measured on the current tree: `TestPublicApiUi::settingsPagesFitTheDialogMinimum` was not executed for it, and the active-download state is still unmeasured (see above). |
 
 ## Closed in the audit remediation — 2026-11-11

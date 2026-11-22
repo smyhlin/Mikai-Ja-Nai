@@ -1037,8 +1037,12 @@ void VideoRenderBridge::reportPresentedFrame() {
     if (pacingMeasurePending_) {
         pacingMeasurePending_ = false;
         const double tookMs = static_cast<double>(steadyClockNowNs() - pacingFiredAtNs_) / 1.0e6;
-        if (tookMs > 0.0 && tookMs < 1000.0) {
-            renderLeadMs_ = std::clamp(0.8 * renderLeadMs_ + 0.2 * tookMs, kMinRenderLeadMs,
+        // KB-30: ignore transient compositor/DWM stall outliers (> 50 ms) and
+        // clamp individual samples so a single hiccup cannot slam renderLeadMs_
+        // to kMaxRenderLeadMs and induce periodic fast/slow pacing oscillation.
+        if (tookMs > 0.0 && tookMs < 50.0) {
+            const double sample = std::clamp(tookMs, kMinRenderLeadMs, kMaxRenderLeadMs);
+            renderLeadMs_ = std::clamp(0.9 * renderLeadMs_ + 0.1 * sample, kMinRenderLeadMs,
                                        kMaxRenderLeadMs);
         }
     }
