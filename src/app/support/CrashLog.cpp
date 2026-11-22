@@ -212,7 +212,9 @@ char g_reportBlock[kReportCapacityBytes] = {};
 /// the multi-KB report-path buffers live here in process-lifetime static
 /// storage instead of on the fault-time stack. Single-use at fault time;
 /// never freed, like g_reportBlock.
+#ifdef _WIN32
 wchar_t g_reportPathW[kPathWideChars] = {};
+#endif
 char g_reportPathNarrow[kPathWideChars] = {};
 
 void writeBytes(ReportWriter* out, const char* source, size_t count) {
@@ -702,7 +704,7 @@ void epochSecondsToUtc(int64_t secs, struct tm* out) {
 }
 
 void posixCrashHandler(int sig, siginfo_t* info, void*) {
-    if (g_reportBlock != nullptr && g_fault.ready && g_fault.crashPrefixNarrowLength > 0) {
+    if (g_fault.ready && g_fault.crashPrefixNarrowLength > 0) {
         ReportWriter writer{g_reportBlock, kReportCapacityBytes, 0, false};
         ReportWriter* out = &writer;
 
