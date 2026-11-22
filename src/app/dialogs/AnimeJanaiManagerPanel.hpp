@@ -143,6 +143,7 @@ private:
     QComboBox* performanceVariantCombo_ = nullptr;
     QCheckBox* loggingCheck_ = nullptr;
     QCheckBox* nativeKernelsCheck_ = nullptr;
+    QCheckBox* reuseHeldFramesCheck_ = nullptr;
     QLabel* trtModeLabel_ = nullptr;
     QComboBox* trtModeCombo_ = nullptr;
     QWidget* trtDynamicContainer_ = nullptr;

@@ -1799,6 +1799,8 @@ AnimeJanaiConfig AnimeJanaiConfigStore::parse(QStringView text, QString* error) 
         isYes(iniValue(ini, QStringLiteral("global"), QStringLiteral("logging"), QStringLiteral("yes")));
     config.useNativeKernels =
         isEnabledFlag(iniValue(ini, QStringLiteral("global"), QStringLiteral("native"), QStringLiteral("yes")));
+    config.reuseHeldFrames =
+        isEnabledFlag(iniValue(ini, QStringLiteral("global"), QStringLiteral("reuse_held_frames"), QStringLiteral("yes")));
     config.externalModelsDir =
         iniValue(ini, QStringLiteral("global"), QStringLiteral("external_models_dir"));
 
@@ -1971,6 +1973,8 @@ QString AnimeJanaiConfigStore::serialize(const AnimeJanaiConfig& config) {
             config.enableLogging ? QStringLiteral("yes") : QStringLiteral("no"));
     putLine(output, QStringLiteral("native"),
             config.useNativeKernels ? QStringLiteral("yes") : QStringLiteral("no"));
+    putLine(output, QStringLiteral("reuse_held_frames"),
+            config.reuseHeldFrames ? QStringLiteral("yes") : QStringLiteral("no"));
     if (!config.externalModelsDir.trimmed().isEmpty()) {
         putLine(output, QStringLiteral("external_models_dir"), config.externalModelsDir.trimmed());
     }

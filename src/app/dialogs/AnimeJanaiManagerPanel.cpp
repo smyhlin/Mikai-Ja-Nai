@@ -370,6 +370,13 @@ void AnimeJanaiManagerPanel::buildUi() {
     polishInteractiveControl(nativeKernelsCheck_, 0);
     globalLayout->addWidget(nativeKernelsCheck_);
 
+    reuseHeldFramesCheck_ = new QCheckBox(tr("Reuse upscales of unchanged frames"), globalCard);
+    reuseHeldFramesCheck_->setObjectName(QStringLiteral("animeJanaiReuseHeldFramesCheck"));
+    reuseHeldFramesCheck_->setToolTip(
+        tr("Reuse upscaled output for held frames and still shots to reduce GPU power by up to 40%."));
+    polishInteractiveControl(reuseHeldFramesCheck_, 0);
+    globalLayout->addWidget(reuseHeldFramesCheck_);
+
     globalLayout->addWidget(makeSettingsDivider(globalCard));
 
     auto* trtForm = new QFormLayout();
@@ -789,6 +796,11 @@ void AnimeJanaiManagerPanel::buildUi() {
         config_.useNativeKernels = checked;
         markDirty();
     });
+    connect(reuseHeldFramesCheck_, &QCheckBox::toggled, this, [this](bool checked) {
+        if (updatingUi_) return;
+        config_.reuseHeldFrames = checked;
+        markDirty();
+    });
 
     connect(trtModeCombo_, &QComboBox::currentIndexChanged, this, [this](int) {
         if (updatingUi_) return;
@@ -947,6 +959,7 @@ void AnimeJanaiManagerPanel::loadConfigIntoWidgets(
         performanceVariantCombo_->findData(config.performanceSharp));
     loggingCheck_->setChecked(config.enableLogging);
     nativeKernelsCheck_->setChecked(config.useNativeKernels);
+    reuseHeldFramesCheck_->setChecked(config.reuseHeldFrames);
 
     syncTrtWidgetsFromText(config.trtEngineSettings);
     rebuildSlotCombo();
@@ -2130,6 +2143,9 @@ void AnimeJanaiManagerPanel::retranslateUi() {
     nativeKernelsCheck_->setToolTip(
         tr("Run supported models directly on libaji v0.32 native tensor-core kernels on NVIDIA "
            "RTX 30/40/50 GPUs without building TensorRT engines. Uncheck to force TensorRT engines."));
+    reuseHeldFramesCheck_->setText(tr("Reuse upscales of unchanged frames"));
+    reuseHeldFramesCheck_->setToolTip(
+        tr("Reuse upscaled output for held frames and still shots to reduce GPU power by up to 40%."));
     trtModeLabel_->setText(tr("TensorRT engine type"));
     trtOptLevelLabel_->setText(tr("Builder optimization level"));
     trtMinResLabel_->setText(tr("Dynamic minimum resolution"));

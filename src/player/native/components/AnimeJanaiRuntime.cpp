@@ -451,6 +451,8 @@ QByteArray globalIniHeader(const AnimeJanaiConfig& managerConf, Backend backend,
                                      : QByteArrayLiteral("logging=no\n");
     ini += managerConf.useNativeKernels ? QByteArrayLiteral("native=yes\n")
                                         : QByteArrayLiteral("native=no\n");
+    ini += managerConf.reuseHeldFrames ? QByteArrayLiteral("reuse_held_frames=yes\n")
+                                       : QByteArrayLiteral("reuse_held_frames=no\n");
     if (!resolved.trtEngineSettings.isEmpty())
         ini += QByteArrayLiteral("trt_engine_settings=") + resolved.trtEngineSettings.toUtf8() + '\n';
     if (managerConf.qualitySharp) {
