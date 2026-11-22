@@ -9,6 +9,7 @@
 #include "theme/Metrics.hpp"
 #include "theme/Theme.hpp"
 #include "widgets/ActionGrid.hpp"
+#include "widgets/FlowLayout.hpp"
 
 #include <backend/MikaiClient.hpp>
 #include <backend/Cancellation.hpp>
@@ -628,10 +629,7 @@ void ComponentStoreTab::buildUi() {
     selectionRow->addWidget(verifyButton_, 0, Qt::AlignVCenter);
     barLayout->addLayout(selectionRow);
 
-    auto* actionsRow = new QHBoxLayout();
-    actionsRow->setContentsMargins(0, 0, 0, 0);
-    actionsRow->setSpacing(theme::kSpacingSmall);
-    actionsRow->addStretch(1);
+    auto* actionsRow = new FlowLayout(theme::kSpacingSmall, theme::kSpacingSmall);
     downloadButton_ = new QPushButton(actionBar);
     downloadButton_->setObjectName(QStringLiteral("componentDownloadButton"));
     // The page's one emphasised action. It dims to disabled while nothing is
@@ -639,7 +637,7 @@ void ComponentStoreTab::buildUi() {
     // the footer's Save stays the only accent that is always actionable.
     theme::applyActionRole(downloadButton_, theme::ActionRole::Primary);
     downloadButton_->setFixedHeight(theme::kControlHeight);
-    actionsRow->addWidget(downloadButton_, 0, Qt::AlignVCenter);
+    actionsRow->addWidget(downloadButton_);
 
     cancelButton_ = new QPushButton(actionBar);
     cancelButton_->setObjectName(QStringLiteral("nativeComponentTabCancelButton"));
@@ -647,7 +645,7 @@ void ComponentStoreTab::buildUi() {
     cancelButton_->setFixedHeight(theme::kControlHeight);
     cancelButton_->setEnabled(false);
     cancelButton_->setVisible(false);
-    actionsRow->addWidget(cancelButton_, 0, Qt::AlignVCenter);
+    actionsRow->addWidget(cancelButton_);
     barLayout->addLayout(actionsRow);
     root->addWidget(actionBar);
 

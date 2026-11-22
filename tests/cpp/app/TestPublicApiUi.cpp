@@ -2707,6 +2707,23 @@ void TestPublicApiUi::settingsPagesFitTheDialogMinimum() {
       qScopeGuard([] { mikai::app::applyInterfaceLanguage(QStringLiteral("en")); });
   QCoreApplication::processEvents();
   auditPages(QStringLiteral("uk"));
+
+  // Active-download state: Cancel becomes visible beside Install selected on
+  // the Components tab. The FlowLayout must wrap cleanly without horizontal
+  // overflow even in Ukrainian at the dialog's minimum width.
+  QVERIFY(dialog.showPage(QStringLiteral("components")));
+  QCoreApplication::processEvents();
+  auto* cancelButton =
+      dialog.findChild<QPushButton*>(QStringLiteral("nativeComponentTabCancelButton"));
+  QVERIFY2(cancelButton != nullptr, "nativeComponentTabCancelButton is missing");
+  cancelButton->setVisible(true);
+  cancelButton->setEnabled(true);
+  QWidget* componentsHost = stack->currentWidget();
+  QVERIFY(componentsHost != nullptr);
+  settleLayout(componentsHost);
+  const QString activeOverflow = horizontalOverflow(componentsHost);
+  QVERIFY2(activeOverflow.isEmpty(),
+           qPrintable(QStringLiteral("components (uk active download): %1").arg(activeOverflow)));
 }
 
 void TestPublicApiUi::managerActionRowsShareOneWidth() {
