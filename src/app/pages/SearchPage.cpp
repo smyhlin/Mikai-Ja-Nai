@@ -408,6 +408,8 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     // and the passive quota pill sit beside it.
     auto* header = new QWidget(searchContent_);
     header->setObjectName(QStringLiteral("searchHeader"));
+    header->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    header->setFixedHeight(theme::kControlHeight);
     auto* headerLayout = new QHBoxLayout(header);
     headerLayout->setContentsMargins(0, 0, 0, 0);
     headerLayout->setSpacing(theme::kSearchHeaderSpacing);
@@ -650,6 +652,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
 
     pageIntro_ = new QWidget(this);
     pageIntro_->setObjectName(QStringLiteral("pageIntro"));
+    pageIntro_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
     auto* introLayout = new QVBoxLayout(pageIntro_);
     introLayout->setContentsMargins(0, 0, 0, 0);
     introLayout->setSpacing(theme::kSpacingXs);
@@ -676,12 +679,17 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     discoveryLayout->setSpacing(theme::kSpacingMedium);
     quickCategoriesBar_ = new QWidget(discovery);
     quickCategoriesBar_->setObjectName(QStringLiteral("quickCategoriesBar"));
+    {
+        QSizePolicy qp(QSizePolicy::Expanding, QSizePolicy::Minimum);
+        qp.setHeightForWidth(true);
+        quickCategoriesBar_->setSizePolicy(qp);
+    }
     auto* qcFlow = new FlowLayout(theme::kSpacingXs, theme::kSpacingXs);
     qcFlow->setContentsMargins(0, 0, 0, theme::kSpacingXs);
     quickCategoriesBar_->setLayout(qcFlow);
     auto addQuickCat = [this, qcFlow](const QString& label, std::function<void(backend::AnimeQuery&)> configure) {
         auto* btn = new QPushButton(label, quickCategoriesBar_);
-        btn->setObjectName(QStringLiteral("pagerChip"));
+        btn->setObjectName(QStringLiteral("categoryChip"));
         btn->setCursor(Qt::PointingHandCursor);
         connect(btn, &QPushButton::clicked, this, [this, fn = std::move(configure)] {
             catalogueQuery_ = backend::AnimeQuery{};
@@ -721,17 +729,18 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
             q.order = QStringLiteral("desc");
         });
     }
-    auto* randomBtn = new QPushButton(tr("Surprise me"), quickCategoriesBar_);
-    randomBtn->setObjectName(QStringLiteral("randomAnimeButton"));
+    auto* randomBtn = new QPushButton(tr("✦ Surprise me"), quickCategoriesBar_);
+    randomBtn->setObjectName(QStringLiteral("filterChipInclude"));
+    randomBtn->setCursor(Qt::PointingHandCursor);
     randomBtn->setToolTip(tr("Open a random anime matching active filters"));
-    theme::applyActionRole(randomBtn, theme::ActionRole::Secondary);
     connect(randomBtn, &QPushButton::clicked, this, [this] {
         openRandomAnime(catalogueQuery_.genres, catalogueQuery_.formats);
     });
     qcFlow->addWidget(randomBtn);
 
     auto* moreFiltersBtn = new QPushButton(tr("More filters…"), quickCategoriesBar_);
-    theme::applyActionRole(moreFiltersBtn, theme::ActionRole::Ghost);
+    moreFiltersBtn->setObjectName(QStringLiteral("categoryChip"));
+    moreFiltersBtn->setCursor(Qt::PointingHandCursor);
     connect(moreFiltersBtn, &QPushButton::clicked, this, &SearchPage::showCatalogueFilters);
     qcFlow->addWidget(moreFiltersBtn);
     discoveryLayout->addWidget(quickCategoriesBar_);
@@ -775,14 +784,21 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
 
     activeFiltersBar_ = new QWidget(this);
     activeFiltersBar_->setObjectName(QStringLiteral("activeFiltersBar"));
+    {
+        QSizePolicy afp(QSizePolicy::Expanding, QSizePolicy::Minimum);
+        afp.setHeightForWidth(true);
+        activeFiltersBar_->setSizePolicy(afp);
+    }
     activeFiltersLayout_ = new FlowLayout(theme::kSpacingXs, theme::kSpacingXs);
     activeFiltersLayout_->setContentsMargins(0, 0, 0, 0);
     activeFiltersBar_->setLayout(activeFiltersLayout_);
     activeFiltersBar_->hide();
-    rootLayout_->addWidget(activeFiltersBar_);
+    rootLayout_->addWidget(activeFiltersBar_, 0);
 
     resultsToolbar_ = new QWidget(this);
     resultsToolbar_->setObjectName(QStringLiteral("resultsToolbar"));
+    resultsToolbar_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    resultsToolbar_->setFixedHeight(theme::kControlHeight + 4);
     auto* toolbarLayout = new QHBoxLayout(resultsToolbar_);
     toolbarLayout->setContentsMargins(0, 0, 0, 0);
     toolbarLayout->setSpacing(theme::kSpacingSmall);
@@ -793,10 +809,14 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     formatBar_->setDrawBase(false);
     formatBar_->hide();
     connect(formatBar_, &QTabBar::currentChanged, this, [this](int) { applyFormatFilter(); });
-    toolbarLayout->addWidget(formatBar_, 1);
+    toolbarLayout->addWidget(formatBar_, 0, Qt::AlignVCenter);
+    toolbarLayout->addStretch(1);
 
     resultsSortBox_ = new QComboBox(resultsToolbar_);
     resultsSortBox_->setObjectName(QStringLiteral("resultsSortBox"));
+    resultsSortBox_->setMinimumWidth(148);
+    resultsSortBox_->setMaximumWidth(196);
+    resultsSortBox_->setFixedHeight(theme::kControlHeight);
     resultsSortBox_->setToolTip(tr("Sort results"));
     resultsSortBox_->setAccessibleName(tr("Sort results"));
     resultsSortBox_->addItem(tr("Name"), QStringLiteral("name"));
@@ -820,6 +840,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
 
     resultsOrderButton_ = new QToolButton(resultsToolbar_);
     resultsOrderButton_->setObjectName(QStringLiteral("resultsOrderButton"));
+    resultsOrderButton_->setMinimumWidth(78);
     resultsOrderButton_->setFixedHeight(theme::kControlHeight);
     theme::applyActionRole(resultsOrderButton_, theme::ActionRole::Secondary);
     connect(resultsOrderButton_, &QToolButton::clicked, this, [this] {
@@ -843,6 +864,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     gridViewButton_->setToolTip(tr("Card grid view"));
     gridViewButton_->setAccessibleName(tr("Card grid view"));
     gridViewButton_->setCheckable(true);
+    gridViewButton_->setMinimumWidth(62);
     gridViewButton_->setFixedHeight(theme::kControlHeight);
     theme::applyActionRole(gridViewButton_, theme::ActionRole::Secondary);
     connect(gridViewButton_, &QToolButton::clicked, this, [this] { setResultsGridMode(true); });
@@ -854,6 +876,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     listViewButton_->setToolTip(tr("Compact list view"));
     listViewButton_->setAccessibleName(tr("Compact list view"));
     listViewButton_->setCheckable(true);
+    listViewButton_->setMinimumWidth(62);
     listViewButton_->setFixedHeight(theme::kControlHeight);
     theme::applyActionRole(listViewButton_, theme::ActionRole::Secondary);
     connect(listViewButton_, &QToolButton::clicked, this, [this] { setResultsGridMode(false); });
@@ -862,10 +885,31 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     gridViewButton_->setChecked(gridViewMode_);
     listViewButton_->setChecked(!gridViewMode_);
     resultsToolbar_->hide();
-    rootLayout_->addWidget(resultsToolbar_);
+    rootLayout_->addWidget(resultsToolbar_, 0);
     syncResultsSortToolbar();
 
-    results_ = new QListWidget(this);
+    // Single stacked container for Grid, List, Skeleton, and Empty/Error states
+    // so the main content area always owns vertical stretch=1 and headers never expand.
+    resultsViewStack_ = new QStackedWidget(this);
+    resultsViewStack_->setObjectName(QStringLiteral("resultsViewStack"));
+
+    resultsGridHost_ = new QWidget(resultsViewStack_);
+    resultsGridHost_->setObjectName(QStringLiteral("searchResultsGrid"));
+    resultsGridLayout_ = new FlowLayout(theme::kSpacingMedium, theme::kSpacingMedium);
+    resultsGridLayout_->setContentsMargins(0, theme::kSpacingXs, theme::kSpacingSmall,
+                                           theme::kSpacingSmall);
+    resultsGridHost_->setLayout(resultsGridLayout_);
+
+    resultsGridScroll_ = new QScrollArea(resultsViewStack_);
+    resultsGridScroll_->setObjectName(QStringLiteral("searchResultsGridScroll"));
+    resultsGridScroll_->setWidgetResizable(true);
+    resultsGridScroll_->setFrameShape(QFrame::NoFrame);
+    resultsGridScroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    resultsGridScroll_->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    resultsGridScroll_->setWidget(resultsGridHost_);
+    resultsViewStack_->addWidget(resultsGridScroll_);
+
+    results_ = new QListWidget(resultsViewStack_);
     results_->setObjectName(QStringLiteral("searchResults"));
     results_->setIconSize(QSize(theme::kSearchPosterWidth, theme::kSearchPosterHeight));
     results_->setTextElideMode(Qt::ElideRight);
@@ -876,27 +920,9 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     connect(results_, &QListWidget::itemActivated, this, &SearchPage::openItem);
     connect(results_, &QListWidget::customContextMenuRequested, this,
             &SearchPage::resultsContextMenu);
-    results_->hide();
-    rootLayout_->addWidget(results_, 1);
+    resultsViewStack_->addWidget(results_);
 
-    resultsGridHost_ = new QWidget(this);
-    resultsGridHost_->setObjectName(QStringLiteral("searchResultsGrid"));
-    resultsGridLayout_ = new FlowLayout(theme::kSpacingMedium, theme::kSpacingMedium);
-    resultsGridLayout_->setContentsMargins(0, theme::kSpacingXs, theme::kSpacingSmall,
-                                           theme::kSpacingSmall);
-    resultsGridHost_->setLayout(resultsGridLayout_);
-
-    resultsGridScroll_ = new QScrollArea(this);
-    resultsGridScroll_->setObjectName(QStringLiteral("searchResultsGridScroll"));
-    resultsGridScroll_->setWidgetResizable(true);
-    resultsGridScroll_->setFrameShape(QFrame::NoFrame);
-    resultsGridScroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    resultsGridScroll_->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    resultsGridScroll_->setWidget(resultsGridHost_);
-    resultsGridScroll_->hide();
-    rootLayout_->addWidget(resultsGridScroll_, 1);
-
-    resultsSkeleton_ = new QWidget(this);
+    resultsSkeleton_ = new QWidget(resultsViewStack_);
     resultsSkeleton_->setObjectName(QStringLiteral("searchResultsSkeleton"));
     auto* skeletonFlow = new FlowLayout(theme::kSpacingMedium, theme::kSpacingMedium);
     skeletonFlow->setContentsMargins(0, theme::kSpacingXs, theme::kSpacingSmall,
@@ -923,10 +949,12 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
         sl->addLayout(textCol, 1);
         skeletonFlow->addWidget(skel);
     }
-    resultsSkeleton_->hide();
-    rootLayout_->addWidget(resultsSkeleton_, 1);
+    resultsViewStack_->addWidget(resultsSkeleton_);
 
-    resultsStateCard_ = new QFrame(this);
+    resultsStateHost_ = new QWidget(resultsViewStack_);
+    auto* stateHostLayout = new QVBoxLayout(resultsStateHost_);
+    stateHostLayout->setContentsMargins(0, theme::kSpacingMedium, 0, 0);
+    resultsStateCard_ = new QFrame(resultsStateHost_);
     resultsStateCard_->setObjectName(QStringLiteral("settingsCard"));
     auto* stateLayout = new QVBoxLayout(resultsStateCard_);
     stateLayout->setContentsMargins(theme::kSpacingLarge, theme::kSpacingLarge,
@@ -957,8 +985,12 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     stateLayout->addWidget(resultsStateTitle_);
     stateLayout->addWidget(resultsStateDetail_);
     stateLayout->addLayout(stateActions);
-    resultsStateCard_->hide();
-    rootLayout_->addWidget(resultsStateCard_, 0, Qt::AlignTop);
+    stateHostLayout->addWidget(resultsStateCard_, 0, Qt::AlignTop);
+    stateHostLayout->addStretch(1);
+    resultsViewStack_->addWidget(resultsStateHost_);
+
+    resultsViewStack_->hide();
+    rootLayout_->addWidget(resultsViewStack_, 1);
 
     {
         QSettings settings;
@@ -1257,9 +1289,11 @@ void SearchPage::setResultsGridMode(bool grid) {
                       grid ? QStringLiteral("grid") : QStringLiteral("list"));
     if (gridViewButton_ != nullptr) gridViewButton_->setChecked(grid);
     if (listViewButton_ != nullptr) listViewButton_->setChecked(!grid);
-    if (!homeCurrent_) {
-        if (resultsGridScroll_ != nullptr) resultsGridScroll_->setVisible(grid);
-        if (results_ != nullptr) results_->setVisible(!grid);
+    if (!homeCurrent_ && resultsViewStack_ != nullptr &&
+        resultsViewStack_->currentWidget() != resultsSkeleton_ &&
+        resultsViewStack_->currentWidget() != resultsStateHost_) {
+        resultsViewStack_->setCurrentWidget(grid ? static_cast<QWidget*>(resultsGridScroll_)
+                                                 : static_cast<QWidget*>(results_));
     }
 }
 void SearchPage::openRandomAnime(const QStringList& genres, const QStringList& formats) {
@@ -1292,7 +1326,9 @@ void SearchPage::rebuildActiveFilterChips() {
     }
     auto addChip = [this](const QString& text, const QString& tooltip, std::function<void()> onRemove) {
         auto* btn = new QPushButton(text + QStringLiteral("  ×"), activeFiltersBar_);
-        btn->setObjectName(QStringLiteral("pagerChipActive"));
+        btn->setObjectName(text.startsWith(QLatin1String("- "))
+                               ? QStringLiteral("filterChipExclude")
+                               : QStringLiteral("activeFilterChip"));
         btn->setToolTip(tooltip);
         btn->setCursor(Qt::PointingHandCursor);
         connect(btn, &QPushButton::clicked, this, [this, fn = std::move(onRemove)] {
@@ -1360,7 +1396,7 @@ void SearchPage::rebuildActiveFilterChips() {
         connect(clearAll, &QPushButton::clicked, this, &SearchPage::resetCatalogueFilters);
         activeFiltersLayout_->addWidget(clearAll);
     }
-    activeFiltersBar_->setVisible(hasChips && !homeCurrent_);
+    activeFiltersBar_->setVisible(hasChips && !homeCurrent_ && !teamBrowseMode_);
 }
 
 void SearchPage::syncResultsSortToolbar() {
@@ -3155,6 +3191,11 @@ void SearchPage::showCatalogueFilters() {
             section->addWidget(legend);
 
             auto* board = new QWidget(owner);
+            {
+                QSizePolicy bp(QSizePolicy::Expanding, QSizePolicy::Minimum);
+                bp.setHeightForWidth(true);
+                board->setSizePolicy(bp);
+            }
             auto* flow = new FlowLayout(theme::kSpacingXs, theme::kSpacingXs);
             flow->setContentsMargins(0, 0, 0, 0);
             board->setLayout(flow);
@@ -3170,17 +3211,13 @@ void SearchPage::showCatalogueFilters() {
             const auto applyChipVisual = [](QPushButton* btn, const QString& label, int state) {
                 if (state == 1) {
                     btn->setText(QStringLiteral("+ ") + label);
-                    btn->setObjectName(QStringLiteral("pagerChipActive"));
-                    btn->setStyleSheet(QString());
+                    btn->setObjectName(QStringLiteral("filterChipInclude"));
                 } else if (state == 2) {
                     btn->setText(QStringLiteral("− ") + label);
-                    btn->setObjectName(QStringLiteral("pagerChip"));
-                    btn->setStyleSheet(QStringLiteral(
-                        "background: rgba(239, 68, 68, 0.18); border: 1px solid rgba(239, 68, 68, 0.65);"));
+                    btn->setObjectName(QStringLiteral("filterChipExclude"));
                 } else {
                     btn->setText(label);
-                    btn->setObjectName(QStringLiteral("pagerChip"));
-                    btn->setStyleSheet(QString());
+                    btn->setObjectName(QStringLiteral("filterChip"));
                 }
                 btn->style()->unpolish(btn);
                 btn->style()->polish(btn);
@@ -3281,12 +3318,17 @@ void SearchPage::showCatalogueFilters() {
 
     // Quick decade/year preset pills for fast range selection.
     auto* yearPresetsHost = new QWidget(filterContent);
+    {
+        QSizePolicy yp(QSizePolicy::Expanding, QSizePolicy::Minimum);
+        yp.setHeightForWidth(true);
+        yearPresetsHost->setSizePolicy(yp);
+    }
     auto* yearPresetsFlow = new FlowLayout(theme::kSpacingXs, theme::kSpacingXs);
     yearPresetsFlow->setContentsMargins(0, 0, 0, 0);
     yearPresetsHost->setLayout(yearPresetsFlow);
     const auto addYearPreset = [&](const QString& label, int fromVal, int toVal) {
         auto* btn = new QPushButton(label, yearPresetsHost);
-        btn->setObjectName(QStringLiteral("pagerChip"));
+        btn->setObjectName(QStringLiteral("categoryChip"));
         btn->setCursor(Qt::PointingHandCursor);
         connect(btn, &QPushButton::clicked, &dialog, [yearFrom, yearTo, years, fromVal, toVal] {
             yearFrom->setValue(fromVal);
@@ -3426,7 +3468,7 @@ void SearchPage::showCatalogueFilters() {
                     QString holderName = v.isString() ? v.toString() : v.toObject().value(QStringLiteral("name")).toString();
                     if (holderName.trimmed().isEmpty()) continue;
                     auto* btn = new QPushButton(holderName, boardGuard.data());
-                    btn->setObjectName(QStringLiteral("pagerChip"));
+                    btn->setObjectName(QStringLiteral("categoryChip"));
                     btn->setCursor(Qt::PointingHandCursor);
                     connect(btn, &QPushButton::clicked, dlgGuard.data(), [self, dlgGuard, holderName] {
                         if (self.isNull()) return;
@@ -3930,6 +3972,11 @@ void SearchPage::openTeamPicker() {
 
     auto* selectedStrip = new QWidget(&dialog);
     selectedStrip->setObjectName(QStringLiteral("teamSelectedChipsStrip"));
+    {
+        QSizePolicy sp(QSizePolicy::Expanding, QSizePolicy::Minimum);
+        sp.setHeightForWidth(true);
+        selectedStrip->setSizePolicy(sp);
+    }
     auto* selectedFlow = new FlowLayout(theme::kSpacingXs, theme::kSpacingXs);
     selectedFlow->setContentsMargins(0, 0, 0, 0);
     selectedStrip->setLayout(selectedFlow);
@@ -3993,7 +4040,7 @@ void SearchPage::openTeamPicker() {
         for (qint64 id : *pickedTeamIds) {
             const QString lbl = pickedTeamNames->value(id, tr("Team #%1").arg(id));
             auto* chip = new QPushButton(lbl + QStringLiteral("  ×"), selectedStrip);
-            chip->setObjectName(QStringLiteral("pagerChipActive"));
+            chip->setObjectName(QStringLiteral("activeFilterChip"));
             chip->setCursor(Qt::PointingHandCursor);
             QObject::connect(chip, &QPushButton::clicked, selectedStrip, [id, pickedTeamIds, rows]() {
                 pickedTeamIds->remove(id);
@@ -4289,7 +4336,7 @@ void SearchPage::browseSelectedTeam(const backend::Team& team) {
         bodyRow->setSpacing(theme::kSpacingMedium);
 
         teamMonogram_ = new QLabel(teamHeroCard_);
-        teamMonogram_->setObjectName(QStringLiteral("carouselStatusLive"));
+        teamMonogram_->setObjectName(QStringLiteral("teamMonogram"));
         teamMonogram_->setFixedSize(48, 48);
         teamMonogram_->setAlignment(Qt::AlignCenter);
         QFont monoFont = teamMonogram_->font();
@@ -4642,19 +4689,21 @@ void SearchPage::runResultsRequest(int page) {
 }
 
 void SearchPage::showResultsStateCard(const QString& title, const QString& detail, bool isError) {
-    if (resultsStateCard_ == nullptr) return;
+    if (resultsStateCard_ == nullptr || resultsViewStack_ == nullptr) return;
     resultsStateTitle_->setText(title);
     resultsStateDetail_->setText(detail);
     resultsStateRetry_->setVisible(isError);
     resultsStateClearFilters_->setVisible(hasExplicitCatalogueCriteria(catalogueQuery_));
     resultsStateResetSearch_->setVisible(!currentQuery_.isEmpty() || !homeCurrent_);
-    resultsStateCard_->show();
-    if (resultsGridScroll_ != nullptr) resultsGridScroll_->hide();
-    if (results_ != nullptr) results_->hide();
+    resultsViewStack_->setCurrentWidget(resultsStateHost_);
 }
 
 void SearchPage::hideResultsStateCard() {
-    if (resultsStateCard_ != nullptr) resultsStateCard_->hide();
+    if (resultsViewStack_ != nullptr &&
+        resultsViewStack_->currentWidget() == resultsStateHost_) {
+        resultsViewStack_->setCurrentWidget(gridViewMode_ ? static_cast<QWidget*>(resultsGridScroll_)
+                                                          : static_cast<QWidget*>(results_));
+    }
 }
 
 void SearchPage::setSearchInFlight(bool active) {
@@ -4665,12 +4714,9 @@ void SearchPage::setSearchInFlight(bool active) {
         searchButton_->setToolTip(active ? tr("Cancel in-flight search") : tr("Search"));
         refreshHeaderActionWidths();
     }
-    if (!homeCurrent_ && resultsSkeleton_ != nullptr) {
-        resultsSkeleton_->setVisible(active);
+    if (!homeCurrent_ && resultsViewStack_ != nullptr && resultsSkeleton_ != nullptr) {
         if (active) {
-            hideResultsStateCard();
-            if (resultsGridScroll_ != nullptr) resultsGridScroll_->hide();
-            if (results_ != nullptr) results_->hide();
+            resultsViewStack_->setCurrentWidget(resultsSkeleton_);
         }
     }
 }
@@ -4811,10 +4857,7 @@ void SearchPage::search() {
 void SearchPage::showDiscovery() {
     placeIntro(true);
     discoveryScroll_->show();
-    results_->hide();
-    if (resultsSkeleton_ != nullptr) resultsSkeleton_->hide();
-    hideResultsStateCard();
-    if (resultsGridScroll_ != nullptr) resultsGridScroll_->hide();
+    if (resultsViewStack_ != nullptr) resultsViewStack_->hide();
     if (resultsToolbar_ != nullptr) resultsToolbar_->hide();
     if (activeFiltersBar_ != nullptr) activeFiltersBar_->hide();
     formatBar_->hide();
@@ -4831,15 +4874,17 @@ void SearchPage::showSearchResults() {
     discoveryScroll_->hide();
     if (resultsToolbar_ != nullptr) resultsToolbar_->show();
     syncResultsSortToolbar();
+    homeCurrent_ = false;
     rebuildActiveFilterChips();
-    if (resultsGridScroll_ != nullptr) {
-        resultsGridScroll_->setVisible(gridViewMode_);
-        results_->setVisible(!gridViewMode_);
-    } else {
-        results_->show();
+    if (resultsViewStack_ != nullptr) {
+        resultsViewStack_->show();
+        if (!searchInFlight_) {
+            resultsViewStack_->setCurrentWidget(
+                gridViewMode_ ? static_cast<QWidget*>(resultsGridScroll_)
+                              : static_cast<QWidget*>(results_));
+        }
     }
     resultsHeading_->show();
-    homeCurrent_ = false;
     updateHomeIndicator();
     applyThumbs();
 }
@@ -4881,10 +4926,10 @@ void SearchPage::onResults(const backend::SearchResult& result, int requestedPag
                 ? tr("Try broadening your active filters or clearing one or more criteria.")
                 : tr("Check the spelling or try searching by English, Ukrainian, or romaji title.");
         showResultsStateCard(heading, hint, false);
-    } else {
-        hideResultsStateCard();
-        if (resultsGridScroll_ != nullptr) resultsGridScroll_->setVisible(gridViewMode_);
-        if (results_ != nullptr) results_->setVisible(!gridViewMode_);
+    } else if (resultsViewStack_ != nullptr) {
+        resultsViewStack_->setCurrentWidget(
+            gridViewMode_ ? static_cast<QWidget*>(resultsGridScroll_)
+                          : static_cast<QWidget*>(results_));
     }
     updatePager();
 }
@@ -5107,7 +5152,9 @@ void SearchPage::clearBlockFailure(FailureView* view, QLabel* state) {
 }
 
 void SearchPage::updatePager() {
-    pager_->setVisible(pages_ > 1);
+    const bool showPager = !homeCurrent_ && !entries_.isEmpty() &&
+                           (pages_ > 1 || pageSize_ != theme::kSearchResultsPerPage);
+    pager_->setVisible(showPager);
     pager_->setState(page_, pages_, total_);
 }
 

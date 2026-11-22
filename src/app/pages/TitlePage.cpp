@@ -3172,7 +3172,7 @@ void TitlePage::rebuildReleaseChips() {
         chipsWrap->setLayout(chipsFlow);
         for (const auto& pair : uniqueTeams) {
             auto* btn = new QPushButton(pair.second, chipsWrap);
-            btn->setObjectName(QStringLiteral("pagerChip"));
+            btn->setObjectName(QStringLiteral("categoryChip"));
             btn->setCursor(Qt::PointingHandCursor);
             btn->setToolTip(tr("Open %1 team profile and releases").arg(pair.second));
             btn->setAccessibleName(tr("Browse team %1").arg(pair.second));

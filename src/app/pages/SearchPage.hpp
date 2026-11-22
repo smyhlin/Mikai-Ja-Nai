@@ -32,6 +32,7 @@ class QScrollArea;
 class QComboBox;
 class QFrame;
 class QScrollBar;
+class QStackedWidget;
 class QTabBar;
 class QTimer;
 class QVBoxLayout;
@@ -504,7 +505,9 @@ private:
     QToolButton* gridViewButton_ = nullptr;
     QToolButton* listViewButton_ = nullptr;
     bool syncingSortToolbar_ = false;
+    QStackedWidget* resultsViewStack_ = nullptr;
     QWidget* resultsSkeleton_ = nullptr;
+    QWidget* resultsStateHost_ = nullptr;
     QFrame* resultsStateCard_ = nullptr;
     QLabel* resultsStateTitle_ = nullptr;
     QLabel* resultsStateDetail_ = nullptr;

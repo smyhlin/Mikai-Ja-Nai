@@ -380,6 +380,59 @@ QTabBar#formatPillBar::tab:hover:!selected {
     color: %2; background: %8; border-color: rgba(%24, 0.45);
     border-radius: %17px;
 }
+QPushButton#categoryChip, QPushButton#filterChip {
+    background: %5; color: %2; border: 1px solid %10;
+    border-radius: %17px; padding: 5px 12px; font-weight: 500;
+    min-height: 28px;
+}
+QPushButton#categoryChip:hover, QPushButton#filterChip:hover {
+    background: %8; border-color: rgba(%24, 0.55); color: %2;
+}
+QPushButton#filterChipInclude, QPushButton#activeFilterChip {
+    background: rgba(%24, 0.18); color: %2; border: 1px solid %11;
+    border-radius: %17px; padding: 5px 12px; font-weight: 600;
+    min-height: 28px;
+}
+QPushButton#filterChipInclude:hover, QPushButton#activeFilterChip:hover {
+    background: rgba(%24, 0.28); border-color: %11;
+}
+QPushButton#filterChipExclude {
+    background: rgba(239, 68, 68, 0.16); color: %2;
+    border: 1px solid rgba(239, 68, 68, 0.65);
+    border-radius: %17px; padding: 5px 12px; font-weight: 600;
+    min-height: 28px;
+}
+QPushButton#filterChipExclude:hover {
+    background: rgba(239, 68, 68, 0.26);
+}
+QPushButton[actionRole="secondary"]:checked, QToolButton[actionRole="secondary"]:checked {
+    background: rgba(%24, 0.18); color: %2; border: 1px solid %11; font-weight: 600;
+}
+QListWidget#catalogueFilterNavRail {
+    background: transparent; border: none; padding: 0; outline: none;
+}
+QListWidget#catalogueFilterNavRail::item {
+    min-height: 36px; padding: 6px 12px; margin: 2px 0; border-radius: %6px;
+    color: %4; font-weight: 500; border-left: 3px solid transparent;
+}
+QListWidget#catalogueFilterNavRail::item:hover {
+    background: %8; color: %2;
+}
+QListWidget#catalogueFilterNavRail::item:selected {
+    background: rgba(%24, 0.16); color: %2; font-weight: 600;
+    border-left: 3px solid %11;
+}
+QScrollArea#searchResultsGridScroll, QWidget#searchResultsGrid,
+QWidget#searchResultsSkeleton, QWidget#quickCategoriesBar,
+QWidget#activeFiltersBar, QWidget#resultsToolbar,
+QStackedWidget#catalogueFilterStack, QStackedWidget#resultsViewStack {
+    background: transparent; border: none;
+}
+QLabel#teamMonogram {
+    background: rgba(%24, 0.18); color: %11;
+    border: 1px solid rgba(%24, 0.45); border-radius: 12px;
+    font-weight: 700;
+}
 QTableWidget {
     background: %1;
     alternate-background-color: %5;
@@ -1283,6 +1336,13 @@ QWidget#searchPage QPushButton[actionRole="secondary"] {
 QWidget#searchPage QPushButton[actionRole="secondary"]:hover {
     background: @secondaryHover;
     border-color: @primary;
+}
+QWidget#searchPage QPushButton[actionRole="secondary"]:checked,
+QWidget#searchPage QToolButton[actionRole="secondary"]:checked {
+    background: @secondaryHover;
+    border-color: @primary;
+    color: @text;
+    font-weight: 600;
 }
 QWidget#searchPage QPushButton[actionRole="secondary"]:pressed { background: @input; }
 QWidget#searchPage QPushButton[actionRole="secondary"]:focus { border-color: @primary; }

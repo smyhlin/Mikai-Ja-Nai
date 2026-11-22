@@ -125,11 +125,13 @@ TitleCard::TitleCard(const backend::AnimeSummary& summary, QWidget* parent)
     scoreLabel_->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     scoreLabel_->hide();
 
+    // Keep the badge row clean (status + optional rating) and place format/year
+    // on its own crisp muted line so narrow cards never crowd or clip pills.
+    meta_->setObjectName(QStringLiteral("muted"));
     auto* badgesRow = new QHBoxLayout();
     badgesRow->setContentsMargins(0, 0, 0, 0);
     badgesRow->setSpacing(theme::kSpacingXs);
     badgesRow->addWidget(status_, 0, Qt::AlignVCenter);
-    badgesRow->addWidget(meta_, 0, Qt::AlignVCenter);
     badgesRow->addWidget(scoreLabel_, 0, Qt::AlignVCenter);
     badgesRow->addStretch(1);
 
@@ -149,6 +151,7 @@ TitleCard::TitleCard(const backend::AnimeSummary& summary, QWidget* parent)
     text->addWidget(title_, 0, Qt::AlignTop);
     text->addWidget(altTitle_, 0, Qt::AlignTop);
     text->addLayout(badgesRow);
+    text->addWidget(meta_, 0, Qt::AlignTop);
     text->addWidget(episodes_, 0, Qt::AlignTop);
     text->addStretch(1);
     row->addLayout(text, 1);  // the text column takes everything the poster does not
