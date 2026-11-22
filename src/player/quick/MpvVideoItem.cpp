@@ -254,7 +254,10 @@ MpvBridgeCommands takeBridgeCommands(MpvVideoItemSharedState& state,
 /// show during the very pass that follows, so they run before it.
 void applyBridgeTransitions(VideoRenderBridge& bridge, const MpvBridgeCommands& commands) {
     if (commands.acquireRetained) bridge.setEngineFrameHold(true);
-    if (commands.releaseRetained) bridge.clearRetainedPictureKeepingTeardown();
+    // Keep the retained picture on screen until the first new output frame
+    // renders, matching VideoSurface::releaseRetainedPicture() and avoiding a
+    // black-frame flash across filter/shader/upscaler reconfiguration.
+    if (commands.releaseRetained) bridge.setEngineFrameHold(false);
     if (commands.retainAcrossLoad) bridge.retainAcrossLoad();
     if (commands.armLanding) bridge.armLoadLanding(*commands.armLanding);
     if (commands.landedEpoch) bridge.noteLoadLanded(*commands.landedEpoch);

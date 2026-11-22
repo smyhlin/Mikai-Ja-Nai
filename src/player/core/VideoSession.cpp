@@ -1356,6 +1356,12 @@ void VideoSession::publishPlayingState(bool playing) {
 
 void VideoSession::applyShaderChainRequest(const QString& shaders) {
     if (mpv_ == nullptr) return;
+    // Hold the last presented frame across the glsl-shaders pipeline rebuild
+    // until mpv delivers the first fresh frame with the new shader chain.
+    if (presenter_ != nullptr && !engineFrameHoldRequested_ && hasVisibleOutputFrame()) {
+        presenter_->acquireRetainedPicture();
+        presenter_->releaseRetainedPicture();
+    }
     // Only the write is submitted here. What the session reports as the chain is
     // mpv's own observed value, from the glsl-shaders observer.
     issueCoreCommand({"set", "glsl-shaders", shaders.toStdString()}, "glsl-shaders",
