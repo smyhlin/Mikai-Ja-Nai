@@ -590,6 +590,8 @@ set(APP_SOURCES
   src/app/pages/SearchPageTeams.cpp
   src/app/pages/SearchPageResults.cpp
   src/app/pages/TitlePage.cpp
+  src/app/pages/TitlePageRecommendations.cpp
+  src/app/pages/TitlePageEpisodes.cpp
   src/app/pages/TitlePagePlayerSession.cpp
 )
 
