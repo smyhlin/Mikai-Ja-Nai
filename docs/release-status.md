@@ -68,7 +68,7 @@ claimed.
 
 ### November mpv input update
 
-The current pins are the Windows `2026-11-12-042613482d-addons-43119200800` DEV archive
+The current pins are the Windows `2026-11-15-41868e1757-addons-43698509897` DEV archive
 and Linux `2026-11-11-5bbd4c1` with a local FFmpeg TLS rebuild. Both live libmpv runtimes
 reported client API 2.6 and decoded the 320×180 HEVC fixture from a local file and a
 certificate-verified local HTTPS server. Both ABI 1 scene detectors distinguished a

@@ -46,16 +46,16 @@ sudo apt-get install patchelf
 - This test-launcher argument is not an application command-line option.
 - The Linux CI recipe configures both `MIKAI_LINUX_BUNDLE_MPV=ON` and `MIKAI_LINUX_DEPLOY_QT=ON`; that configuration alone is not evidence of a completed build, runtime check or redistribution clearance.
 
-- On Windows, the pinned DEV archive is `mpv-dev-x86_64-20261111-git-042613482d.7z` (release `2026-11-12-042613482d-addons-43119200800`, 33,256,459 bytes, SHA-256 prefix `6a4ee99fbcba`; full digest: `../packaging/provenance/windows-runtime.json`).
-- It supplies headers, `libmpv.dll.a` (54,414 bytes) and `libmpv-2.dll` (123,007,488 bytes, SHA-256 prefix `77fec11d11a5`).
-- The live runtime reports `mpv v0.42.0-dev-g042613482` and FFmpeg `N-128820-g72f8c3376`; the sidecar identifies mpv source `042613482dd6fad51a0cf8dc728cd74d2a9ad665`.
+- On Windows, the pinned DEV archive is `mpv-dev-x86_64-20261115-git-41868e1757.7z` (release `2026-11-15-41868e1757-addons-43698509897`, 33,296,381 bytes, SHA-256 prefix `790ec5b0371f`; full digest: `../packaging/provenance/windows-runtime.json`).
+- It supplies headers, `libmpv.dll.a` and `libmpv-2.dll` (123,084,288 bytes, SHA-256 prefix `e4cecd94750a`).
+- The live runtime reports `mpv v0.42.0-dev-g41868e175`; the sidecar identifies mpv source `41868e1757bea768b07b0e020aa11b9654772c22` and libass `896614fa263f9f64944f7b8650ff6806d5328c4d`.
 - The same verified DEV archive supplies `ajn-mvtools.dll` and `licenses/mvtools/{LICENSE,UPSTREAM.md}`. Deploy the companion beside libmpv and preserve both notices; enhanced scene detection cannot start without it.
 
 - CMake fetches the DEV archive or accepts a local copy through `MIKAI_DIST_MPV_ARCHIVE`, verifying the archive digest.
 
 - The Anime4K shaders are third-party content and are not stored in this repository: `packaging/shaders/anime4k-manifest.json` pins one `bloc97/Anime4K` commit with a SHA-256 per file, and `cmake/FindOrFetchAnime4K.cmake` materialises them into `<build>/shaders` during configure through `cmake -P cmake/FetchAnime4K.cmake` (no interpreter beyond CMake). One tarball of the pinned commit is downloaded into `<build>/_dist-cache/anime4k/`; a staged tree whose pin already matches is reused with no network access, and `-DMIKAI_ANIME4K_ARCHIVE=<local tar.gz>` builds fully offline. Every staged file is digest-checked against the manifest, and the `mikai_anime4k_shaders` CTest entry re-checks the staged tree. A source checkout therefore contains no shader blobs at all; a pin bump is one `cmake -DMODE=pin -DCOMMIT=<sha> -P cmake/FetchAnime4K.cmake` run, documented in that README. See [`packaging/shaders/README.md`](../packaging/shaders/README.md).
 - This is the build/runtime input; the separate CLI/updater archive is neither used nor bundled.
-- The separate CLI archive, `mpv-x86_64-20261111-git-042613482d.7z`, is 34,057,825 bytes with SHA-256 prefix `768f6526d252`; its full digest is in `../packaging/provenance/windows-runtime.json`.
+- The separate CLI archive, `mpv-x86_64-20261115-git-41868e1757.7z`, is 34,102,233 bytes with SHA-256 prefix `fa06b7c3f581`; its full digest is in `../packaging/provenance/windows-runtime.json`.
 - It contains no libmpv DLL.
 
 - The pinned DEV archive is not corresponding source, which remains a redistribution gate.

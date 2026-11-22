@@ -59,11 +59,11 @@ endif()
 set(MIKAI_DIST_MPV_ARCHIVE "" CACHE FILEPATH
   "Optional local copy of the pinned mpv-dev archive (its published SHA-256 is always checked)")
 set(MIKAI_DIST_MPV_CACHE_DIR "${CMAKE_BINARY_DIR}/_dist-cache/mpv")
-set(MIKAI_MPV_ARCHIVE_NAME "mpv-dev-x86_64-20261111-git-042613482d.7z")
+set(MIKAI_MPV_ARCHIVE_NAME "mpv-dev-x86_64-20261115-git-41868e1757.7z")
 set(MIKAI_MPV_ARCHIVE_URL
-  "https://github.com/the-database/mpv-winbuild/releases/download/2026-11-12-042613482d-addons-43119200800/${MIKAI_MPV_ARCHIVE_NAME}")
+  "https://github.com/the-database/mpv-winbuild/releases/download/2026-11-15-41868e1757-addons-43698509897/${MIKAI_MPV_ARCHIVE_NAME}")
 set(MIKAI_MPV_ARCHIVE_SHA256
-  "6a4ee99fbcba03e99af3190ff60bd8124fc112946646f86e1b6f3d674724c2dc")
+  "790ec5b0371f7d720c868abd8fe45331cef753991ca6ef1dc02d0efd3764332b")
 file(MAKE_DIRECTORY "${MIKAI_DIST_MPV_CACHE_DIR}")
 set(MIKAI_USE_SYSTEM_MPV FALSE)
 

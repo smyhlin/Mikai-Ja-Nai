@@ -1,6 +1,6 @@
 {
   "schema": "mikai.packaging.provenance/1",
-  "generated": "2026-11-13",
+  "generated": "2026-11-22",
   "platform": "windows-x64",
   "releaseArtifact": "../../release-artifacts/windows-runtime-review/mikai-0.1.0-windows-x64-release.json",
   "releaseArtifactSha256": "7782b102b7096e4e8f00d51ad818a636b99e87231cb6a61260a82a944cce555d",
@@ -15,10 +15,10 @@
   "build": {
     "mpv": {
       "upstream": "https://github.com/the-database/mpv",
-      "sourceCommit": "042613482dd6fad51a0cf8dc728cd74d2a9ad665",
-      "release": "https://github.com/the-database/mpv-winbuild/releases/tag/2026-11-12-042613482d-addons-43119200800",
-      "workflowRun": "https://github.com/the-database/mpv-winbuild/actions/runs/43119200800",
-      "runMetadata": "https://api.github.com/repos/the-database/mpv-winbuild/actions/runs/43119200800",
+      "sourceCommit": "41868e1757bea768b07b0e020aa11b9654772c22",
+      "release": "https://github.com/the-database/mpv-winbuild/releases/tag/2026-11-15-41868e1757-addons-43698509897",
+      "workflowRun": "https://github.com/the-database/mpv-winbuild/actions/runs/43698509897",
+      "runMetadata": "https://api.github.com/repos/the-database/mpv-winbuild/actions/runs/43698509897",
       "workflow": null,
       "job": null,
       "compiler": "Not established from retained evidence for this run.",
@@ -33,9 +33,9 @@
         "sourceArchiveSha256": null,
         "sourceArchiveBytes": null,
         "siblingCliArchive": {
-          "url": "https://github.com/the-database/mpv-winbuild/releases/download/2026-11-12-042613482d-addons-43119200800/mpv-x86_64-20261111-git-042613482d.7z",
-          "sha256": "768f6526d252b9da65dc47b2c048574c85397fd5b8da57cd4fded57f72206e9d",
-          "bytes": 34057825,
+          "url": "https://github.com/the-database/mpv-winbuild/releases/download/2026-11-15-41868e1757-addons-43698509897/mpv-x86_64-20261115-git-41868e1757.7z",
+          "sha256": "fa06b7c3f58181be098216e1bdfa20ad45d44c29b419e8c61f76d706d8309487",
+          "bytes": 34102233,
           "role": "Verified CLI sibling; not a usable build input because it contains no development headers or libmpv DLL."
         },
         "historicalRun37965200722NotCurrentEvidence": {
@@ -51,24 +51,24 @@
         }
       },
       "asset": {
-        "url": "https://github.com/the-database/mpv-winbuild/releases/download/2026-11-12-042613482d-addons-43119200800/mpv-dev-x86_64-20261111-git-042613482d.7z",
-        "sha256": "6a4ee99fbcba03e99af3190ff60bd8124fc112946646f86e1b6f3d674724c2dc",
-        "bytes": 33256459,
+        "url": "https://github.com/the-database/mpv-winbuild/releases/download/2026-11-15-41868e1757-addons-43698509897/mpv-dev-x86_64-20261115-git-41868e1757.7z",
+        "sha256": "790ec5b0371f7d720c868abd8fe45331cef753991ca6ef1dc02d0efd3764332b",
+        "bytes": 33296381,
         "containsCorrespondingSource": false
       },
       "deployedFile": {
         "path": "mpv/libmpv-2.dll",
-        "version": "v0.42.0-dev-g042613482",
-        "sha256": "77fec11d11a566c612f68f7fc70863412f9975cf1caa7e2b203442fed4d743b2",
-        "bytes": 123007488,
-        "abiMarker": "ABI-9 host entrypoint string markers observed: aji_ingest, aji_infer_seq, aji_temporal_radius, aji_temporal_reset, aji_rife_before_upscale, aji_pre_resize, aji_resize, aji_infer_rife. String markers only; not runtime behavior proof.",
+        "version": "v0.42.0-dev-g41868e175",
+        "sha256": "e4cecd94750a9eb23a8686fdd9e4a8dfcc8b63fbdcd6cfdcb03698193e9c9c58",
+        "bytes": 123084288,
+        "abiMarker": "ABI-9 + libaji 0.30 held-frame string markers observed: aji_reuse_held_frames_for_config, aji_held_create/decide/set_anchor/reset/get_stats/destroy, aji_ingest, aji_infer_seq, aji_infer_rife. String markers only; not runtime behavior proof.",
         "status": "Pinned archive member and deployment destination; the historical releaseArtifact does not inventory this new file."
       },
       "licenseStatus": "The current sidecar explicitly declares GPL. Complete static-dependency license/source closure and distributor-controlled corresponding-source delivery remain unresolved; publicReleaseReady stays false.",
       "sceneDetector": {
         "path": "mpv/ajn-mvtools.dll",
         "bytes": 1709056,
-        "sha256": "61afdd139763e1d76ad0d74bed413505f279fb60ceb06921b6d51618efbb571b",
+        "sha256": "5e99da9249989b9c883f7c66534fbfa204f45d4d7a34feecc65fd791d3f66bbd",
         "abi": 1,
         "license": "GPL-2.0-or-later",
         "source": "https://github.com/dubhatervapoursynth/vapoursynth-mvtools/tree/17250aa979616ac48dfb0e18abfdcf2bd4e3afc0",
@@ -80,9 +80,9 @@
         "verification": "ajn_mvtools_create/reset/destroy succeeded and analyze_enhanced export was present; this is not RIFE inference or real-time throughput proof."
       },
       "nativeAddonMetadata": {
-        "url": "https://github.com/the-database/mpv-winbuild/releases/download/2026-11-12-042613482d-addons-43119200800/mpv-addon-native-x86_64.json",
+        "url": "https://github.com/the-database/mpv-winbuild/releases/download/2026-11-15-41868e1757-addons-43698509897/mpv-addon-native-x86_64.json",
         "bytes": 5687,
-        "sha256": "35fc6412a6a10e899315c428e0e13137c8bbc838d43609b95c03533a3773c10d",
+        "sha256": "e4c506afa6bcd07ce0dc1ebf2b8b4772b76f4e7785a4dbf095950c15930ca65c",
         "buildHelperCommit": "ca38487e28304e4af70de6cee243469883c0f8b5",
         "configurationSha256": "76bec463d6eb9533f4547f5c9d35c24d95914c08abe0d95811c0fafc3a518c3d",
         "privateEnhancedSceneAbi": 1
