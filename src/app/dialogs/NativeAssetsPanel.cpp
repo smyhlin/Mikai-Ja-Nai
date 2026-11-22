@@ -636,7 +636,7 @@ void NativeAssetsPanel::buildUi() {
     connect(deleteCacheButton_, &QPushButton::clicked, this, [this] {
         const int row = cacheTable_->currentRow();
         if (row < 0 || row >= cache_.size()) return;
-        deleteCacheEntry(cache_.at(row).buildKey);
+        deleteCacheEntryAsync(cache_.at(row).buildKey);
     });
     connect(stagingList_, &QListWidget::currentRowChanged, this, [this](int row) {
         discardStagingButton_->setEnabled(row >= 0);

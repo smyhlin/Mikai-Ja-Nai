@@ -250,6 +250,9 @@ public:
   /// an in-use lease or an unverifiable directory is refused by name. Returns
   /// false with `statusKey`/`statusReason` set on any refusal.
   bool deleteCacheEntry(const QString& buildKey);
+  /// Non-blocking GUI entry point: runs `removeArtifact` (engine hashing +
+  /// quarantine) on the worker `Runner` so the Settings dialog never freezes.
+  void deleteCacheEntryAsync(const QString& buildKey);
 
   /// The pinned spatial-asset catalogue, in the record's order.
   const QVector<mplayer::native::SpatialAsset>& sourceAssets() const { return sourceAssets_; }

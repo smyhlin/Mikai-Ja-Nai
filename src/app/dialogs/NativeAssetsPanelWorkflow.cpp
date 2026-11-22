@@ -25,6 +25,7 @@
 #include <QtCore/QList>
 #include <QtCore/QLocale>
 #include <QtCore/QMetaObject>
+#include <QtCore/QPointer>
 #include <QtCore/QProcess>
 #include <QtCore/QProcessEnvironment>
 #include <QtCore/QTemporaryDir>
@@ -729,6 +730,53 @@ bool NativeAssetsPanel::deleteCacheEntry(const QString& buildKey) {
     // and re-enumerates asynchronously after the removal completes.
     refreshCacheAsync();
     return removed;
+}
+
+void NativeAssetsPanel::deleteCacheEntryAsync(const QString& buildKey) {
+    if (runner_ == nullptr) {
+        deleteCacheEntry(buildKey);
+        return;
+    }
+    if (deleteCacheButton_ != nullptr) {
+        deleteCacheButton_->setEnabled(false);
+    }
+    applyStatus(QStringLiteral("native.cache.removing"),
+                tr("Removing cached artifact…"), cacheStatus_);
+    const mplayer::native::ArtifactStore storeCopy = artifacts_;
+    const QVector<NativeCacheEntry> snapshot = cache_;
+    const QPointer<NativeAssetsPanel> self(this);
+    runner_->run(
+        [storeCopy, snapshot, buildKey]() {
+            QString reasonKey;
+            QString reason;
+            const bool removed =
+                deleteNativeCacheEntry(storeCopy, snapshot, buildKey, &reasonKey, &reason);
+            QVariantMap res;
+            res.insert(QStringLiteral("removed"), removed);
+            res.insert(QStringLiteral("reasonKey"), reasonKey);
+            res.insert(QStringLiteral("reason"), reason);
+            return QVariant(res);
+        },
+        [self](const QVariant& value) {
+            if (self.isNull()) return;
+            const QVariantMap res = value.toMap();
+            self->applyStatus(res.value(QStringLiteral("reasonKey")).toString(),
+                              res.value(QStringLiteral("reason")).toString(),
+                              self->cacheStatus_);
+            if (self->deleteCacheButton_ != nullptr && self->cacheTable_ != nullptr) {
+                self->deleteCacheButton_->setEnabled(self->cacheTable_->currentRow() >= 0);
+            }
+            self->refreshCacheAsync();
+        },
+        [self](const backend::Failure& failure) {
+            if (self.isNull()) return;
+            self->applyStatus(QStringLiteral("native.cache.removeFailed"),
+                              failure.message, self->cacheStatus_);
+            if (self->deleteCacheButton_ != nullptr && self->cacheTable_ != nullptr) {
+                self->deleteCacheButton_->setEnabled(self->cacheTable_->currentRow() >= 0);
+            }
+            self->refreshCacheAsync();
+        });
 }
 
 void NativeAssetsPanel::setRequestedBackend(native::Backend backend) {
