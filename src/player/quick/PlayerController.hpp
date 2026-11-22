@@ -151,6 +151,7 @@ public:
     Q_PROPERTY(QString nativeHudHeadline READ nativeHudHeadline NOTIFY nativeHudChanged)
     Q_PROPERTY(QString nativeHudState READ nativeHudState NOTIFY nativeHudChanged)
     Q_PROPERTY(QString nativeHudProvider READ nativeHudProvider NOTIFY nativeHudChanged)
+    Q_PROPERTY(QString nativeHudGpu READ nativeHudGpu NOTIFY nativeHudChanged)
     Q_PROPERTY(QString nativeHudModel READ nativeHudModel NOTIFY nativeHudChanged)
     Q_PROPERTY(QString nativeHudGeometry READ nativeHudGeometry NOTIFY nativeHudChanged)
     Q_PROPERTY(QString nativeHudFps READ nativeHudFps NOTIFY nativeHudChanged)
@@ -450,6 +451,7 @@ public:
     QString nativeHudHeadline() const { return nativeStatusLines_.headline; }
     QString nativeHudState() const { return nativeStatusLines_.state; }
     QString nativeHudProvider() const { return nativeStatusLines_.provider; }
+    QString nativeHudGpu() const;
     QString nativeHudModel() const { return nativeStatusLines_.model; }
     QString nativeHudGeometry() const { return nativeStatusLines_.geometry; }
     QString nativeHudFps() const { return nativeStatusLines_.fps; }

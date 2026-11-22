@@ -498,6 +498,7 @@ Item {
                 width: parent.width
                 visible: text !== ""
                 text: [root.controller.nativeHudProvider,
+                       root.controller.nativeHudGpu,
                        root.controller.nativeHudModel,
                        root.controller.nativeHudGeometry].filter(part => part !== "").join(" · ")
                 color: root.controller.darkTheme ? "#a1a1aa" : "#52525b"

@@ -1367,6 +1367,10 @@ void PlayerController::setSubtitleSearchLanguage(const QString& code) {
 
 // ── auxiliaries ──────────────────────────────────────────────────────────
 
+QString PlayerController::nativeHudGpu() const {
+    return native::observeComputeCapability().name;
+}
+
 void PlayerController::attachAuxiliaryTransient(QWidget* window) const {
     if (window == nullptr || window_ == nullptr) return;
     window->winId();
