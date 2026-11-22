@@ -2011,22 +2011,25 @@ QImage CompareWindow::renderIsolated(const QString& id) {
                 !lazySelf->session_->hasVideo() || cancelled()) {
                 return QImage();
             }
-            QImage frame;
-            QString reason;
-            bool finished = false;
+            struct FallbackCaptureState {
+                QImage frame;
+                QString reason;
+                bool finished = false;
+            };
+            auto state = std::make_shared<FallbackCaptureState>();
             QEventLoop captureLoop;
             QPointer<QEventLoop> loopGuard(&captureLoop);
             lazySelf->session_->grabUnfilteredFrameAsync(
-                [&frame, &reason, &finished, loopGuard](QImage captured, QString err) {
-                    frame = std::move(captured);
-                    reason = std::move(err);
-                    finished = true;
+                [state, loopGuard](QImage captured, QString err) {
+                    state->frame = std::move(captured);
+                    state->reason = std::move(err);
+                    state->finished = true;
                     if (loopGuard != nullptr) {
                         QMetaObject::invokeMethod(loopGuard.data(), &QEventLoop::quit,
                                                   Qt::QueuedConnection);
                     }
                 });
-            if (!finished) {
+            if (!state->finished) {
                 QTimer timeout;
                 timeout.setSingleShot(true);
                 QObject::connect(&timeout, &QTimer::timeout, &captureLoop, &QEventLoop::quit);
@@ -2035,11 +2038,11 @@ QImage CompareWindow::renderIsolated(const QString& id) {
                 timeout.start(2500);
                 captureLoop.exec(QEventLoop::ExcludeUserInputEvents);
             }
-            if (frame.isNull() && !reason.isEmpty()) {
+            if (state->frame.isNull() && !state->reason.isEmpty()) {
                 qWarning("CompareWindow: the unfiltered source frame is unavailable: %s",
-                         qPrintable(reason));
+                         qPrintable(state->reason));
             }
-            return frame;
+            return state->frame;
         };
         const bool captured = renderer->capture(session_->sourceUrl(), *frozenPlaybackTimestamp_,
                                                 frame_.size(), cancelled, progress,

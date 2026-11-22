@@ -2033,7 +2033,6 @@ std::optional<ProbePropertyValue> VideoSession::probeMpvProperty(const QString& 
         waitLoop.exec(QEventLoop::ExcludeUserInputEvents);
     }
     if (self.isNull()) return std::nullopt;
-    if (self.isNull()) return std::nullopt;
     probeReadActive_ = false;
     // Retired, so a late reply runs no callback and the probe reports "no answer"
     // rather than an answer that belongs to a source already replaced.
