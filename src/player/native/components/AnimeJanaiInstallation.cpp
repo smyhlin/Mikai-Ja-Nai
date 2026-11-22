@@ -42,8 +42,8 @@
 namespace mplayer::native {
 
 namespace {
-constexpr auto kLinuxAjiDispatcherSha = "6dd2119af3c4b8469399fcf50b955ddda350bbf1758d7b36aa797b608491755b";
-constexpr auto kLinuxAjiTrtSha = "9f55b88491a0bf3bb44faa82342b468d8513b5ca44f023ec82fe60bb6c5818be";
+constexpr auto kLinuxAjiDispatcherSha = "0b04cd0737d33c45802edbbbeee16411c700aa291b9ba2f245ae0fddba73f7ae";
+constexpr auto kLinuxAjiTrtSha = "373921ac48266e31ff766712ed3c6170d1fef3c346d44ffd70484c1b69b0638d";
 }
 
 bool detail::matchesPinnedLinuxAjiPair(const QString& dispatcherSha256, const QString& backendSha256) {
@@ -160,30 +160,30 @@ bool detail::validateAnimeJanaiArchiveListing(const QString& listing, bool allow
 namespace {
 
 #ifdef Q_OS_WIN
-constexpr auto kAjiBytes = qint64(953548);
-constexpr auto kAjiSha = "1ae2a0d16be2a660d8197fe4f64e8be7cf7637d7842b19994636e42309ab17b2";
-constexpr auto kAjiUrl = "https://github.com/the-database/animejanai-inference/releases/download/v0.27.0/aji-windows-x64.zip";
+constexpr auto kAjiBytes = qint64(25594049);
+constexpr auto kAjiSha = "694257edb9b0eea9ea517fc0cbd287527540c25a403ce913362484173edb69c0";
+constexpr auto kAjiUrl = "https://github.com/the-database/animejanai-inference/releases/download/v0.32.0/aji-windows-x64.zip";
 constexpr auto kAjiArchiveName = "aji-windows-x64.zip";
 #else
-constexpr auto kAjiBytes = qint64(449466);
-constexpr auto kAjiSha = "044a9cc652fa7660218597c1faa01b7c0abdd97f10a644b0250a0a42321ac0f5";
-constexpr auto kAjiUrl = "https://github.com/the-database/animejanai-inference/releases/download/v0.27.0/aji-linux-x64.tar.zst";
+constexpr auto kAjiBytes = qint64(15123821);
+constexpr auto kAjiSha = "4b42580eb9939795df3fe68298940f31db4d6675cf34fb8a4230f058c7399e87";
+constexpr auto kAjiUrl = "https://github.com/the-database/animejanai-inference/releases/download/v0.32.0/aji-linux-x64.tar.zst";
 constexpr auto kAjiArchiveName = "aji-linux-x64.tar.zst";
 #endif
 constexpr qint64 kOrtBytes = 12458649;
 constexpr qint64 kDirectMlBytes = 202292617;
 constexpr auto kAjiSchema = "mikai.native.animejanai/3";
-constexpr auto kAjiVersion = "v0.27.0";
+constexpr auto kAjiVersion = "v0.32.0";
 // Acquisition identity and installation path must share the archive's version pin.
 QString ajiDispatcherLabel() {
     static const QString label = QStringLiteral("aji-") + QString::fromLatin1(kAjiVersion);
     return label;
 }
-constexpr qint64 kRtxBackendBytes = 440346;
-constexpr auto kRtxBackendSha = "13417fd2a061bc4539ea2509c1ced5023b947d561431a9b527c718c89a00ca35";
-constexpr auto kRtxBackendUrl = "https://github.com/the-database/animejanai-inference/releases/download/v0.27.0/aji-trtrtx-backend-windows-x64.zip";
+constexpr qint64 kRtxBackendBytes = 16413679;
+constexpr auto kRtxBackendSha = "a9f176b1f17374b15d2c4c31b02edbf64921778d89292a8f8ab0ea6344771473";
+constexpr auto kRtxBackendUrl = "https://github.com/the-database/animejanai-inference/releases/download/v0.32.0/aji-trtrtx-backend-windows-x64.zip";
 constexpr auto kRtxBackendArchiveName = "aji-trtrtx-backend-windows-x64.zip";
-constexpr auto kRtxBackendLabel = "aji-trtrtx-v0.27.0";
+constexpr auto kRtxBackendLabel = "aji-trtrtx-v0.32.0";
 QMutex g_installMutex;
 bool g_installRunning = false;
 
@@ -383,16 +383,20 @@ QString pinnedOfficialAjiDigest(const QString& name) {
         return QString::fromLatin1(kLinuxAjiDispatcherSha);
     if (name == QLatin1String("libaji_trt.so"))
         return QString::fromLatin1(kLinuxAjiTrtSha);
+    if (name == QLatin1String("libaji_vk.so"))
+        return QStringLiteral("6d670aee18cc703d03aed1654fd53bd86897006810d8c46616b08c3490962ede");
     if (name == QLatin1String("aji.dll"))
-        return QStringLiteral("095d18018b2ae7f40d9b7e814a9891867f6028ea94d3e06048d2d40276e63b45");
+        return QStringLiteral("033f4bcbd1b5c912c2dbe5b407c5df5c079e0b824a52efb456439a026e34f698");
     if (name == QLatin1String("aji_trt.dll"))
-        return QStringLiteral("a681d572073dc0c0229a8f93a563aa8210dd283403d83ea175217ac23fde8a92");
+        return QStringLiteral("cbdaafd203c3fedae03d77d8d50634da3ee4c702a2f8948e97e19b7193a33db9");
     if (name == QLatin1String("aji_dml.dll"))
-        return QStringLiteral("57ca026d5c1acebd541c7080efbcfd7c7b46f03d8d9411f667fed049f2236642");
+        return QStringLiteral("67803bee16d018b7db336ce2fb91c61749d437eb705423eb258361a1fcace90d");
+    if (name == QLatin1String("aji_vk.dll"))
+        return QStringLiteral("54f9a739387e9bce8fac70f3c5ad35ec708ce461839918ca2679bb6b2435cbf3");
     // The RTX dispatcher has no aji_api_version export either, so these per-file
     // pins are the only identity gate for an official RTX acquisition.
     if (name == QLatin1String("aji_trtrtx.dll"))
-        return QStringLiteral("405c3e0e2bf2fce24e0e3f16a1de04bc52cf4fdb012e3bfb94d3a68cdf33f9c4");
+        return QStringLiteral("c5f73151c5b0d493e31a044a14cdea61ee033b9f68c6eee1a2c75e43426a1a14");
     if (name == QLatin1String("tensorrt_rtx_1_7.dll"))
         return QStringLiteral("7b8a06d4b66dfe7da7f1ff48a994ad9dcf107cd28b4822d6f25453528c0db6dd");
     if (name == QLatin1String("tensorrt_onnxparser_rtx_1_7.dll"))
@@ -787,13 +791,13 @@ bool recordAndVerify(const QString& stage, Backend backend, const QStringList& f
         const QString officialDigest = pinnedOfficialAjiDigest(name);
         if (provenance == QLatin1String("official-download") &&
             !officialDigest.isEmpty() && digest != officialDigest) {
-            *error = translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The downloaded Aji binary does not match its pinned v0.27.0 identity: %1")).arg(name);
+            *error = translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The downloaded Aji binary does not match its pinned v0.32.0 identity: %1")).arg(name);
             return false;
         }
         QJsonObject e; e.insert(QStringLiteral("path"), name); e.insert(QStringLiteral("bytes"), bytes); e.insert(QStringLiteral("sha256"), digest); entries.append(e);
     }
     int abi = 0; bool heavy = false;
-    // The official v0.27.0 dispatcher has no version-query export. Its pinned
+    // The official v0.32.0 dispatcher has no version-query export. Its pinned
     // dispatcher/backend pair establishes ABI 9; custom dispatchers must report it.
     // Both upstream backend model-name mappings turn code 4262 into rife_v4.26,
     // not rife_v4.26_heavy, so the official pair cannot select the heavy graph.
@@ -804,11 +808,11 @@ bool recordAndVerify(const QString& stage, Backend backend, const QStringList& f
         const bool hasVersionExport = runtimeExports(dispPath, &abi, &heavy);
         if ((hasVersionExport && abi != 9) ||
             (!hasVersionExport && !matchesPinnedOfficialAbi(stage, backend))) {
-            *error = translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The imported AnimeJaNai dispatcher does not report ABI 9 and is not the pinned official v0.27.0 x64 backend pair."));
+            *error = translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The imported AnimeJaNai dispatcher does not report ABI 9 and is not the pinned official v0.32.0 x64 backend pair."));
             return false;
         }
         if (!matchesCompatibleBackend(stage, backend)) {
-            *error = translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The imported AnimeJaNai backend does not report ABI 9 and is not the pinned official v0.27.0 backend."));
+            *error = translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The imported AnimeJaNai backend does not report ABI 9 and is not the pinned official v0.32.0 backend."));
             return false;
         }
         if (!hasVersionExport) heavy = false;
@@ -1044,7 +1048,7 @@ AnimeJanaiInstallation describeAnimeJanaiInstallation(Backend backend, bool reha
         const QString officialDigest = pinnedOfficialAjiDigest(name);
         if (provenance == QLatin1String("official-download") &&
             !officialDigest.isEmpty() && entry.value(QStringLiteral("sha256")).toString() != officialDigest)
-            return refuse(QStringLiteral("animejanai.installation.fileInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "An official Aji library does not match the pinned v0.27.0 release.")));
+            return refuse(QStringLiteral("animejanai.installation.fileInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "An official Aji library does not match the pinned v0.32.0 release.")));
         if (isBinaryFileName(name) && !validBinaryImageX64(name, path)) return refuse(QStringLiteral("animejanai.installation.peInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "An AnimeJaNai runtime dependency is not a valid x64 binary image: %1")).arg(name));
 #ifndef Q_OS_WIN
         if (name == QLatin1String("trtexec") && !info.isExecutable())
@@ -1056,7 +1060,7 @@ AnimeJanaiInstallation describeAnimeJanaiInstallation(Backend backend, bool reha
         return refuse(QStringLiteral("animejanai.installation.recordInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The AnimeJaNai installation record does not describe the exact selected backend closure.")));
     result.heavyRifeSupported = rec.value(QStringLiteral("heavyRifeSupported")).toBool();
     if (provenance == QLatin1String("official-download") && result.heavyRifeSupported)
-        return refuse(QStringLiteral("animejanai.installation.capabilityInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "Official Aji v0.27.0 does not map the heavy RIFE model.")));
+        return refuse(QStringLiteral("animejanai.installation.capabilityInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "Official Aji v0.32.0 does not map the heavy RIFE model.")));
     if (rehash && provenance == QLatin1String("local")) {
         int abi = 0; bool heavy = false;
         const QString dispPath = linuxRecordClosure
@@ -1065,9 +1069,9 @@ AnimeJanaiInstallation describeAnimeJanaiInstallation(Backend backend, bool reha
         const bool hasVersionExport = runtimeExports(dispPath, &abi, &heavy);
         if ((hasVersionExport && abi != 9) ||
             (!hasVersionExport && !matchesPinnedOfficialAbi(result.root, backend)))
-            return refuse(QStringLiteral("animejanai.installation.abiInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The installed AnimeJaNai dispatcher does not report ABI 9 and does not match the pinned official v0.27.0 x64 backend pair.")));
+            return refuse(QStringLiteral("animejanai.installation.abiInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The installed AnimeJaNai dispatcher does not report ABI 9 and does not match the pinned official v0.32.0 x64 backend pair.")));
         if (!matchesCompatibleBackend(result.root, backend))
-            return refuse(QStringLiteral("animejanai.installation.abiInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The installed AnimeJaNai backend does not report ABI 9 and does not match the pinned official v0.27.0 backend.")));
+            return refuse(QStringLiteral("animejanai.installation.abiInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The installed AnimeJaNai backend does not report ABI 9 and does not match the pinned official v0.32.0 backend.")));
         if (!hasVersionExport) heavy = false;
         if (result.heavyRifeSupported != heavy)
             return refuse(QStringLiteral("animejanai.installation.capabilityInvalid"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "The recorded AnimeJaNai capability does not match the dispatcher export.")));
@@ -1193,7 +1197,7 @@ ComponentProvisionResult importAnimeJanaiRuntime(const QString& sourceDir, Backe
     if (cancelled && cancelled()) return failed(QStringLiteral("animejanai.installation.cancelled"), translated(QT_TRANSLATE_NOOP("AnimeJanaiInstallation", "AnimeJaNai installation was cancelled.")), true);
     if (!publishStage(temp.path(), backend, &error)) return failed(QStringLiteral("animejanai.installation.publish"), error);
     if (progress) progress({localRuntimeId, copiedBytes, totalBytes, ComponentProvisionStage::Installed});
-    ComponentProvisionResult result; result.ok = true; result.installedPacks << QStringLiteral("aji-v0.27.0");
+    ComponentProvisionResult result; result.ok = true; result.installedPacks << ajiDispatcherLabel();
     result.installedPacks << (backend == Backend::TensorRTRTX ? QString::fromLatin1(kRtxBackendLabel)
                                                               : backendName(backend));
     return result;

@@ -199,7 +199,7 @@ bool populateClosure() {
     }
     QJsonObject record;
     record.insert(QStringLiteral("schema"), QStringLiteral("mikai.native.animejanai/3"));
-    record.insert(QStringLiteral("version"), QStringLiteral("v0.27.0"));
+    record.insert(QStringLiteral("version"), QStringLiteral("v0.32.0"));
     record.insert(QStringLiteral("backend"), QStringLiteral("trt"));
     record.insert(QStringLiteral("abi"), 9);
     record.insert(QStringLiteral("provenance"), QStringLiteral("local"));

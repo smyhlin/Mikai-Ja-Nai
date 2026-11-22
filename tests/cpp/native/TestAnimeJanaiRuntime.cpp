@@ -47,7 +47,7 @@ namespace {
 
 QString fixtureRoot() {
     return QDir(nativeSubdirectory(QStringLiteral("components")))
-        .filePath(QStringLiteral("aji/v0.27.0"));
+        .filePath(QStringLiteral("aji/v0.32.0"));
 }
 
 QString runtimePath(Backend backend = Backend::TensorRT) {
@@ -258,7 +258,7 @@ bool writeRecord(Backend backend, const QString& recordedBackend = {},
     }
     QJsonObject record;
     record.insert(QStringLiteral("schema"), QStringLiteral("mikai.native.animejanai/3"));
-    record.insert(QStringLiteral("version"), QStringLiteral("v0.27.0"));
+    record.insert(QStringLiteral("version"), QStringLiteral("v0.32.0"));
     const QString backendToken = backend == Backend::TensorRT ? QStringLiteral("trt")
                                    : backend == Backend::TensorRTRTX ? QStringLiteral("trtrtx")
                                                                      : QStringLiteral("dml");
@@ -971,7 +971,7 @@ void TestAnimeJanaiRuntime::unsupportedDispatcherIsNotReady() {
     const auto oldVersion = describeAnimeJanaiInstallation(fixtureBackend(), true);
     QVERIFY(!oldVersion.installed);
     QCOMPARE(oldVersion.reasonKey, QStringLiteral("animejanai.installation.recordInvalid"));
-    object.insert(QStringLiteral("version"), QStringLiteral("v0.27.0"));
+    object.insert(QStringLiteral("version"), QStringLiteral("v0.32.0"));
     object.insert(QStringLiteral("schema"), QStringLiteral("unknown"));
     QVERIFY(writeFile(record.fileName(), QJsonDocument(object).toJson(QJsonDocument::Compact)));
     const auto result = describeAnimeJanaiInstallation(fixtureBackend(), true);
