@@ -326,9 +326,11 @@ QString modelsSummaryLine(const QVector<NativeModelView>& models) {
     if (models.isEmpty()) {
         return QCoreApplication::translate("NativeAssetsPanel", "No owned models yet");
     }
-    return QCoreApplication::translate("NativeAssetsPanel", "%1 model(s), %2 ready")
-        .arg(models.size())
-        .arg(usable);
+    return (models.size() == 1
+                ? QCoreApplication::translate("NativeAssetsPanel", "1 model, %1 ready").arg(usable)
+                : QCoreApplication::translate("NativeAssetsPanel", "%1 models, %2 ready")
+                      .arg(models.size())
+                      .arg(usable));
 }
 
 QString cacheSummaryLine(const QVector<NativeCacheEntry>& entries) {
@@ -339,9 +341,11 @@ QString cacheSummaryLine(const QVector<NativeCacheEntry>& entries) {
     if (entries.isEmpty()) {
         return QCoreApplication::translate("NativeAssetsPanel", "No prepared artifacts");
     }
-    return QCoreApplication::translate("NativeAssetsPanel", "%1 artifact(s), %2 proven")
-        .arg(entries.size())
-        .arg(proven);
+    return (entries.size() == 1
+                ? QCoreApplication::translate("NativeAssetsPanel", "1 artifact, %1 proven").arg(proven)
+                : QCoreApplication::translate("NativeAssetsPanel", "%1 artifacts, %2 proven")
+                      .arg(entries.size())
+                      .arg(proven));
 }
 
 }  // namespace

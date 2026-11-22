@@ -2264,8 +2264,11 @@ void TestFeedRender::loadedResultsRetranslateWithoutRefetchingOrLosingViewState(
   QVERIFY2(ukrainianSelected.startsWith(QStringLiteral("Canned 7")),
            qPrintable(QStringLiteral("the API title was rewritten: %1").arg(ukrainianSelected)));
   QVERIFY(ukrainianSelected.contains(QStringLiteral("MOVIE")));
-  QVERIFY2(ukrainianSelected.contains(QCoreApplication::translate(
-               "mikai::app::SearchPage", "%n episode(s)", nullptr, kEpisodes)),
+  QVERIFY2(ukrainianSelected.contains(
+               kEpisodes == 1
+                   ? QCoreApplication::translate("mikai::app::SearchPage", "1 episode")
+                   : QCoreApplication::translate("mikai::app::SearchPage", "%1 episodes")
+                         .arg(kEpisodes)),
            qPrintable(QStringLiteral("the row's episode caption was not restated: %1")
                           .arg(ukrainianSelected)));
 

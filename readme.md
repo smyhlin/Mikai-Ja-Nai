@@ -24,7 +24,7 @@
 
 ## What it does
 
-- Browse and search the Mikai catalogue, filter titles, view teams and schedules, and keep a local recently-opened list.
+- Browse and search the Mikai catalogue with Quick Categories, Grid/List views, tri-state Genre/Tag filters, saved filter presets, License Holders, a full Teams Directory with Team Profiles and Ukrainian Poster galleries, schedules, and a local recently-opened list.
 - Play provider streams or open local video files in an integrated **libmpv** player, through the picker, a drag-and-drop or an Open With hand-off. Local playback is independent of catalogue sign-in/API availability, and the app can offer itself as a per-user default-player candidate without changing an existing default on its own.
 - Compare a paused frame across Original, Anime4K, AnimeJaNai and prepared Native candidates using true source replay, frame-stepping and difference metrics; export flicker comparisons as GIF, animated WebP or silent MP4.
 - Cut a short video moment (MP4) from seekable media using an integrated filmstrip sheet bounded to ±2 minutes around the current frame, with an independent preview playhead, live audio preview, and stream-bitrate size estimates.
@@ -43,28 +43,36 @@ Application captures and their provenance are documented in [Screenshot provenan
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/gallery-2026-11-21/catalogue.png" alt="Catalogue home with sidebar, search toolbar, request quota badge, live feeds and posters"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-22/catalogue-home.png" alt="Catalogue home (0.2.4) with sidebar, Ctrl+K search bar, Quick Categories chips and request quota badge"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-22/search-results-grid.png" alt="Filtered Search Results Grid (0.2.4) with active filter chips, full-width format pills, 360x140 TitleCards and RangePager"></td>
+  </tr>
+  <tr>
+    <td align="center"><em><strong>Catalogue Home (0.2.4).</strong> Sidebar, Ctrl+K search, Quick Categories and quota badge.</em></td>
+    <td align="center"><em><strong>Search Grid (0.2.4).</strong> Active filter chips, format pills, TitleCards and compact RangePager.</em></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/gallery-2026-11-22/title-page.png" alt="Title Page (0.2.4) with poster, synopsis, Dubbed chips, 32px Provider tabs, clickable Teams pills and episode grid"></td>
     <td width="50%"><img src="docs/images/gallery-2026-11-21/filters.png" alt="Catalogue filters dialog (genres, tags, years, format, status, season, studio, sort)"></td>
   </tr>
   <tr>
-    <td align="center"><em><strong>Catalogue.</strong> Sidebar, search, request quota, live feeds and posters.</em></td>
+    <td align="center"><em><strong>Title page (0.2.4).</strong> Release chips, Provider tabs, clickable Teams pills and episode grid.</em></td>
     <td align="center"><em><strong>Filters.</strong> Genres, tags, years, format, status, season, studio and sort.</em></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/images/gallery-2026-11-21/title-page.png" alt="Live Title Page with poster, synopsis, metadata, provider tabs and episode list"></td>
     <td width="50%"><img src="docs/images/gallery-2026-11-21/player.png" alt="Qt Quick/QML player paused on a 1080p fixture with timeline, transport controls and codec badges"></td>
-  </tr>
-  <tr>
-    <td align="center"><em><strong>Title page.</strong> Poster, synopsis, metadata, provider tabs and episode list.</em></td>
-    <td align="center"><em><strong>Player.</strong> Paused on a 1080p fixture with timeline, transport controls and codec badges.</em></td>
-  </tr>
-  <tr>
     <td width="50%"><img src="docs/images/gallery-2026-11-21/player-hover-preview.png" alt="Timeline hover thumbnail preview card with a decoded frame"></td>
-    <td width="50%"><img src="docs/images/gallery-2026-11-21/player-pip.png" alt="Redesigned compact Picture-in-Picture window"></td>
   </tr>
   <tr>
+    <td align="center"><em><strong>Player.</strong> Paused on a 1080p fixture with timeline, transport controls and codec badges.</em></td>
     <td align="center"><em><strong>Hover preview.</strong> Timeline hover thumbnail preview card with a decoded frame.</em></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/gallery-2026-11-21/player-pip.png" alt="Redesigned compact Picture-in-Picture window"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-21/media-info.png" alt="Media Information dialog showing container and stream properties"></td>
+  </tr>
+  <tr>
     <td align="center"><em><strong>PiP.</strong> Redesigned compact window with auto-hide and full-surface drag.</em></td>
+    <td align="center"><em><strong>Media info.</strong> Container, video, audio and subtitle stream properties.</em></td>
   </tr>
   <tr>
     <td width="50%"><img src="docs/images/gallery-2026-11-21/clip.png" alt="Cut Moment / Clip editor window with sequential filmstrip, trim handles, quality selector and size estimate"></td>
@@ -104,7 +112,7 @@ The artifacts are unsigned, and [release status](docs/release-status.md) records
 
 Linux packages include the project's libmpv runtime, but still require compatible host graphics, audio and system libraries. They are not universal Linux bundles. The original Windows v0.1.0 packages have a startup-runtime issue; the [player and usability update](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0-update-20261101) includes the fix.
 
-As checked on 2026-11-21, the latest published release is **[v0.2.3.1](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.2.3.1)**. Current source is **0.2.3.2** (in-app SHA-256 verified auto-updater, Stable/Nightly release channels, Mikai Public API v1.5 endpoints, persistent Open-by-URL history, redesigned compact PiP, and the fast HLS hover-preview / Clip filmstrip pipeline). See the [application state and release status](docs/release-status.md) for observed checks, open issues and publication blockers.
+As checked on 2026-11-22, the latest published release is **[v0.2.3.1](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.2.3.1)**. Current source is **0.2.4** (60-issue Categories, Search, and Teams overhaul with tri-state filters, Grid/List search results, Teams Directory & Profiles, Ukrainian Posters gallery, crisp vertical wheel scrolling, `TitlePage` episode-grid fixes, and Qt Quick player cleanup). See the [application state and release status](docs/release-status.md) for observed checks, open issues and publication blockers.
 
 ## Quick start
 

@@ -1207,11 +1207,15 @@ QString ComponentStoreTab::renderStatusReason() const {
                     reported.append(entry);
             }
             if (statusReason_.rifeFailures > 0)
-                reported.append(tr("%1 RIFE interpolation model(s) failed verification.")
-                                    .arg(statusReason_.rifeFailures));
+                reported.append(statusReason_.rifeFailures == 1
+                                    ? tr("1 RIFE interpolation model failed verification.")
+                                    : tr("%1 RIFE interpolation models failed verification.")
+                                          .arg(statusReason_.rifeFailures));
             if (statusReason_.spatialFailures > 0)
-                reported.append(tr("%1 spatial model(s) failed verification.")
-                                    .arg(statusReason_.spatialFailures));
+                reported.append(statusReason_.spatialFailures == 1
+                                    ? tr("1 spatial model failed verification.")
+                                    : tr("%1 spatial models failed verification.")
+                                          .arg(statusReason_.spatialFailures));
             return tr("%1 elements failed verification: %2")
                 .arg(statusReason_.count)
                 .arg(reported.join(QStringLiteral("; ")));

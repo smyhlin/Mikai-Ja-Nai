@@ -1,10 +1,22 @@
 # Screenshot provenance
 
-**Current gallery:** `gallery-2026-11-21/` holds eighteen PNGs captured by the opt-in `release_gallery_probe --full-docs-gallery` run on 2026-11-21 from the running Linux x86_64 application (mikai 0.2.3.2, Qt 6.12.0, xcb/Xvfb). It supplies the inline illustrations in the player, user, settings and processing guides.
+**Current galleries:**
+- `gallery-2026-11-22/` holds three updated 0.2.4 widget captures (`catalogue-home.png`, `search-results-grid.png`, `title-page.png`) rendered on 2026-11-22 from the compiled Linux x86_64 `mikai 0.2.4` `libmikai_app` widgets (Qt 6.12.0, offscreen) reflecting the 60-issue Categories/Search/Teams overhaul and TitlePage episode-grid fixes.
+- `gallery-2026-11-21/` holds eighteen PNGs captured by `release_gallery_probe --full-docs-gallery` on 2026-11-21 from the running Linux x86_64 application (`mikai 0.2.3.2`, Qt 6.12.0, xcb/Xvfb) and continues to supply the player, hover-preview, PiP, clip, compare, media-info, and settings illustrations.
 
 **Historical records:** `gallery-2026-11-05/` (manual Windows captures, 2026-11-05), `gallery-2026-11-01/`, `screenshots/` (2026-10-30) and `gallery-release-0.1.0/` (2026-10-24) are retained as run evidence, not as pictures of the current interface; their player, Compare and media-information images must not be read as a description of what the application does today.
 
 Neither the current gallery nor the historical records are release QA, rights clearance or approval for further distribution; see [release status](../release-status.md).
+
+## Updated 0.2.4 captures (2026-11-22, offscreen widget render)
+
+| File | Size | SHA-256 | Shows |
+|---|---|---|---|
+| `catalogue-home.png` | 1280×820 | `ad8c5b9649b24de58bedb4acfff56262baf281745684c822d9141402db7042fb` | Catalogue home (0.2.4): sidebar with aligned bottom actions, `Ctrl+K` search bar, Quick Categories chips, request-quota badge |
+| `search-results-grid.png` | 1280×820 | `12c80c97b075716994444637387d7b2fdffb5ba74d074b2a4e763e3de5690d90` | Filtered Search Results Grid (0.2.4): `+ drama ×` chip, `Clear all`, full-width Format pills, `360×140` `TitleCard` grid, compact `RangePager` |
+| `title-page.png` | 1280×900 | `9b441f4647a58c6802bb6c32918f263aa49c4cef353629086eae058583158a43` | Title Page (0.2.4): `Dubbed` release chips, 32 px `Provider` tabs, clickable `Teams:` pills, right-aligned `Episode number` jump input, 15-episode grid |
+
+Capture conditions: Linux x86_64, Qt 6.12.0, `QT_QPA_PLATFORM=offscreen`, default dark theme, synthetic/fixture titles and releases (no live API key or user data).
 
 ## Current gallery (2026-11-21, probe)
 

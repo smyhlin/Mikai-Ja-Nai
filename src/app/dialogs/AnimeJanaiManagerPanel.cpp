@@ -1697,7 +1697,9 @@ void AnimeJanaiManagerPanel::onImportOnnxModels() {
                 if (!lastError->isEmpty())
                     updateStatusBanner(*lastError, QStringLiteral("danger"));
                 else
-                    updateStatusBanner(tr("Imported %1 custom ONNX model(s).").arg(*importedCount),
+                    updateStatusBanner(*importedCount == 1
+                                           ? tr("Imported 1 custom ONNX model.")
+                                           : tr("Imported %1 custom ONNX models.").arg(*importedCount),
                                        QStringLiteral("success"));
             },
             [this, alive, remaining, importedCount, lastError](const backend::Failure& failure) {

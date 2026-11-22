@@ -18,13 +18,13 @@ The original Windows v0.1.0 packages can fail on startup with `__cxa_call_termin
 
 ## Start here
 
-Launch the installed or portable application. The left sidebar provides **Home**, **Filters** and **Teams…**, with **Open video**, **Shortcuts** and **Settings** rows at the bottom. In narrower windows the sidebar becomes an icon rail: the brand name is hidden and tooltips name each action. **Home** returns to discovery, **Filters** opens the catalogue-filter dialog, and **Teams…** opens the team picker.
+Launch the installed or portable application. The left sidebar provides **Home**, **Filters** (with an active filter count badge when criteria are applied) and **Teams…**, with **Open video**, **Shortcuts**, **Settings** and **Check for updates** rows at the bottom. In narrower windows the sidebar becomes an icon rail: the brand name is hidden and tooltips name each action. **Home** returns to discovery, **Filters** opens the **Catalogue filters** dialog, and **Teams…** opens the **Teams Directory**.
 
 **Open video** is a menu with **Video file…** and **Video URL…**. A chosen file or stream address opens in the player without using the catalogue, and it keeps working when catalogue requests fail; see [local video or URL playback](player-guide.md#local-video-or-url). **Video URL…** keeps a persistent history of recently opened stream addresses, so a previous URL can be reopened without retyping it (#41).
 
-The search field (**Search by title…**, with its **Enter** key hint and return arrow), **Search** and the **RPM** quota pill stay in the top toolbar while the Home blocks scroll below. Press **Enter** in the field to search. **Shortcuts** opens the keyboard-shortcut overlay; **Escape** closes it and returns to Home.
+The search field (**Search by title…**, with its **Ctrl+K** shortcut keycap and autocomplete/history suggestions dropdown), **Search** and the **RPM** quota pill stay in the top toolbar while the Home blocks scroll below. Press **Ctrl+K** to focus the search bar from anywhere on the page, and press **Enter** to search. **Shortcuts** opens the keyboard-shortcut overlay; **Escape** closes transient overlays and returns to Home.
 
-The **Latest updates** and **Release schedule** rows keep their full caption and scroll sideways when a window is too narrow: **Shift + wheel** moves half a viewport, **Alt + wheel** scrolls smoothly, and a plain wheel still scrolls the page. The discovery feed itself hides its vertical scrollbar to present full-width content; vertical scrolling remains active through the mouse wheel and explicit **Alt + mouse wheel** gestures.
+Below the search bar, a **Quick Categories** chip bar provides one-click genre jumps, a **Random** discovery shortcut, and quick access to **More filters**. The **Latest updates** and **Release schedule** rows keep their full caption and scroll sideways when a window is too narrow: **Shift + wheel** moves half a viewport, **Alt + wheel** scrolls smoothly, and a plain vertical wheel scrolls the page directly at a crisp step. The discovery feed shows a vertical scrollbar as needed and forwards vertical wheel gestures cleanly even when hovering over carousels or feed rows.
 
 Home stacks **Recently opened** (titles opened on this machine), the **Currently airing** and **Popular on Mikai** carousels, then the **Latest updates** and **Release schedule** lists. Carousel arrows page by the visible cards, and **Alt + mouse wheel** over a carousel scrolls it horizontally; a plain wheel still scrolls the page. The four server-backed blocks can be switched off under **Settings → Access → Home page sections**, and a disabled block is not requested; **Recently opened** stays because it is local. Open a result to see its title page, releases and episodes. On a title page the genre and tag chips are links: a click opens the catalogue filtered by that genre or tag, replacing the current filters. Settings groups **Customization** (General, Appearance), **Application** (Access, Keyboard shortcuts) and **Playback** (Processing, Components, Upscalers, Benchmark); its footer holds **Save** (commits without closing, displaying an inline **Saved** indicator) and **Cancel**.
 
@@ -34,36 +34,36 @@ The app can check for updates automatically and verifies downloaded release arti
 
 The Home/Search header’s **RPM** pill reads **RPM: used / limit** from the last response that carried quota headers; its tooltip adds the remaining requests, the reset countdown and any queued requests. Its dot is neutral until quota data arrives, and the other tones mark healthy, low or exhausted remaining quota rather than a general connection-health check. The title page shows the same usage inline in its header. Both are shortcuts: pressing the pill (or the title page's inline line) opens **Settings → Access**, the page that owns the key the quota belongs to.
 
-![Catalogue home showing the sidebar, top search toolbar, request quota badge, currently airing and latest update feeds, and popular titles](images/gallery-2026-11-21/catalogue.png)
+![Catalogue home (0.2.4) showing the sidebar, Ctrl+K search toolbar, Quick Categories chips, and request quota badge](images/gallery-2026-11-22/catalogue-home.png)
 
-*Catalogue home. This capture is a Windows build with the Ukrainian interface and a custom pink accent, so your own accent, language and window size will differ; catalogue content and availability change upstream.*
+*Catalogue home (0.2.4, Linux x86_64 offscreen capture with default dark theme).*
 
 ## Find titles and filter the catalogue
 
-1. Enter a title or search phrase in the top search field, then press **Enter** or choose **Search**. The status line reports **Found: N** or **Nothing found**, and the pager below the list moves through later pages. An empty search returns to Home when no catalogue filters are selected; when filters are selected it runs the filtered catalogue instead. Selected filters survive either case.
-2. Open **Filters** (the dialog is titled **Catalogue filters**) to narrow results. Its **Genres** and **Tags** sections have include and exclude lists; **Release** holds year-from/year-to ranges, a comma-separated list of exact years, and format, status, season and studio selections; **Sorting** sets the sort field and order. The search fields narrow the displayed genre, tag and release-option lists.
+1. Enter a title or search phrase in the top search field (or pick a suggestion from the dropdown), then press **Enter** or choose **Search**. The results header shows the active scope and formatted total (for example **Filtered catalogue · 1,341 titles**), active criteria appear as removable chips (`+ drama ×` with **Clear all**), and the results toolbar lets you switch between **Grid** (`360×140` `TitleCard` layout) and **List** views or change sort field and order. A compact **RangePager** below the results moves through pages and offers a page-size selector (**20 / 36 / 50 / page**). An empty search returns to Home when no catalogue filters are selected; when filters are selected it runs the filtered catalogue instead.
+2. Open **Filters** (**Catalogue filters**) to narrow results. Its **Genres** and **Tags** sections use unified **tri-state chips** (click to cycle Neutral → `+ Include` → `− Exclude`); **Release** adds quick decade/year preset pills alongside year-from/year-to ranges, exact years, format, status, season and studio selections; **Licenses** lists official license holders from Mikai API v1.5; **Presets** saves and reloads reusable filter combinations locally; and **Sorting** sets the sort field and order.
 3. For selected genres or tags, choose **Match all** or **Match any**. Include and exclude selections let you shape a result set—for example, include a genre and exclude a tag you do not want.
-4. Choose **Apply** to apply the selections, or **Reset** to clear catalogue criteria and apply that cleared state. Both actions keep the search text. **Cancel** discards edits made in the dialog.
+4. The **Apply** button shows a debounced live result-count preview as you edit filters. Choose **Apply** (or press **Ctrl+Enter**) to run the query, **Clear draft** to reset controls inside the dialog without closing it, **Reset** to clear and apply, or **Cancel** to discard edits.
 
-![Catalogue filters dialog with a genre list and the filter, reset and cancel actions](images/gallery-2026-11-21/filters.png)
+![Filtered Search Results Grid (0.2.4) with active filter chips, full-width format pills, 360x140 TitleCards and compact RangePager](images/gallery-2026-11-22/search-results-grid.png)
 
-*The **Catalogue filters** dialog. Selections are applied only when you choose **Apply**; **Cancel** discards them.*
+*Filtered Search Results Grid (0.2.4). Active filter chips, full-width format pill tabs, Grid/List toggle, and compact RangePager.*
 
-Examples: to look for recent television releases, set a year range and choose the relevant format. Use the sort controls to order by name, year, recently updated, views or MAL rating, ascending or descending; text searches use relevance ranking, so the selected sort may be retained but overridden. When results mix formats, tabs with counts appear above the list (**All (36)**, **TV (24)**); choosing one filters the whole result set, and **All** removes that filter. Right-click a Home card for **Open**, **Copy link**, **Copy ID** and **Open in browser**; right-click a results row for **Open**, **Copy link** and **Copy ID**. Results reflect catalogue data and selected criteria; an empty result does not establish that a title is unavailable from every source.
+Examples: to look for recent television releases, pick a year preset pill and choose the relevant format. Use the sort controls to order by name, year, recently updated, views or MAL rating, ascending or descending; text searches use relevance ranking, so the selected sort may be retained but overridden. When results mix formats, a full-width row of format pill tabs with counts appears below the toolbar (**All (1,341)**, **TV (920)**, **MOVIE (245)**); choosing one filters the whole result set, and **All** removes that filter. Right-click a card or row for **Open**, **Copy link**, **Copy ID** and **Open in browser**.
 
 If filter choices are missing because the catalogue dictionaries did not load, **Filters** offers **Retry dictionaries**. A failed catalogue request is not a playback failure: local-file playback remains separate from the API.
 
 ## Browse translation teams
 
-Open **Teams…** to get the **Select a team** dialog. Type in **Search teams**; the status line reports the team count and page (for example **120 teams · page 1 of 3**), and **Load more** fetches the next page. Highlighting a row enables **Browse anime**, which opens that team's page with its profile summary, links and an **Anime from <team>** list of titles. **All catalogue** leaves the team view and returns to catalogue results, where any applied filters still hold.
+Open **Teams…** to open the **Teams Directory**. Type in **Search teams** (debounced search), filter by **Voice** (`haveVoice`) or **Subtitles** (`haveSubs`), and sort ascending or descending. Scrolling to the bottom automatically loads additional pages. Checked teams appear in a persistent **Selected teams** chip strip with **Clear selected**; choose **Filter catalogue** to apply them as catalogue criteria.
 
-Tick one or more rows and choose **Filter catalogue** to apply the checked teams as catalogue criteria; this replaces the previous team selection and keeps ticks while the dialog stays open. A failed team request is shown in the picker or page status; retry by searching again or reopening the picker.
+Highlight a row (or double-click / press **Enter**) and choose **Browse anime** to open that team's **Team Profile**: a structured hero card with a monogram badge, **Teams › Team Name** breadcrumb navigation, horizontal social/website/donate links, locale-formatted view and anime totals, a **Ukrainian Posters** gallery, and in-team search, sort, and format filtering. You can also jump directly to any team's profile by clicking its pill in the **Teams:** row on a title page.
 
 ## Choose a title, release and episode
 
-![Live title page with poster, synopsis, metadata, provider tabs and episode list](images/gallery-2026-11-21/title-page.png)
+![Title Page (0.2.4) with poster, synopsis, Dubbed chips, 32px Provider tabs, clickable Teams pills and episode grid](images/gallery-2026-11-22/title-page.png)
 
-*Live Title Page captured from the anonymous Mikai catalogue (mikai 0.2.3.2).*
+*Title Page (0.2.4, Linux x86_64 offscreen capture showing Dubbed chips, 32 px Provider tabs, clickable Teams pills, right-aligned episode jump input, and 15-episode grid).*
 
 Open a catalogue result to view its title page. The header has **Back** (returns to the previous title page or the catalogue view you came from), **Home**, the inline API-usage line and the API-token gear.
 

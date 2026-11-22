@@ -2,6 +2,24 @@
 
 Published changes are recorded with their downloads on the [GitHub releases page](https://github.com/smyhlin/Mikai-Ja-Nai/releases). Artifact checksums live with each release, not in the documentation.
 
+## 0.2.4 — 2026-11-22
+
+- **Categories Overhaul (#94–#113, 20 issues):**
+  - Replaced duplicated Include/Exclude Genre and Tag lists with unified tri-state chips (Neutral → `+ Include` → `− Exclude`) inside `FlowScrollHost` containers.
+  - Added Quick Categories chip bar on the Home discovery view, decade/year preset pills, License Holders section backed by Mikai Public API v1.5 (`getLicenseHolders()`), saveable custom filter presets persisted in `QSettings`, debounced live result-count preview on the Apply button, in-dialog Clear draft action, whole-row keyboard toggling, and `Ctrl+Enter` apply.
+- **Search Overhaul (#114–#133, 20 issues):**
+  - Added `TitleCard` Grid/List view toggle (`360×140` cards in `FlowScrollHost`), Active Filter chip strip with per-chip `×` removal and compact `Clear all`, dedicated full-width Format pill bar, Sort & Asc/Desc toolbar, compact `RangePager` with page-size selector (`20 / 36 / 50 / page`), search autocomplete/history suggestions, skeleton loading cards, and themed empty/error states.
+  - Cleaned up the top search bar keycap to `Ctrl+K` (removed stray return arrow) and fixed `Filters (N)` sidebar badge to count only active filter criteria.
+- **Teams Overhaul (#134–#153, 20 issues):**
+  - Elevated the Teams picker into a spacious `settingsCard`-styled Teams Directory with debounced search, Voice (`haveVoice`) and Subtitles (`haveSubs`) toggles, Sort & Asc/Desc controls, persistent Selected teams chip strip with `Clear selected`, infinite-scroll auto-loading, and keyboard shortcuts / `QAccessible` announcements.
+  - Redesigned the Team Profile header as a structured hero card with monogram badge, `Teams › Team Name` breadcrumb, horizontal social/website/donate links, locale-aware view/anime counts, in-team search/sort/format filtering, localized Ukrainian Posters gallery (`getUaPosters()`), and clickable `Teams:` profile pills on `TitlePage`.
+- **UI/UX Polish, Scrolling & Bug Fixes:**
+  - Fixed `TitleCard` grid squashing (`sizeHint`/`minimumSizeHint` now return `360×140`), `TitlePage` episode-grid overlap when pagination is hidden (`fitEpisodeSection()` accounts for `episodeJump`, `subpageHost`, `grid`, and `filters`), `Provider` tab height (`32px`), sidebar bottom button parity (`Check for updates` + centered `Open video` menu indicator), and `RangePager` control alignment.
+  - Removed duplicate bottom fullscreen buttons from `PlayerControls.qml` (which referenced a missing `"compress"` icon); fullscreen remains in the top window controls (`PlayerView.qml`).
+  - Improved vertical wheel scrolling across Home (`discoveryScroll_`), Search Grid (`resultsGridScroll_`), and `TitlePage` (`singleStep = 48`, crisp `120px/notch` wheel forwarding over carousels and feed rows).
+  - Replaced remaining literal `(s)` plural strings across `SearchPage`, `TitlePage`, `TitleCard`, and Settings/Components panels with proper singular/plural forms.
+  - Refreshed `0.2.4` captures under `docs/images/gallery-2026-11-22/` and updated documentation and Linux AppStream metainfo.
+
 ## 0.2.3.2 — 2026-11-21
 
 - Overhaul hover preview & Clip Cut Window preload pipeline (#43–#48):
