@@ -2370,3 +2370,70 @@ void TestAnimeJanaiRuntime::pastedOwnedModelRequiresExplicitRegistration() {
     QVERIFY(!findCustomAnimeJanaiModel(registered.id).has_value());
     QVERIFY(listUnregisteredOwnedAnimeJanaiModels().isEmpty());
 }
+
+void TestAnimeJanaiRuntime::nativeKernelsHeldFramesTemporalFixAndEnhancedSceneRoundTrip() {
+    using namespace mplayer::native;
+
+    // Default config enables native GPU kernels and held-frame reuse.
+    const AnimeJanaiConfig defaults = AnimeJanaiConfigStore::parse(QStringLiteral("[global]\nconfig_version=3\n"));
+    QVERIFY(defaults.useNativeKernels);
+    QVERIFY(defaults.reuseHeldFrames);
+
+    // Every libaji false token (`no`, `off`, `false`, `0`) disables each flag;
+    // `on` / `true` / `1` / `yes` keep them enabled.
+    for (const QString& offToken : {QStringLiteral("no"), QStringLiteral("off"),
+                                    QStringLiteral("false"), QStringLiteral("0")}) {
+        const QString ini = QStringLiteral("[global]\nconfig_version=3\nnative=%1\nreuse_held_frames=%1\n")
+                                .arg(offToken);
+        const AnimeJanaiConfig parsed = AnimeJanaiConfigStore::parse(ini);
+        QVERIFY(!parsed.useNativeKernels);
+        QVERIFY(!parsed.reuseHeldFrames);
+    }
+    for (const QString& onToken : {QStringLiteral("yes"), QStringLiteral("on"),
+                                   QStringLiteral("true"), QStringLiteral("1")}) {
+        const QString ini = QStringLiteral("[global]\nconfig_version=3\nnative=%1\nreuse_held_frames=%1\n")
+                                .arg(onToken);
+        const AnimeJanaiConfig parsed = AnimeJanaiConfigStore::parse(ini);
+        QVERIFY(parsed.useNativeKernels);
+        QVERIFY(parsed.reuseHeldFrames);
+    }
+
+    // Full round-trip with TemporalFix + enhanced RIFE scene detection + v0.32 global flags.
+    AnimeJanaiConfig custom;
+    custom.useNativeKernels = false;
+    custom.reuseHeldFrames = false;
+    AnimeJanaiSlot slot;
+    slot.number = 1;
+    slot.name = QStringLiteral("Temporal + RIFE Enhanced");
+    AnimeJanaiChain chain;
+    chain.number = 1;
+    chain.upscaleEnabled = true;
+    chain.temporalFixModel = QStringLiteral("vs_temporalfix_fp16");
+    chain.temporalFixBeforeUpscale = true;
+    chain.temporalFixSceneThreshold = 0.125;
+    chain.rife = true;
+    chain.rifeSceneDetectEnhanced = true;
+    chain.rifeSceneDetectThreshold = 0.18;
+    slot.chains.push_back(chain);
+    custom.customSlots.push_back(slot);
+
+    const QString serialized = AnimeJanaiConfigStore::serialize(custom);
+    QVERIFY(serialized.contains(QStringLiteral("native=no")));
+    QVERIFY(serialized.contains(QStringLiteral("reuse_held_frames=no")));
+    QVERIFY(serialized.contains(QStringLiteral("chain_1_temporal_fix_model=vs_temporalfix_fp16")));
+    QVERIFY(serialized.contains(QStringLiteral("chain_1_temporal_fix_before_upscale=yes")));
+    QVERIFY(serialized.contains(QStringLiteral("chain_1_rife_scene_detect_enhanced=yes")));
+
+    QString error;
+    const AnimeJanaiConfig roundTripped = AnimeJanaiConfigStore::parse(serialized, &error);
+    QVERIFY2(error.isEmpty(), qPrintable(error));
+    QCOMPARE(roundTripped.useNativeKernels, false);
+    QCOMPARE(roundTripped.reuseHeldFrames, false);
+    QCOMPARE(roundTripped.customSlots.size(), 1);
+    QCOMPARE(roundTripped.customSlots[0].chains.size(), 1);
+    const AnimeJanaiChain& rtChain = roundTripped.customSlots[0].chains[0];
+    QCOMPARE(rtChain.temporalFixModel, QStringLiteral("vs_temporalfix_fp16"));
+    QCOMPARE(rtChain.temporalFixBeforeUpscale, true);
+    QVERIFY(std::abs(rtChain.temporalFixSceneThreshold - 0.125) < 1e-9);
+    QCOMPARE(rtChain.rifeSceneDetectEnhanced, true);
+}

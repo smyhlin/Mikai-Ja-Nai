@@ -50,6 +50,7 @@ class TestAnimeJanaiRuntime : public QObject {
   void boundedMetadataReadAllowsAtomicRegistryReplacement();
   void metadataPublicationSerializesWithConcurrentBoundedRead();
   void pastedOwnedModelRequiresExplicitRegistration();
+  void nativeKernelsHeldFramesTemporalFixAndEnhancedSceneRoundTrip();
 
  private:
   bool ownsFixture_ = false;
