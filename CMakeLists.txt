@@ -586,6 +586,9 @@ set(APP_SOURCES
   src/app/dialogs/settings/SettingsUi.cpp
   src/app/pages/MainWindow.cpp
   src/app/pages/SearchPage.cpp
+  src/app/pages/SearchPageFilters.cpp
+  src/app/pages/SearchPageTeams.cpp
+  src/app/pages/SearchPageResults.cpp
   src/app/pages/TitlePage.cpp
   src/app/pages/TitlePagePlayerSession.cpp
 )
