@@ -665,14 +665,23 @@ void VideoSurface::handleContextAboutToBeDestroyed() {
 
 bool VideoSurface::waitForContext(int timeoutMs) {
     const QPointer<VideoSurface> guard(this);
-    QElapsedTimer clock;
-    clock.start();
-    while (guard && guard->bridge_ != nullptr && !guard->bridge_->contextReady() &&
-           clock.elapsed() < timeoutMs) {
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
-        if (!guard) return false;
-        QThread::msleep(20);
-    }
+    if (!guard || guard->bridge_ == nullptr) return false;
+    if (guard->bridge_->contextReady()) return true;
+    QEventLoop waitLoop;
+    QTimer pollTimer;
+    pollTimer.setInterval(20);
+    QTimer deadline;
+    deadline.setSingleShot(true);
+    QObject::connect(&pollTimer, &QTimer::timeout, &waitLoop, [&] {
+        if (!guard || guard->bridge_ == nullptr || guard->bridge_->contextReady()) {
+            waitLoop.quit();
+        }
+    });
+    QObject::connect(&deadline, &QTimer::timeout, &waitLoop, &QEventLoop::quit);
+    QObject::connect(this, &QObject::destroyed, &waitLoop, &QEventLoop::quit);
+    pollTimer.start();
+    deadline.start(qMax(timeoutMs, 0));
+    waitLoop.exec(QEventLoop::AllEvents);
     return guard && guard->bridge_ != nullptr && guard->bridge_->contextReady();
 }
 

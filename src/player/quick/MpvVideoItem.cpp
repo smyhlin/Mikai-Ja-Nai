@@ -1258,20 +1258,27 @@ QImage MpvVideoItem::readVideoFrame(QString* reason) {
         QString failure;
     };
     const auto result = std::make_shared<Result>();
-    readVideoFrameAsync([result](QImage frame, QString why) {
+    QEventLoop waitLoop;
+    QPointer<QEventLoop> loopGuard(&waitLoop);
+    readVideoFrameAsync([result, loopGuard](QImage frame, QString why) {
         result->image = std::move(frame);
         result->failure = std::move(why);
         result->done = true;
+        if (loopGuard != nullptr) {
+            QMetaObject::invokeMethod(loopGuard.data(), &QEventLoop::quit,
+                                      Qt::QueuedConnection);
+        }
     });
     if (!result->done) {
-        // Bounded spin: the render thread never waits for the GUI thread, so the
-        // completion can always arrive; a window that renders nothing times out
-        // with a reason instead of hanging.
-        const QPointer<MpvVideoItem> guard(this);
-        QElapsedTimer timer;
-        timer.start();
-        while (guard && !result->done && timer.elapsed() < kSyncReadbackBudgetMs)
-            QCoreApplication::processEvents(QEventLoop::AllEvents, kContextPollSliceMs);
+        // Bounded event-driven wait: the render thread never waits for the GUI
+        // thread, so completion wakes the loop directly; a silent window times
+        // out cleanly instead of hanging.
+        QTimer deadline;
+        deadline.setSingleShot(true);
+        QObject::connect(&deadline, &QTimer::timeout, &waitLoop, &QEventLoop::quit);
+        QObject::connect(this, &QObject::destroyed, &waitLoop, &QEventLoop::quit);
+        deadline.start(kSyncReadbackBudgetMs);
+        waitLoop.exec(QEventLoop::AllEvents);
         if (!result->done) {
             *reason = QStringLiteral("timed out waiting for the video frame readback");
             return {};
@@ -1376,11 +1383,19 @@ bool MpvVideoItem::waitForContext(int timeoutMs) {
     if (QThread::currentThread() != thread()) return false;
     const QPointer<MpvVideoItem> guard(this);
     const std::shared_ptr<VideoRenderBridge> bridge = bridge_;
-    QElapsedTimer timer;
-    timer.start();
-    const int budget = qMax(timeoutMs, 0);
-    while (guard && !bridge->contextReady() && timer.elapsed() < budget)
-        QCoreApplication::processEvents(QEventLoop::AllEvents, kContextPollSliceMs);
+    QEventLoop waitLoop;
+    QTimer pollTimer;
+    pollTimer.setInterval(kContextPollSliceMs);
+    QTimer deadline;
+    deadline.setSingleShot(true);
+    QObject::connect(&pollTimer, &QTimer::timeout, &waitLoop, [&] {
+        if (!guard || bridge->contextReady()) waitLoop.quit();
+    });
+    QObject::connect(&deadline, &QTimer::timeout, &waitLoop, &QEventLoop::quit);
+    QObject::connect(this, &QObject::destroyed, &waitLoop, &QEventLoop::quit);
+    pollTimer.start();
+    deadline.start(qMax(timeoutMs, 0));
+    waitLoop.exec(QEventLoop::AllEvents);
     return guard && bridge->contextReady();
 }
 

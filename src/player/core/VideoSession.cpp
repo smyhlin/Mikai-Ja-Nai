@@ -1639,13 +1639,20 @@ QImage VideoSession::grabUnfilteredFrame(QString* reason) {
     const auto waitForFrame = [guard](double seconds) {
         if (!guard) return false;
         guard->seek(seconds);
-        QElapsedTimer clock;
-        clock.start();
-        while (guard && clock.elapsed() < 2500) {
-            QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
-            if (!guard) return false;
-            if (guard->hasVisibleOutputFrame()) return true;
-            QThread::msleep(10);
+        QEventLoop waitLoop;
+        QTimer pollTimer;
+        pollTimer.setInterval(10);
+        QTimer deadline;
+        deadline.setSingleShot(true);
+        QObject::connect(&pollTimer, &QTimer::timeout, &waitLoop, [&] {
+            if (!guard || guard->hasVisibleOutputFrame()) waitLoop.quit();
+        });
+        QObject::connect(&deadline, &QTimer::timeout, &waitLoop, &QEventLoop::quit);
+        QObject::connect(guard.data(), &QObject::destroyed, &waitLoop, &QEventLoop::quit);
+        if (!guard->hasVisibleOutputFrame()) {
+            pollTimer.start();
+            deadline.start(2500);
+            waitLoop.exec(QEventLoop::AllEvents);
         }
         return guard && guard->hasVisibleOutputFrame();
     };
@@ -1991,19 +1998,38 @@ std::optional<ProbePropertyValue> VideoSession::probeMpvProperty(const QString& 
     QPointer<VideoSession> self(this);
     const uint64_t epoch = mpv_->sourceEpoch();
     probeReadActive_ = true;
+    QEventLoop waitLoop;
+    QPointer<QEventLoop> loopGuard(&waitLoop);
     const AsyncRequestId request =
         mpv_->getPropertyAsync(name.toStdString(), format,
-                               [answer](const AsyncReply& reply) {
+                               [answer, loopGuard](const AsyncReply& reply) {
                                    answer->reply = reply;
                                    answer->done = true;
+                                   if (loopGuard != nullptr) {
+                                       QMetaObject::invokeMethod(loopGuard.data(), &QEventLoop::quit,
+                                                                 Qt::QueuedConnection);
+                                   }
                                });
-    QElapsedTimer clock;
-    clock.start();
-    while (request.valid() && !answer->done && clock.elapsed() < kProbeReadTimeoutMs) {
-        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 5);
-        if (self.isNull()) return std::nullopt;
-        mpv_->drainEvents();
+    if (request.valid() && !answer->done) {
+        QTimer drainTimer;
+        drainTimer.setInterval(5);
+        QTimer deadline;
+        deadline.setSingleShot(true);
+        QObject::connect(&drainTimer, &QTimer::timeout, &waitLoop, [&] {
+            if (self.isNull() || answer->done) {
+                waitLoop.quit();
+                return;
+            }
+            if (mpv_ != nullptr) mpv_->drainEvents();
+            if (self.isNull() || answer->done) waitLoop.quit();
+        });
+        QObject::connect(&deadline, &QTimer::timeout, &waitLoop, &QEventLoop::quit);
+        QObject::connect(this, &QObject::destroyed, &waitLoop, &QEventLoop::quit);
+        drainTimer.start();
+        deadline.start(kProbeReadTimeoutMs);
+        waitLoop.exec(QEventLoop::ExcludeUserInputEvents);
     }
+    if (self.isNull()) return std::nullopt;
     if (self.isNull()) return std::nullopt;
     probeReadActive_ = false;
     // Retired, so a late reply runs no callback and the probe reports "no answer"
