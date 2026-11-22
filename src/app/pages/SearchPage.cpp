@@ -5456,6 +5456,15 @@ void SearchPage::flushThumbs() {
             // rounded variant is painted once per URL, not once per card.
             const QPixmap ready = roundedPoster(pixmap);
             rounded_.insert(key, ready);
+            thumbCacheOrder_.removeAll(key);
+            thumbCacheOrder_.append(key);
+            constexpr int kMaxCachedThumbs = 320;
+            while (icons_.size() > kMaxCachedThumbs && !thumbCacheOrder_.isEmpty()) {
+                const QString evict = thumbCacheOrder_.takeFirst();
+                if (evict == key) continue;
+                icons_.remove(evict);
+                rounded_.remove(evict);
+            }
             const QList<TitleCard*> cards = cardsByImageKey_.value(key);
             for (TitleCard* card : cards) {
                 card->applyPixmap(ready);
@@ -5504,6 +5513,7 @@ void SearchPage::refreshArtwork() {
     const QHash<QString, QPixmap> previous = icons_;
     icons_.clear();
     rounded_.clear();
+    thumbCacheOrder_.clear();
     pendingThumbs_.clear();
     const int cardRadius = theme::radiusSmall(currentAppearance());
     for (auto it = previous.cbegin(); it != previous.cend(); ++it) {

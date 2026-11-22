@@ -406,6 +406,8 @@ private:
     /// Rounded card pixmaps per poster URL. Several cards share one feed
     /// poster and one box, so the scale-crop-clip runs once per URL.
     QHash<QString, QPixmap> rounded_;
+    /// FIFO/LRU eviction queue bounding `icons_` and `rounded_` memory growth.
+    QStringList thumbCacheOrder_;
     PageGlow* pageGlow_ = nullptr;
 
     QHash<QString, QList<TitleCard*>> carouselWidgets_;
