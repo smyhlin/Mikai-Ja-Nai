@@ -216,15 +216,6 @@ Verdict compareValues(const QString& comparison, const QVariant& actual, const Q
     return {false, QStringLiteral("unknown comparison '%1'").arg(op)};
 }
 
-QObject* findByName(QObject* root, const QString& name) {
-    if (root == nullptr || name.isEmpty()) {
-        return nullptr;
-    }
-    if (root->objectName() == name) {
-        return root;
-    }
-    return root->findChild<QObject*>(name);
-}
 QObject* findTarget(const Surface& surface, const QString& name) {
     if (surface.controller != nullptr && surface.controller->objectName() == name) {
         return surface.controller;

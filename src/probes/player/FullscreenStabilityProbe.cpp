@@ -58,8 +58,8 @@
 #endif
 
 #ifdef Q_OS_WIN
-#include <dwmapi.h>
 #include <windows.h>
+#include <dwmapi.h>
 #include <psapi.h>
 #endif
 
