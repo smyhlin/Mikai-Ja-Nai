@@ -2911,7 +2911,9 @@ void TitlePage::updateEpisodeSummary() {
         return;
     }
     const int count = backend::playableEpisodeCount(releases_.at(activeRelease_));
-    episodeCount_->setText(count > 0 ? tr("%n episode(s)", nullptr, count) : QString());
+    episodeCount_->setText(count <= 0 ? QString()
+                                      : (count == 1 ? tr("1 episode")
+                                                    : tr("%1 episodes").arg(count)));
 }
 
 QString TitlePage::episodeCaption(const QString& number) {
@@ -2974,7 +2976,7 @@ QString TitlePage::releaseChipToolTip(const backend::Release& release) const {
     }
     const int count = backend::playableEpisodeCount(release);
     if (count > 0) {
-        label += tr(" · %n episode(s)", nullptr, count);
+        label += (count == 1 ? tr(" · 1 episode") : tr(" · %1 episodes").arg(count));
     }
     for (const backend::Team& team : release.teams) {
         if (teamReference(team).isEmpty()) {
@@ -3167,6 +3169,11 @@ void TitlePage::rebuildReleaseChips() {
         teamLbl->setObjectName(QStringLiteral("muted"));
         teamLayout->addWidget(teamLbl, 0, Qt::AlignVCenter);
         auto* chipsWrap = new QWidget(teamRow);
+        {
+            QSizePolicy cp(QSizePolicy::Expanding, QSizePolicy::Minimum);
+            cp.setHeightForWidth(true);
+            chipsWrap->setSizePolicy(cp);
+        }
         auto* chipsFlow = new FlowLayout(theme::kSpacingXs, theme::kSpacingXs);
         chipsFlow->setContentsMargins(0, 0, 0, 0);
         chipsWrap->setLayout(chipsFlow);
@@ -3367,11 +3374,13 @@ void TitlePage::fillEpisodes(int index) {
                 [this, stateIndex](int page) { goToEpisodePage(stateIndex, page); });
         auto* navigation = new QHBoxLayout();
         navigation->setContentsMargins(0, 0, 0, 0);
+        navigation->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
         navigation->addWidget(pager, 1);
         auto* jump = new QLineEdit(tabPage);
         jump->setObjectName(QStringLiteral("episodeJump"));
         jump->setPlaceholderText(tr("Episode number"));
         jump->setToolTip(tr("Jump to episode"));
+        jump->setFixedHeight(32);
         jump->setMaximumWidth(theme::kTitleDetailsWidth / 3);
         connect(jump, &QLineEdit::returnPressed, this, [this, stateIndex, jump] {
             if (stateIndex < 0 || stateIndex >= tabStates_.size()) return;
@@ -3472,7 +3481,8 @@ void TitlePage::fillEpisodes(int index) {
     }
     providerSelectorHeading_->setVisible(tabs_->count() > 0);
     providerBar_->ensurePolished();
-    providerBar_->setFixedHeight(qMax(theme::kControlHeight, providerBar_->sizeHint().height()));
+    providerBar_->setFixedHeight(
+        qMax(theme::kControlHeight - theme::kSpacingSmall, providerBar_->sizeHint().height()));
     providerBar_->setVisible(tabs_->count() > 0);
     tabs_->setVisible(tabs_->count() > 0);
 
@@ -3965,6 +3975,9 @@ void TitlePage::fitEpisodeSection() {
     const int frame = style()->pixelMetric(QStyle::PM_DefaultFrameWidth);
     const int tabBarHeight = tabs_->tabBar()->isHidden() ? 0 : tabs_->tabBar()->sizeHint().height();
     const int currentIndex = tabs_->currentIndex();
+    if (currentPage->layout() != nullptr) {
+        currentPage->layout()->activate();
+    }
     // A pager whose chips wrapped needs the height its width implies; its
     // one-line size hint would clip the second row inside the fixed tab height.
     int pageHeight = qMax(currentPage->sizeHint().height(),
@@ -3973,12 +3986,41 @@ void TitlePage::fitEpisodeSection() {
         pageHeight = qMax(pageHeight, currentPage->layout()->minimumSize().height());
     if (currentIndex >= 0 && currentIndex < tabStates_.size()) {
         const TabState& state = tabStates_.at(currentIndex);
-        if (state.grid != nullptr && state.pager != nullptr && currentPage->layout() != nullptr) {
+        if (state.grid != nullptr && currentPage->layout() != nullptr) {
             const QMargins margins = currentPage->layout()->contentsMargins();
-            const int pagerHeight = state.pager->isHidden() ? 0 : state.pager->minimumHeight();
-            const int gap = state.pager->isHidden() ? 0 : currentPage->layout()->spacing();
-            pageHeight = qMax(pageHeight, state.grid->sizeHint().height() + pagerHeight + gap +
-                                          margins.top() + margins.bottom());
+            const int spacing = currentPage->layout()->spacing();
+            int navHeight = 0;
+            if (state.pager != nullptr && !state.pager->isHidden()) {
+                navHeight = qMax(navHeight,
+                                 qMax(state.pager->minimumHeight(), state.pager->sizeHint().height()));
+            }
+            if (auto* jump = currentPage->findChild<QLineEdit*>(QStringLiteral("episodeJump"));
+                jump != nullptr && !jump->isHidden()) {
+                navHeight = qMax(navHeight, qMax(jump->height(), jump->sizeHint().height()));
+            }
+            const int subpageHeight =
+                (state.subpageHost != nullptr && !state.subpageHost->isHidden())
+                    ? state.subpageHost->sizeHint().height()
+                    : 0;
+            const int gridHeight = state.grid->sizeHint().height();
+            int filtersHeight = 0;
+            if (state.filterGroup != nullptr) {
+                if (auto* fw = qobject_cast<QWidget*>(state.filterGroup->parent());
+                    fw != nullptr && !fw->isHidden()) {
+                    filtersHeight =
+                        qMax(fw->sizeHint().height(), fw->heightForWidth(currentPage->width()));
+                }
+            }
+            int blocks = 0;
+            int sum = 0;
+            for (int h : {navHeight, subpageHeight, gridHeight, filtersHeight}) {
+                if (h > 0) {
+                    sum += h;
+                    ++blocks;
+                }
+            }
+            const int totalSpacing = blocks > 1 ? (blocks - 1) * spacing : 0;
+            pageHeight = qMax(pageHeight, sum + totalSpacing + margins.top() + margins.bottom());
         }
     }
     // Size from the active page only: a taller grid from another release would

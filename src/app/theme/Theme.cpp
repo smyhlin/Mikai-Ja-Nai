@@ -888,6 +888,9 @@ QWidget#titlePage QTabBar#providerBar::tab {
     font-size: %26px;
     font-weight: 500;
 }
+QWidget#titlePage QTabBar#providerBar::tab {
+    padding: 4px 12px;
+}
 QWidget#titlePage QTabWidget#episodeTabs QTabBar::tab:selected,
 QWidget#titlePage QTabBar#providerBar::tab:selected {
     background: %3;
