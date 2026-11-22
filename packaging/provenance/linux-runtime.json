@@ -60,20 +60,20 @@
     },
     {
       "id": "pinned-mpv-bundle-and-private-closure",
-      "version": "mpv source commit 5bbd4c16181f30b729cdff9b9a81725cc8efa38d; release 2026-11-11-5bbd4c1 plus local TLS rebuild",
+      "version": "mpv source commit 41868e1757bea768b07b0e020aa11b9654772c22; release 2026-11-15-41868e1 plus local TLS rebuild",
       "provider": "the-database mpv fork and private closure; locally rebuilt FFmpeg TLS family",
-      "sourceUrl": "https://github.com/the-database/mpv/releases/tag/2026-11-11-5bbd4c1",
+      "sourceUrl": "https://github.com/the-database/mpv/releases/tag/2026-11-15-41868e1",
       "archive": {
-        "file": "mpv-linux-x64-2026-11-11-5bbd4c1-tls.tar.zst",
-        "bytes": 42823270,
-        "sha256": "84cd7729076cf28ecef064253ed209d4786be593ad54242dc6e28754042b31ea",
-        "runtimeIdentity": "mpv-linux-x64-2026-11-11-5bbd4c16181f30b729cdff9b9a81725cc8efa38d+tls",
+        "file": "mpv-linux-x64-2026-11-15-41868e1-tls.tar.zst",
+        "bytes": 42564982,
+        "sha256": "acfed9f617df487a69d879b4439e9dd3faaf00ccefe9ef5cfc0ce5a6eed71647",
+        "runtimeIdentity": "mpv-linux-x64-2026-11-15-41868e1757bea768b07b0e020aa11b9654772c22+tls",
         "regularMemberCount": 82,
         "retainedLocalInput": "built by packaging/mpv/build-tls-archive.sh into release-artifacts/; cmake/MikaiLinuxMpv.cmake re-verifies the pinned SHA-256 on every configure",
         "derivedFrom": {
-          "file": "mpv-linux-x64-2026-11-11-5bbd4c1.tar.zst",
-          "bytes": 42296840,
-          "sha256": "a269ced2f6f6ba3111e4b40d22cf9b0a8f8d826767b7df60237e832eb3580d33"
+          "file": "mpv-linux-x64-2026-11-15-41868e1.tar.zst",
+          "bytes": 42312923,
+          "sha256": "361f4340546bedc302ceeb7dbef33807e3e903d8c8b10df99ab1a7f22c6ed58c"
         },
         "bundledVulkanLoader": "1.4.363 (vkEnumerateInstanceVersion); upstream mpv requires >= 1.4.309 at build time, and the loader is bundled because the runtime links it and an older host loader would disable mpv's Vulkan path",
         "modification": "Only the FFmpeg family is replaced (same tag n9.0.2, the same configure flags plus --enable-openssl) and OpenSSL 3.0 from the Ubuntu 22.04 baseline is added; the published archive was configured without a TLS backend, so https streams could not be opened. The mpv fork, libplacebo, shaderc, libass and libvulkan bytes are the upstream archive's.",
@@ -105,7 +105,7 @@
       "sourceArchiveStatus": "The verified binary archive is not corresponding source. It now includes mvtools notices but does not establish complete runtime notices or source closure.",
       "fulfillment": "Obtain current-run corresponding sources, exact patches (including all transitive/submodule content), build scripts/container digest and matching build/install instructions. If these cannot be obtained, do not claim compliant source fulfillment. Preserve archive-member identity separately from any final postprocessed file hash; never substitute a host library selected only by SONAME.",
       "runtimeSmoke": {
-        "mpv": "v0.42.0-dev-g5bbd4c161",
+        "mpv": "v0.42.0-dev-g41868e175",
         "ffmpeg": "n9.0.2",
         "clientApi": "2.6",
         "codec": "HEVC",

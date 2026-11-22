@@ -47,10 +47,10 @@ endfunction()
 # backend, so it cannot open any https URL. This pin is the same runtime with a
 # same-tag FFmpeg rebuilt with --enable-openssl; packaging/mpv/build-tls-archive.sh
 # produces it and release-artifacts/ carries the result.
-set(MIKAI_LINUX_MPV_ARCHIVE_NAME "mpv-linux-x64-2026-11-11-5bbd4c1-tls.tar.zst")
+set(MIKAI_LINUX_MPV_ARCHIVE_NAME "mpv-linux-x64-2026-11-15-41868e1-tls.tar.zst")
 set(MIKAI_LINUX_MPV_ARCHIVE_SHA256
-  "84cd7729076cf28ecef064253ed209d4786be593ad54242dc6e28754042b31ea")
-set(MIKAI_LINUX_MPV_ARCHIVE_SIZE "42823270")
+  "acfed9f617df487a69d879b4439e9dd3faaf00ccefe9ef5cfc0ce5a6eed71647")
+set(MIKAI_LINUX_MPV_ARCHIVE_SIZE "42564982")
 
 set(MIKAI_LINUX_MPV_ARCHIVE "" CACHE FILEPATH
   "Optional local copy of the pinned Linux mpv archive (its published SHA-256 is always checked)")

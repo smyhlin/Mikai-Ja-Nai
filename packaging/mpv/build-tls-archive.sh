@@ -30,12 +30,12 @@ repo_root="$(cd -- "$script_dir/../.." && pwd -P)"
 output_dir="${output_dir:-$repo_root/release-artifacts}"
 mkdir -p "$output_dir"
 
-upstream_name='mpv-linux-x64-2026-11-11-5bbd4c1.tar.zst'
-upstream_sha='a269ced2f6f6ba3111e4b40d22cf9b0a8f8d826767b7df60237e832eb3580d33'
-upstream_url="https://github.com/the-database/mpv/releases/download/2026-11-11-5bbd4c1/$upstream_name"
+upstream_name='mpv-linux-x64-2026-11-15-41868e1.tar.zst'
+upstream_sha='361f4340546bedc302ceeb7dbef33807e3e903d8c8b10df99ab1a7f22c6ed58c'
+upstream_url="https://github.com/the-database/mpv/releases/download/2026-11-15-41868e1/$upstream_name"
 ffmpeg_tag='n9.0.2'
 ffnvcodec_tag='n13.0.19.0'
-result_name='mpv-linux-x64-2026-11-11-5bbd4c1-tls.tar.zst'
+result_name='mpv-linux-x64-2026-11-15-41868e1-tls.tar.zst'
 
 command -v docker >/dev/null 2>&1 || { printf 'docker is required\n' >&2; exit 1; }
 command -v curl >/dev/null 2>&1 || { printf 'curl is required\n' >&2; exit 1; }
