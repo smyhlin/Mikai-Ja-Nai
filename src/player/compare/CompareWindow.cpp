@@ -26,6 +26,7 @@
 #include <QDir>
 #include <QDoubleSpinBox>
 #include <QEvent>
+#include <QEventLoop>
 #include <QFileInfo>
 #include <QFontMetrics>
 #include <QFileDialog>
@@ -1781,12 +1782,13 @@ QImage CompareWindow::grabSettledFrame() {
     int quietEpochRounds = 0;
     const quint64 expectedSeekEpoch = seekEpoch_;
     for (int waited = 0; waited < kSettleTimeoutMs; waited += kPollIntervalMs) {
-        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 10);
+        QEventLoop waitLoop;
+        QTimer::singleShot(kPollIntervalMs, &waitLoop, &QEventLoop::quit);
+        waitLoop.exec(QEventLoop::ExcludeUserInputEvents);
         if (self.isNull()) {
             return QImage();
         }
         if (seekEpoch_ != expectedSeekEpoch) return QImage();
-        QThread::msleep(kPollIntervalMs);
         // The event loop above can deliver a close that destroys the borrowed
         // surface; the QPointer turns that into a refusal here instead of a
         // read of freed memory.
@@ -1832,27 +1834,33 @@ std::optional<double> CompareWindow::readPlaybackTimestamp() {
     }
     const uint64_t expectedEpoch = source->sourceEpoch();
     auto result = std::make_shared<PlaybackTimestampResult>();
+    QEventLoop waitLoop;
+    QPointer<QEventLoop> loopGuard(&waitLoop);
     const AsyncRequestId request = source->requestPlaybackTimestamp(
-        [result](uint64_t epoch, std::optional<double> timestamp) {
+        [result, loopGuard](uint64_t epoch, std::optional<double> timestamp) {
             result->sourceEpoch = epoch;
             result->timestamp = timestamp;
             result->finished.store(true, std::memory_order_release);
+            if (loopGuard != nullptr) {
+                QMetaObject::invokeMethod(loopGuard.data(), &QEventLoop::quit,
+                                          Qt::QueuedConnection);
+            }
         });
     if (!request.valid()) {
         return std::nullopt;
     }
-    for (int waited = 0; waited < kSettleTimeoutMs; waited += 10) {
-        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 10);
-        if (self.isNull()) {
-            return std::nullopt;
-        }
-        if (source == nullptr || source->sourceEpoch() != expectedEpoch) {
-            return std::nullopt;
-        }
-        if (result->finished.load(std::memory_order_acquire)) {
-            break;
-        }
-        QThread::msleep(10);
+    if (!result->finished.load(std::memory_order_acquire)) {
+        QTimer timeout;
+        timeout.setSingleShot(true);
+        QObject::connect(&timeout, &QTimer::timeout, &waitLoop, &QEventLoop::quit);
+        QObject::connect(this, &QObject::destroyed, &waitLoop, &QEventLoop::quit);
+        QObject::connect(source.data(), &VideoSession::sourceEpochChanged, &waitLoop,
+                         &QEventLoop::quit);
+        timeout.start(kSettleTimeoutMs);
+        waitLoop.exec(QEventLoop::ExcludeUserInputEvents);
+    }
+    if (self.isNull() || source == nullptr || source->sourceEpoch() != expectedEpoch) {
+        return std::nullopt;
     }
     if (!result->finished.load(std::memory_order_acquire) ||
         result->sourceEpoch != expectedEpoch ||
@@ -1894,7 +1902,9 @@ void CompareWindow::captureFrame() {
     for (int waited = 0; waited < kSettleTimeoutMs &&
                          (!session_->pauseObserved() || session_->isPlaying());
          waited += kPollIntervalMs) {
-        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 10);
+        QEventLoop waitLoop;
+        QTimer::singleShot(kPollIntervalMs, &waitLoop, &QEventLoop::quit);
+        waitLoop.exec(QEventLoop::ExcludeUserInputEvents);
         if (self.isNull()) {
             return;
         }
@@ -1911,7 +1921,6 @@ void CompareWindow::captureFrame() {
             playbackHoldOriginalPlaying_ = false;
             playbackHoldGeneration_ = requestGeneration;
         }
-        QThread::msleep(kPollIntervalMs);
     }
     if (!playbackHoldOwned()) {
         if (captureError_.isEmpty()) {
@@ -1997,13 +2006,35 @@ QImage CompareWindow::renderIsolated(const QString& id) {
         // removes the playing surface's filter for a moment, so it must not run
         // on the path that already works.
         const QPointer<CompareWindow> lazySelf(this);
-        const std::function<QImage()> fallbackProvider = [lazySelf] {
+        const std::function<QImage()> fallbackProvider = [lazySelf, cancelled] {
             if (lazySelf == nullptr || lazySelf->session_ == nullptr ||
-                !lazySelf->session_->hasVideo()) {
+                !lazySelf->session_->hasVideo() || cancelled()) {
                 return QImage();
             }
+            QImage frame;
             QString reason;
-            const QImage frame = lazySelf->session_->grabUnfilteredFrame(&reason);
+            bool finished = false;
+            QEventLoop captureLoop;
+            QPointer<QEventLoop> loopGuard(&captureLoop);
+            lazySelf->session_->grabUnfilteredFrameAsync(
+                [&frame, &reason, &finished, loopGuard](QImage captured, QString err) {
+                    frame = std::move(captured);
+                    reason = std::move(err);
+                    finished = true;
+                    if (loopGuard != nullptr) {
+                        QMetaObject::invokeMethod(loopGuard.data(), &QEventLoop::quit,
+                                                  Qt::QueuedConnection);
+                    }
+                });
+            if (!finished) {
+                QTimer timeout;
+                timeout.setSingleShot(true);
+                QObject::connect(&timeout, &QTimer::timeout, &captureLoop, &QEventLoop::quit);
+                QObject::connect(lazySelf.data(), &QObject::destroyed, &captureLoop,
+                                 &QEventLoop::quit);
+                timeout.start(2500);
+                captureLoop.exec(QEventLoop::ExcludeUserInputEvents);
+            }
             if (frame.isNull() && !reason.isEmpty()) {
                 qWarning("CompareWindow: the unfiltered source frame is unavailable: %s",
                          qPrintable(reason));
@@ -2042,7 +2073,9 @@ QImage CompareWindow::renderIsolated(const QString& id) {
         pendingAjiPreparation_ = true;
         updateInfo();
         const native::AnimeJanaiSourceContext source = session_->animeJanaiSourceContext();
-        QThreadPool::globalInstance()->start(QRunnable::create([task, id, backend, source] {
+        QEventLoop prepLoop;
+        QPointer<QEventLoop> prepLoopGuard(&prepLoop);
+        QThreadPool::globalInstance()->start(QRunnable::create([task, id, backend, source, prepLoopGuard] {
             const native::Anime4KShaderProgramResolver shaderResolver =
                 [](const QString& presetId, QString* reason) {
                     return anime4k::filterShaderProgramForCandidate(
@@ -2053,11 +2086,15 @@ QImage CompareWindow::renderIsolated(const QString& id) {
                     return task->cancelled.load(std::memory_order_acquire);
                 }, source, shaderResolver);
             task->finished.store(true, std::memory_order_release);
+            if (prepLoopGuard != nullptr) {
+                QMetaObject::invokeMethod(prepLoopGuard.data(), &QEventLoop::quit,
+                                          Qt::QueuedConnection);
+            }
         }));
         while (!task->finished.load(std::memory_order_acquire)) {
             if (cancelled()) task->cancelled.store(true, std::memory_order_release);
-            if (self != nullptr) QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 10);
-            QThread::msleep(kPollIntervalMs);
+            QTimer::singleShot(kPollIntervalMs, &prepLoop, &QEventLoop::quit);
+            prepLoop.exec(QEventLoop::ExcludeUserInputEvents);
         }
         if (self == nullptr) {
             task->cancelled.store(true, std::memory_order_release);

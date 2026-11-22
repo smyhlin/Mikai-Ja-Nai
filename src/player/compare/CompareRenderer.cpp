@@ -10,6 +10,8 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QElapsedTimer>
+#include <QEventLoop>
+#include <QTimer>
 #include <QFileInfo>
 #include <QOffscreenSurface>
 #include <QOpenGLContext>
@@ -36,6 +38,12 @@ constexpr int kStepTimeoutMs = 10000;
 constexpr int kBuildTimeoutMs = 20 * 60 * 1000;
 /// Steps allowed past the computed point before a replay is declared stalled.
 constexpr int kMaxExtraSteps = 8;
+
+void yieldEvents(int delayMs) {
+    QEventLoop loop;
+    QTimer::singleShot(delayMs, &loop, &QEventLoop::quit);
+    loop.exec(QEventLoop::ExcludeUserInputEvents);
+}
 
 struct CommandResult {
     bool finished = false;
@@ -228,14 +236,13 @@ struct CompareRenderer::State {
         // write runs must unwind this one.
         const quint64 startedIn = generation;
         while (!write->done.load(std::memory_order_acquire)) {
-            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 10);
+            yieldEvents(1);
             if (generation != startedIn || (cancelled && cancelled())) {
                 // Signal cancellation to the self-contained FrameWrite worker;
                 // never block the GUI thread on QThreadPool::globalInstance()->waitForDone().
                 write->cancelled.store(true, std::memory_order_release);
                 return false;
             }
-            QThread::msleep(1);
         }
         if (write->failed.load(std::memory_order_acquire) ||
             write->cancelled.load(std::memory_order_acquire)) {
@@ -529,8 +536,7 @@ struct CompareRenderer::State {
     /// picture stop changing when no new frame arrives.
     QImage pump() {
         pumpFrame();
-        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 10);
-        QThread::msleep(kPollMs);
+        yieldEvents(kPollMs);
         return lastFrame;
     }
 
@@ -541,9 +547,8 @@ struct CompareRenderer::State {
         timer.start();
         while (timer.elapsed() < timeoutMs && !cancelled() && error.isEmpty()) {
             if (pumpFrame() && presentedFrames > after) return true;
-            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 10);
+            yieldEvents(kFrameWaitMs);
             if (generation != startedIn) return false;
-            QThread::msleep(kFrameWaitMs);
         }
         return false;
     }
@@ -572,9 +577,8 @@ struct CompareRenderer::State {
                     rendering->update();
                 }
             }
-            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 10);
+            yieldEvents(5);
             if (generation != startedIn) return false;
-            QThread::msleep(5);
         }
         if (cancelled()) return false;
         if (!result->finished) {
@@ -689,9 +693,8 @@ struct CompareRenderer::State {
                 reported = buildDetail;
                 progress(buildDetail);
             }
-            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 10);
+            yieldEvents(kFrameWaitMs);
             if (generation != startedIn) return false;
-            QThread::msleep(kFrameWaitMs);
         }
         if (error.isEmpty() && !cancelled() && generation == startedIn) {
             error = QCoreApplication::translate(
@@ -904,9 +907,8 @@ struct CompareRenderer::State {
             }
             if (!lastHwdec.isEmpty()) break;
             pumpFrame();
-            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 10);
+            yieldEvents(kFrameWaitMs);
             if (generation != startedIn) return false;
-            QThread::msleep(kFrameWaitMs);
         }
         if (cancelled()) return false;
         if (native::decoderFeedsNativeBackend(lastHwdec, backend)) return true;
@@ -1386,9 +1388,8 @@ QImage CompareRenderer::State::queryVoFrame() {
     timer.start();
     while (!reply->finished && timer.elapsed() < 5000 && state.error.isEmpty()) {
         state.pumpFrame();
-        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 10);
+        yieldEvents(kFrameWaitMs);
         if (state.generation != startedIn) return {};
-        QThread::msleep(kFrameWaitMs);
     }
     return reply->image;
 }
