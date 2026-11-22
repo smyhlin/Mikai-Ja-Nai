@@ -1286,14 +1286,15 @@ ComponentProvisionResult provisionAnimeJanaiRuntime(Backend backend,
         if (progress) progress({ajiDispatcherLabel(), 0, 0, ComponentProvisionStage::Extracting});
 #ifdef Q_OS_WIN
         const QSet<QString> members{QStringLiteral("aji.dll"), QStringLiteral("aji_trt.dll"),
-            QStringLiteral("aji_dml.dll"), QStringLiteral("aji_encode.exe"),
-            QStringLiteral("aji_harness_dml.exe"), QStringLiteral("aji_harness.exe"),
-            QStringLiteral("aji_kernel_test.exe")};
-        if (!validateArchiveListing(sevenZip, archive, QString(), members, 7, &error))
+            QStringLiteral("aji_dml.dll"), QStringLiteral("aji_vk.dll"),
+            QStringLiteral("aji_encode.exe"), QStringLiteral("aji_harness_dml.exe"),
+            QStringLiteral("aji_harness.exe"), QStringLiteral("aji_kernel_test.exe")};
+        if (!validateArchiveListing(sevenZip, archive, QString(), members, 8, &error))
             return failed(QStringLiteral("animejanai.installation.archive"), error);
 #else
         const QSet<QString> members{QStringLiteral("libaji.so"), QStringLiteral("libaji_trt.so"),
-            QStringLiteral("aji_harness"), QStringLiteral("aji_kernel_test")};
+            QStringLiteral("libaji_vk.so"), QStringLiteral("aji_harness"),
+            QStringLiteral("aji_kernel_test")};
         if (!validateSafeArchive(sevenZip, archive, &error, false, isCancelled, members))
             return failed(QStringLiteral("animejanai.installation.archive"), error, isCancelled());
 #endif
