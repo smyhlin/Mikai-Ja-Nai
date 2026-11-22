@@ -394,7 +394,10 @@ void PlayerController::connectWindow() {
     connect(window_.get(), &PlayerWindow::fullscreenChanged, this,
             &PlayerController::onWindowFullscreenChanged);
     connect(window_.get(), &PlayerWindow::compactPipChanged, this,
-            [this](bool) { publishPipState(); });
+            [this](bool) {
+                publishPipState();
+                raiseAuxiliaryWindows();
+            });
     connect(window_.get(), &PlayerWindow::sceneLoadFailed, this, [this](const QString& error) {
         showErrorStatus(tr("Could not open the player window: %1").arg(error));
     });
@@ -421,7 +424,10 @@ void PlayerController::connectWindow() {
         if (compareLoadingActive_) scheduleCompareStart(compareLoadingGeneration_, 80);
     });
     connect(window_.get(), &PlayerWindow::sceneReady, this, [this] {
-        if (window_ != nullptr && window_->isVisible()) window_->raiseWindow();
+        if (window_ != nullptr && window_->isVisible()) {
+            window_->raiseWindow();
+            raiseAuxiliaryWindows();
+        }
     });
 }
 
@@ -834,6 +840,7 @@ void PlayerController::onWindowFullscreenChanged(bool fullscreen) {
     fullscreen_ = fullscreen;
     emit fullscreenChanged();
     setChromeState(fullscreen ? ChromeState::FullscreenActive : ChromeState::DefaultFit);
+    raiseAuxiliaryWindows();
 }
 
 void PlayerController::toggleFullscreen() {
@@ -852,6 +859,7 @@ void PlayerController::toggleFullscreen() {
     }
     emit fullscreenChanged();
     setChromeState(fullscreen_ ? ChromeState::FullscreenActive : ChromeState::DefaultFit);
+    raiseAuxiliaryWindows();
 }
 
 void PlayerController::beginWindowMove() {
@@ -1363,6 +1371,33 @@ void PlayerController::attachAuxiliaryTransient(QWidget* window) const {
     if (window == nullptr || window_ == nullptr) return;
     window->winId();
     if (QWindow* handle = window->windowHandle()) handle->setTransientParent(window_.get());
+}
+
+void PlayerController::raiseAuxiliaryWindows() const {
+    if (closed_ || window_ == nullptr) return;
+    const auto restack = [this] {
+        if (closed_ || window_ == nullptr) return;
+        const auto raiseWidget = [this](QWidget* widget) {
+            if (widget == nullptr || !widget->isVisible()) return;
+            attachAuxiliaryTransient(widget);
+            widget->raise();
+        };
+        raiseWidget(mediaInformationWindow_.data());
+        raiseWidget(compareWindow_.data());
+        if (clipWindow_ != nullptr && clipWindow_->isVisible()) {
+            clipWindow_->setTransientParent(window_.get());
+            clipWindow_->raise();
+        }
+        if (preparationWindow_ != nullptr && preparationWindow_->isVisible()) {
+            preparationWindow_->setTransientParent(window_.get());
+            preparationWindow_->raise();
+        }
+    };
+    restack();
+    QPointer<const PlayerController> guard(this);
+    QTimer::singleShot(0, const_cast<PlayerController*>(this), [guard, restack] {
+        if (guard != nullptr) restack();
+    });
 }
 
 void PlayerController::closeAuxiliaryWindows() {

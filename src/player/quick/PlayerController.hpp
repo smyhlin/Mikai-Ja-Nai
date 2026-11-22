@@ -757,6 +757,7 @@ private:
     void publishTheme();
 
     void attachAuxiliaryTransient(QWidget* window) const;
+    void raiseAuxiliaryWindows() const;
     void closeAuxiliaryWindows();
 
     static constexpr int kStatusMs = 1900;
