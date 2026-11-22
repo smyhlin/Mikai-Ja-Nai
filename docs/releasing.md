@@ -4,7 +4,7 @@
 
 This guide covers local package generation, not publication.
 
-- Existing public releases include [v0.2.3.2](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.2.3.2), the [player and usability update](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0-update-20261101), and the original [v0.1.0](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0); do not link users to an unofficial binary mirror.
+- Existing public releases include [v0.2.4](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.2.4), [v0.2.3.1](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.2.3.1), the [player and usability update](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0-update-20261101), and the original [v0.1.0](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0); do not link users to an unofficial binary mirror.
 - Source publication and binary publication are separate decisions.
 - See the [current observed release status](release-status.md) for build outcomes and open gates; the commands and expected outputs below describe packaging paths, not proof that those paths succeeded.
 
@@ -50,17 +50,17 @@ Full digests for inputs that do not live in any provenance JSON or `SHA256SUMS` 
 
 ## Canonical product artifacts
 
-For the published `0.2.3.2`, the canonical release comprised six product packages, the Windows build receipt, the Arch `.SRCINFO`, and one `SHA256SUMS`:
+For the published `0.2.4`, the canonical release comprises Windows x64 and Linux x86_64 packages, the Windows build receipt, optional distribution packages, and one `SHA256SUMS`:
 
 | Platform | Product artifact | Written by |
 |---|---|---|
-| Windows x64 | `mikai-0.2.3.2-windows-x64-portable.zip` | `packaging/windows/package.ps1` |
-| Windows x64 | `mikai-0.2.3.2-windows-x64-setup.exe` | `packaging/windows/package.ps1` |
-| Windows x64 | `mikai-0.2.3.2-windows-x64-release.json` (build receipt) | `packaging/windows/package.ps1` |
-| Linux x86_64 | `mikai-0.2.3.2-linux-x86_64.tar.gz` | `packaging/linux/package.sh` |
-| Linux x86_64 | `mikai-0.2.3.2-x86_64.AppImage` | `appimage` target / `packaging/linux/appimage.sh` |
-| Linux x86_64 | `mikai-0.2.3.2-1-x86_64.pkg.tar.zst` (plus `mikai-0.2.3.2-1.SRCINFO`) | `packaging/linux/arch-package.sh` |
-| Linux x86_64 | `mikai_0.2.3.2_amd64.deb` | `packaging/linux/deb-package.sh` |
+| Windows x64 | `mikai-0.2.4-windows-x64-portable.zip` | `packaging/windows/package.ps1` |
+| Windows x64 | `mikai-0.2.4-windows-x64-setup.exe` | `packaging/windows/package.ps1` |
+| Windows x64 | `mikai-0.2.4-windows-x64-release.json` (build receipt) | `packaging/windows/package.ps1` |
+| Linux x86_64 | `mikai-0.2.4-linux-x86_64.tar.gz` | `packaging/linux/package.sh` |
+| Linux x86_64 | `mikai-0.2.4-x86_64.AppImage` | `appimage` target / `packaging/linux/appimage.sh` |
+| Linux x86_64 | `mikai-0.2.4-1-x86_64.pkg.tar.zst` (plus `mikai-0.2.4-1.SRCINFO`) | `packaging/linux/arch-package.sh` |
+| Linux x86_64 | `mikai_0.2.4_amd64.deb` | `packaging/linux/deb-package.sh` |
 | both | `SHA256SUMS` | regenerated at the top level over the promoted set |
 
 - Each script writes its own `SHA256SUMS` beside its output; promoting several builds into one directory means regenerating the single top-level manifest so it covers every product file and the receipt.
@@ -97,10 +97,10 @@ Verify the executable inside the canonical portable ZIP with `--version`, not on
 
 Expected outputs are:
 
-- `mikai-0.2.3.2-windows-x64-portable.zip`
-- `mikai-0.2.3.2-windows-x64-setup.exe`
+- `mikai-0.2.4-windows-x64-portable.zip`
+- `mikai-0.2.4-windows-x64-setup.exe`
 - `SHA256SUMS`
-- `mikai-0.2.3.2-windows-x64-release.json`
+- `mikai-0.2.4-windows-x64-release.json`
 
 - The installer is unsigned and per-user. It does not force associations or enable startup automatically.
 - Setup shows its Welcome page and checks this Windows user's registered installation. An older version is offered as **Update**; a matching version is offered for update or repair because different builds can share the same version number. A newer registered version is refused rather than silently replaced.

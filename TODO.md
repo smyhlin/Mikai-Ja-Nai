@@ -1,13 +1,10 @@
-## Todo
+## Active Tracking
 
-- [x] in-app update notification
-- [x] auto-update from GitHub Releases (shipped in 0.2.3.1, #15)
-- [x] nightly builds (Stable/Nightly channel, shipped in 0.2.3.1, #16)
+Active defects and enhancements are tracked on [GitHub Issues](https://github.com/smyhlin/Mikai-Ja-Nai/issues) (`v0.2.4` shipped 2026-11-22):
 
-## Doing
-
-- [ ] player black blink fix
-- [ ] fix elements hide under player screen
+- [ ] Player black frame blink during upscale/shader reconfiguration (#155)
+- [ ] Player overlay elements stacking under video surface (#156)
+- [ ] Ukrainian translations for new 0.2.4 Categories/Search/Teams strings (#154)
 ## Done
 
 - [x] cpp fixes
