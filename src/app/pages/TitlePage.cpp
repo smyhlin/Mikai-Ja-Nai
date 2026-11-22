@@ -3873,6 +3873,45 @@ void TitlePage::keyPressEvent(QKeyEvent* event) {
         event->accept();
         return;
     }
+    const bool typingInField = qobject_cast<QLineEdit*>(QApplication::focusWidget()) != nullptr;
+    const Qt::KeyboardModifiers mods = event->modifiers();
+    // Ctrl+G or '/' (when not typing in a text field) focuses the active episode jump box.
+    if ((mods == Qt::ControlModifier && event->key() == Qt::Key_G) ||
+        (!typingInField && mods == Qt::NoModifier && event->key() == Qt::Key_Slash)) {
+        if (tabs_ != nullptr && tabs_->currentWidget() != nullptr) {
+            if (auto* jump =
+                    tabs_->currentWidget()->findChild<QLineEdit*>(QStringLiteral("episodeJump"));
+                jump != nullptr && jump->isVisible()) {
+                if (overviewScroll_ != nullptr) {
+                    overviewScroll_->ensureWidgetVisible(jump);
+                }
+                jump->setFocus(Qt::ShortcutFocusReason);
+                jump->selectAll();
+                event->accept();
+                return;
+            }
+        }
+    }
+    // Ctrl+Return / Ctrl+Enter triggers Watch / Continue when playable.
+    if (mods == Qt::ControlModifier &&
+        (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter)) {
+        if (watchButton_ != nullptr && watchButton_->isVisible() && watchButton_->isEnabled()) {
+            watchButton_->click();
+            event->accept();
+            return;
+        }
+    }
+    // Alt+Left / Alt+Right cycles between provider tabs when multiple providers exist.
+    if (mods == Qt::AltModifier &&
+        (event->key() == Qt::Key_Left || event->key() == Qt::Key_Right) &&
+        providerBar_ != nullptr && providerBar_->count() > 1) {
+        const int count = providerBar_->count();
+        const int delta = event->key() == Qt::Key_Right ? 1 : -1;
+        const int next = (providerBar_->currentIndex() + delta + count) % count;
+        providerBar_->setCurrentIndex(next);
+        event->accept();
+        return;
+    }
     QWidget::keyPressEvent(event);
 }
 
