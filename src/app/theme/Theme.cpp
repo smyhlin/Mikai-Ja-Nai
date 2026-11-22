@@ -229,7 +229,7 @@ QPushButton:focus { border-color: %11; }
 QPushButton:disabled { color: rgba(%23, 0.55); background: %5; border-color: %26; }
 QPushButton[actionRole="primary"] {
     background: %11; color: %27; border: 1px solid %11; border-radius: %6px;
-    font-weight: 600; font-size: 14px; padding: 6px 16px;
+    font-weight: 600; font-size: 14px; padding: 0 %33px;
 }
 QPushButton[actionRole="primary"]:hover { background: %12; border-color: %12; }
 QPushButton[actionRole="primary"]:pressed { background: %11; border-color: %12; }
@@ -301,7 +301,6 @@ QPushButton[actionRole] {
     padding: 0 %32px;
     text-align: center;
 }
-QPushButton[actionRole="primary"] { padding: 0 %33px; }
 /* A colour chip paints its own disc and the caller fixes its size; the generic
    button box model (padding, border, minimum height) would inflate the size hint
    past that fixed size, so it is cleared for the chips only. */
@@ -574,7 +573,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
 QToolTip { background: %8; color: %2; border: 1px solid %10; padding: %15px %3px; }
 QWidget#componentAcquisitionBar { background: %5; border-top: 1px solid %10; }
 QWidget#componentAcquisitionBar QLabel { background: transparent; color: %2; font-size: 13px; font-weight: 500; }
-QProgressBar#componentAcquisitionProgress { background: rgba(255, 255, 255, 0.08); border: none; border-radius: 0px; min-height: 3px; max-height: 3px; }
+QProgressBar#componentAcquisitionProgress { background: rgba(%23, 0.12); border: none; border-radius: 0px; min-height: 3px; max-height: 3px; }
 QProgressBar#componentAcquisitionProgress::chunk { background: %11; }
 QDialog#coverViewer { background: %20; }
 QWidget#coverViewerView { background: transparent; border: none; }
