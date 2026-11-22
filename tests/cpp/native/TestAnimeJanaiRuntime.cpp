@@ -2405,14 +2405,14 @@ void TestAnimeJanaiRuntime::nativeKernelsHeldFramesTemporalFixAndEnhancedSceneRo
     custom.reuseHeldFrames = false;
     AnimeJanaiSlot slot;
     slot.number = 1;
-    slot.name = QStringLiteral("Temporal + RIFE Enhanced");
+    slot.profileName = QStringLiteral("Temporal + RIFE Enhanced");
     AnimeJanaiChain chain;
     chain.number = 1;
     chain.upscaleEnabled = true;
     chain.temporalFixModel = QStringLiteral("vs_temporalfix_fp16");
     chain.temporalFixBeforeUpscale = true;
     chain.temporalFixSceneThreshold = 0.125;
-    chain.rife = true;
+    chain.rifeEnabled = true;
     chain.rifeSceneDetectEnhanced = true;
     chain.rifeSceneDetectThreshold = 0.18;
     slot.chains.push_back(chain);
