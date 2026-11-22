@@ -1855,7 +1855,7 @@ QString ComponentStoreTab::progressDisplayName(const QString& pack) const {
     if (pack.startsWith(QLatin1String("aji-trtrtx-v")))
         return pack + QStringLiteral(" (aji-trtrtx-backend-windows-x64.zip)");
     if (pack == QLatin1String("trtrtx-runtime")) return tr("Shared TensorRT for RTX runtime");
-    if (pack == QLatin1String("aji-runtime-v0.2.1")) return tr("Shared runtime manager");
+    if (pack.startsWith(QLatin1String("aji-runtime-v"))) return tr("Shared runtime manager");
     if (pack == QLatin1String("aji-runtime-index")) return tr("Runtime pack index");
     if (pack == QLatin1String("onnxruntime-directml-1.24.4"))
         return QStringLiteral("Microsoft.ML.OnnxRuntime.DirectML/1.24.4 "

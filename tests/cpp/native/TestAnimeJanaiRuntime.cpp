@@ -658,7 +658,7 @@ void TestAnimeJanaiRuntime::rtxRuntimeClosureAndPlatformContract() {
         QVERIFY(item.bytes > 0);
         queuedBytes += item.bytes;
     }
-    QVERIFY(queued.contains(QStringLiteral("aji-runtime-v0.2.1")));
+    QVERIFY(queued.contains(QStringLiteral("aji-runtime-v0.3.0")));
     QVERIFY(queued.contains(QStringLiteral("trtrtx-runtime")));
     QVERIFY(!queued.contains(QStringLiteral("trt-runtime")));
     QVERIFY(!queued.contains(QStringLiteral("directml-1.15.4")));

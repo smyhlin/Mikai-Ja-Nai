@@ -40,15 +40,15 @@ class StoreText {
     Q_DECLARE_TR_FUNCTIONS(AnimeJanaiRuntimeStore)
 };
 
-constexpr auto kToolVersion = "v0.2.1";
+constexpr auto kToolVersion = "v0.3.0";
 #ifdef Q_OS_WIN
 constexpr auto kPlatform = "windows-x64";
 constexpr auto kToolName = "aji-runtime.exe";
 constexpr auto kToolArchive = "aji-runtime-windows-x64.zip";
-constexpr qint64 kToolArchiveBytes = 1282779;
-constexpr auto kToolArchiveSha = "f51a6c00134ee74e818a759ec4bee14594fd8ccbf7a9e31de5eeb6919c2c4d0b";
-constexpr qint64 kToolBytes = 2676224;
-constexpr auto kToolSha = "9944dffde3d60ef74ae8978b2575a0992b139bfc14f01512da4a0fa626a4a9d8";
+constexpr qint64 kToolArchiveBytes = 1315578;
+constexpr auto kToolArchiveSha = "f25b32c9f02e8227a7c33b63e55c88d43de7ec8d1b876f9199169050f17b85b4";
+constexpr qint64 kToolBytes = 2766336;
+constexpr auto kToolSha = "8296a6c84ff7575fd5d56c55eab6097167100fadf2522e6b220d05778b097326";
 constexpr qint64 kToolLicenseBytes = 35823;
 constexpr auto kToolLicenseSha = "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809";
 constexpr qint64 kIndexBytes = 15242;
@@ -57,15 +57,19 @@ constexpr auto kIndexSha = "5b6f0450ba4eed34d6e25dde072ce1298f083d91d142fd858495
 constexpr auto kPlatform = "linux-x64";
 constexpr auto kToolName = "aji-runtime";
 constexpr auto kToolArchive = "aji-runtime-linux-x64.tar.gz";
-constexpr qint64 kToolArchiveBytes = 1477673;
-constexpr auto kToolArchiveSha = "d596c211dfecdb2574a165834ee25f4b8d7424b9003740f98e19850a619479d7";
-constexpr qint64 kToolBytes = 3190512;
-constexpr auto kToolSha = "48f82a07d0782387547b7d2375dacdc9434d61c9e1ac8387268a70774fb4eeb0";
+constexpr qint64 kToolArchiveBytes = 1505981;
+constexpr auto kToolArchiveSha = "9de51f674534a6b38b8317852b066048aaf4be47e001646fa92197e93a38cc2a";
+constexpr qint64 kToolBytes = 3251424;
+constexpr auto kToolSha = "36bc1bba02e7fb9b4c6568e07dae7f8414303d920392f9a0170ca5d90456b964";
 constexpr qint64 kToolLicenseBytes = 35149;
 constexpr auto kToolLicenseSha = "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986";
 constexpr qint64 kIndexBytes = 13028;
 constexpr auto kIndexSha = "d441210f7747b255f17483f7c8b921817ad3f997abab5a1ba5d348b51511ab61";
 #endif
+QString ajiRuntimeToolLabel() {
+    static const QString label = QStringLiteral("aji-runtime-") + QString::fromLatin1(kToolVersion);
+    return label;
+}
 QMutex g_toolMutex;
 std::atomic<bool> g_relocating{false};
 
@@ -228,7 +232,7 @@ bool ensureTool(const std::function<void(const ComponentProvisionProgress&)>& pr
                        .arg(QString::fromLatin1(kToolVersion), QString::fromLatin1(kToolArchive)));
     if (!mikai::backend::downloadToFile(url, archive, kToolArchiveBytes,
             QString::fromLatin1(kToolArchiveSha), [&](qint64 got, qint64 total) {
-                if (progress) progress({QStringLiteral("aji-runtime-v0.2.1"), got, total,
+                if (progress) progress({ajiRuntimeToolLabel(), got, total,
                                         ComponentProvisionStage::Downloading});
             }, cancelled, reason)) return false;
     QString sevenZip;
@@ -629,7 +633,7 @@ QJsonArray animeJanaiSharedRuntimeAcquisitions(Backend backend) {
         return QJsonObject{{QStringLiteral("name"), name}, {QStringLiteral("url"), url},
                            {QStringLiteral("bytes"), bytes}, {QStringLiteral("sha256"), digest}};
     };
-    result.append(source(QStringLiteral("aji-runtime-v0.2.1"),
+    result.append(source(ajiRuntimeToolLabel(),
         QStringLiteral("https://github.com/the-database/aji-runtime/releases/download/%1/%2")
             .arg(QString::fromLatin1(kToolVersion), QString::fromLatin1(kToolArchive)),
         kToolArchiveBytes, QString::fromLatin1(kToolArchiveSha)));
@@ -650,7 +654,7 @@ QVector<AnimeJanaiMissingDownload> animeJanaiSharedRuntimeMissingDownloads(Backe
     const QString root = animeJanaiSharedRuntimeStoreRoot();
     if (QFileInfo(toolPath()).size() != kToolBytes ||
         QFileInfo(QDir(toolDirectory()).filePath(QStringLiteral("LICENSE"))).size() != kToolLicenseBytes)
-        result.append({QStringLiteral("aji-runtime-v0.2.1"), kToolArchiveBytes});
+        result.append({ajiRuntimeToolLabel(), kToolArchiveBytes});
     if (QFileInfo(indexPath()).size() != kIndexBytes)
         result.append({QStringLiteral("aji-runtime-index"), kIndexBytes});
     for (const ComponentPack* pack : packs)
@@ -672,6 +676,7 @@ ComponentProvisionResult provisionAnimeJanaiSharedRuntime(
     if (!ensureTool(progress, stopped, &error) || !ensureIndex(progress, stopped, &error))
         return failed(error.isEmpty() ? StoreText::tr("Runtime storage operation was cancelled.") : error, stopped());
     QStringList arguments{QStringLiteral("ensure"), QStringLiteral("--app-id"), appId(backend),
+        QStringLiteral("--per-copy"),
         QStringLiteral("--app-path"), applicationReferencePath(),
         QStringLiteral("--app-version"), QCoreApplication::applicationVersion(),
         QStringLiteral("--index"), indexPath(), QStringLiteral("--index-sha256"), QString::fromLatin1(kIndexSha),
