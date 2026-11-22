@@ -45,6 +45,9 @@ public:
     /// alternative title (UA / EN / original) when the match is secondary.
     void applySearchHighlight(const QString& query, const backend::Titles& titles);
 
+    QSize sizeHint() const override;
+    QSize minimumSizeHint() const override;
+
 Q_SIGNALS:
     void openRequested(const QString& ref, const QString& poster);
     void menuRequested(const QString& ref, const QPoint& globalPos);

@@ -126,6 +126,7 @@ RangePager::RangePager(int pageSize, QWidget* parent)
 
     jump_ = new QSpinBox(this);
     jump_->setRange(1, 1);
+    jump_->setFixedHeight(32);
     // Wait until editing finishes (Enter / blur / step button) so typing
     // multi-digit page numbers like "12" does not fire a page-1 request first.
     jump_->setKeyboardTracking(false);
@@ -155,6 +156,7 @@ RangePager::RangePager(int pageSize, QWidget* parent)
 
     pageSizeBox_ = new QComboBox(this);
     pageSizeBox_->setObjectName(QStringLiteral("pagerPageSize"));
+    pageSizeBox_->setFixedHeight(32);
     pageSizeBox_->setToolTip(tr("Items per page"));
     pageSizeBox_->setAccessibleName(tr("Items per page"));
     pageSizeBox_->hide();

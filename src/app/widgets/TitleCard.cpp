@@ -167,6 +167,14 @@ TitleCard::TitleCard(const backend::AnimeSummary& summary, QWidget* parent)
 
 TitleCard::~TitleCard() = default;
 
+QSize TitleCard::sizeHint() const {
+    return QSize(theme::kHomeCardWidth, theme::kHomeCardHeight);
+}
+
+QSize TitleCard::minimumSizeHint() const {
+    return sizeHint();
+}
+
 void TitleCard::changeEvent(QEvent* event) {
     QPushButton::changeEvent(event);
     if (event->type() == QEvent::LanguageChange) {

@@ -354,9 +354,12 @@ QPushButton#pagerControl { background: transparent; color: %2;
 QPushButton#pagerControl:hover { background: %8; }
 QPushButton#pagerControl:disabled { color: %4; background: transparent; }
 QPushButton#pagerChip { background: transparent; color: %4;
-    border: 1px solid transparent; border-radius: %17px; padding: 7px %18px; }
+    border: 1px solid transparent; border-radius: %17px; padding: 4px %18px;
+    min-height: 26px; max-height: 28px; }
 QPushButton#pagerChip:hover { color: %2; background: %8; }
-QPushButton#pagerChipActive { background: %9; color: %2; font-weight: 600; }
+QPushButton#pagerChipActive { background: rgba(%24, 0.18); color: %2;
+    border: 1px solid %11; border-radius: %17px; padding: 4px %18px;
+    min-height: 26px; max-height: 28px; font-weight: 600; }
 QTabWidget::pane { border: none; border-top: 1px solid %10; background: %1; }
 QTabWidget#settingsTabs::pane { border: none; border-top: 1px solid %10; background: %1; }
 QTabBar::tab { background: transparent; color: %4; border: none;
@@ -382,16 +385,16 @@ QTabBar#formatPillBar::tab:hover:!selected {
 }
 QPushButton#categoryChip, QPushButton#filterChip {
     background: %5; color: %2; border: 1px solid %10;
-    border-radius: %17px; padding: 5px 12px; font-weight: 500;
-    min-height: 28px;
+    border-radius: %17px; padding: 2px 12px; font-size: 12px; font-weight: 500;
+    min-height: 26px; max-height: 28px;
 }
 QPushButton#categoryChip:hover, QPushButton#filterChip:hover {
     background: %8; border-color: rgba(%24, 0.55); color: %2;
 }
 QPushButton#filterChipInclude, QPushButton#activeFilterChip {
     background: rgba(%24, 0.18); color: %2; border: 1px solid %11;
-    border-radius: %17px; padding: 5px 12px; font-weight: 600;
-    min-height: 28px;
+    border-radius: %17px; padding: 2px 12px; font-size: 12px; font-weight: 600;
+    min-height: 26px; max-height: 28px;
 }
 QPushButton#filterChipInclude:hover, QPushButton#activeFilterChip:hover {
     background: rgba(%24, 0.28); border-color: %11;
@@ -399,11 +402,19 @@ QPushButton#filterChipInclude:hover, QPushButton#activeFilterChip:hover {
 QPushButton#filterChipExclude {
     background: rgba(239, 68, 68, 0.16); color: %2;
     border: 1px solid rgba(239, 68, 68, 0.65);
-    border-radius: %17px; padding: 5px 12px; font-weight: 600;
-    min-height: 28px;
+    border-radius: %17px; padding: 2px 12px; font-size: 12px; font-weight: 600;
+    min-height: 26px; max-height: 28px;
 }
 QPushButton#filterChipExclude:hover {
     background: rgba(239, 68, 68, 0.26);
+}
+QPushButton#clearFiltersChip {
+    background: transparent; color: %4; border: 1px solid transparent;
+    border-radius: %17px; padding: 2px 10px; font-size: 12px; font-weight: 500;
+    min-height: 26px; max-height: 28px;
+}
+QPushButton#clearFiltersChip:hover {
+    background: %8; color: %2; border-color: %10;
 }
 QPushButton[actionRole="secondary"]:checked, QToolButton[actionRole="secondary"]:checked {
     background: rgba(%24, 0.18); color: %2; border: 1px solid %11; font-weight: 600;
@@ -1246,7 +1257,8 @@ QWidget#searchPage QToolButton#homeButton:checked:focus {
     border-left-color: @primary;
 }
 QWidget#searchPage QWidget#searchSidebar QToolButton#openMediaButton,
-QWidget#searchPage QWidget#searchSidebar QToolButton#settingsChip {
+QWidget#searchPage QWidget#searchSidebar QToolButton#settingsChip,
+QWidget#searchPage QWidget#searchSidebar QToolButton#checkForUpdatesButton {
     background: @secondary;
     color: @text;
     border: 1px solid @border;
@@ -1258,26 +1270,36 @@ QWidget#searchPage QWidget#searchSidebar QToolButton#settingsChip {
     text-align: center;
 }
 QWidget#searchPage QWidget#searchSidebar QToolButton#openMediaButton:hover,
-QWidget#searchPage QWidget#searchSidebar QToolButton#settingsChip:hover {
+QWidget#searchPage QWidget#searchSidebar QToolButton#settingsChip:hover,
+QWidget#searchPage QWidget#searchSidebar QToolButton#checkForUpdatesButton:hover {
     background: @secondaryHover;
     border-color: @primary;
 }
 QWidget#searchPage QWidget#searchSidebar QToolButton#openMediaButton:pressed,
-QWidget#searchPage QWidget#searchSidebar QToolButton#settingsChip:pressed {
+QWidget#searchPage QWidget#searchSidebar QToolButton#settingsChip:pressed,
+QWidget#searchPage QWidget#searchSidebar QToolButton#checkForUpdatesButton:pressed {
     background: @input;
 }
 QWidget#searchPage QWidget#searchSidebar QToolButton#openMediaButton:focus,
-QWidget#searchPage QWidget#searchSidebar QToolButton#settingsChip:focus {
+QWidget#searchPage QWidget#searchSidebar QToolButton#settingsChip:focus,
+QWidget#searchPage QWidget#searchSidebar QToolButton#checkForUpdatesButton:focus {
     border-color: @primary;
 }
 QWidget#searchPage QWidget#searchSidebar QToolButton#openMediaButton:disabled,
-QWidget#searchPage QWidget#searchSidebar QToolButton#settingsChip:disabled {
+QWidget#searchPage QWidget#searchSidebar QToolButton#settingsChip:disabled,
+QWidget#searchPage QWidget#searchSidebar QToolButton#checkForUpdatesButton:disabled {
     color: @pillText;
     background: @secondary;
     border-color: @border;
 }
+QWidget#searchPage QWidget#searchSidebar QToolButton#openMediaButton::menu-indicator {
+    subcontrol-origin: padding;
+    subcontrol-position: right center;
+    right: 8px;
+}
 QWidget#searchPage QWidget#searchSidebar QToolButton#openMediaButton[compact="true"],
-QWidget#searchPage QWidget#searchSidebar QToolButton#settingsChip[compact="true"] {
+QWidget#searchPage QWidget#searchSidebar QToolButton#settingsChip[compact="true"],
+QWidget#searchPage QWidget#searchSidebar QToolButton#checkForUpdatesButton[compact="true"] {
     padding: 0;
 }
 QWidget#searchPage QWidget#searchSidebar QToolButton#openMediaButton[compact="true"]::menu-indicator {
@@ -1322,7 +1344,8 @@ QWidget#searchPage QLabel#searchKeycap {
    geometry the compact bar needs; their colours come from the same tokens the
    rest of the application uses, so a neutral control keeps its 3:1 boundary
    here too. */
-QWidget#searchPage QPushButton[actionRole="secondary"] {
+QWidget#searchPage QPushButton[actionRole="secondary"],
+QWidget#searchPage QToolButton[actionRole="secondary"] {
     background: @secondary;
     color: @text;
     border: 1px solid @border;
@@ -1333,7 +1356,8 @@ QWidget#searchPage QPushButton[actionRole="secondary"] {
     font-weight: 500;
     text-align: center;
 }
-QWidget#searchPage QPushButton[actionRole="secondary"]:hover {
+QWidget#searchPage QPushButton[actionRole="secondary"]:hover,
+QWidget#searchPage QToolButton[actionRole="secondary"]:hover {
     background: @secondaryHover;
     border-color: @primary;
 }
@@ -1344,8 +1368,10 @@ QWidget#searchPage QToolButton[actionRole="secondary"]:checked {
     color: @text;
     font-weight: 600;
 }
-QWidget#searchPage QPushButton[actionRole="secondary"]:pressed { background: @input; }
-QWidget#searchPage QPushButton[actionRole="secondary"]:focus { border-color: @primary; }
+QWidget#searchPage QPushButton[actionRole="secondary"]:pressed,
+QWidget#searchPage QToolButton[actionRole="secondary"]:pressed { background: @input; }
+QWidget#searchPage QPushButton[actionRole="secondary"]:focus,
+QWidget#searchPage QToolButton[actionRole="secondary"]:focus { border-color: @primary; }
 QWidget#searchPage QPushButton[actionRole="secondary"]:disabled {
     color: @pillText;
     background: @secondary;

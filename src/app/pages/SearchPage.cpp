@@ -124,9 +124,27 @@ int activeCatalogueFilterCount(const backend::AnimeQuery& query) {
     if (query.year_from || query.year_to) count += 1;
     count += query.seasons.size() + query.formats.size() + query.statuses.size();
     count += query.studios.size() + query.teams.size();
-    if (query.sort != QStringLiteral("name") || !query.order.isEmpty()) count += 1;
     return count;
 }
+
+class FlowScrollHost final : public QWidget {
+public:
+    explicit FlowScrollHost(QWidget* parent = nullptr) : QWidget(parent) {
+        QSizePolicy p(QSizePolicy::Expanding, QSizePolicy::Minimum);
+        p.setHeightForWidth(true);
+        setSizePolicy(p);
+    }
+    bool hasHeightForWidth() const override { return layout() != nullptr && layout()->hasHeightForWidth(); }
+    int heightForWidth(int width) const override {
+        return layout() != nullptr ? layout()->heightForWidth(width) : QWidget::heightForWidth(width);
+    }
+    QSize sizeHint() const override {
+        if (layout() != nullptr && width() > 0) {
+            return QSize(width(), layout()->heightForWidth(width()));
+        }
+        return QWidget::sizeHint();
+    }
+};
 bool hasExplicitCatalogueCriteria(const backend::AnimeQuery& query) {
     if (!query.genres.isEmpty() || !query.genres_exclude.isEmpty()) return true;
     if (!query.tags.isEmpty() || !query.tags_exclude.isEmpty()) return true;
@@ -177,13 +195,7 @@ protected:
         const QFontMetricsF metrics(font());
         const QString caption = text();
         const qreal captionWidth = metrics.horizontalAdvance(caption);
-        const qreal arrow = metrics.ascent();
-        const qreal gap = theme::kSpacingXs;
-        const qreal block = captionWidth + gap + arrow;
-        const qreal left = std::round((width() - block) / 2.0);
-        const bool rtl = layoutDirection() == Qt::RightToLeft;
-        const qreal textLeft = std::round(rtl ? left + arrow + gap : left);
-        const qreal arrowLeft = rtl ? left : left + captionWidth + gap;
+        const qreal textLeft = std::round((width() - captionWidth) / 2.0);
         const qreal baseline =
             std::round((height() - metrics.height()) / 2.0 + metrics.ascent());
 
@@ -194,7 +206,6 @@ protected:
         painter.translate(textLeft, baseline);
         painter.fillPath(captionPath(caption), ink);
         painter.restore();
-        drawReturnArrow(painter, arrowLeft, baseline - arrow * 0.12, arrow, ink);
     }
 
     void changeEvent(QEvent* event) override {
@@ -260,25 +271,7 @@ private:
 
     int contentWidth() const {
         const QFontMetricsF metrics(font());
-        return 2 * theme::kSearchKeycapPaddingH +
-               qCeil(metrics.horizontalAdvance(text())) + theme::kSpacingXs +
-               qCeil(metrics.ascent());
-    }
-
-    static void drawReturnArrow(QPainter& painter, qreal left, qreal baseline,
-                                qreal side, const QColor& ink) {
-        const qreal right = left + side;
-        QPainterPath path;
-        path.moveTo(right, baseline - side * 0.62);
-        path.lineTo(right, baseline);
-        path.lineTo(left, baseline);
-        path.moveTo(left + side * 0.28, baseline - side * 0.30);
-        path.lineTo(left, baseline);
-        path.lineTo(left + side * 0.28, baseline + side * 0.30);
-        const qreal stroke = std::max<qreal>(1.0, side / 7.0);
-        painter.setBrush(Qt::NoBrush);
-        painter.setPen(QPen(ink, stroke, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        painter.drawPath(path);
+        return 2 * theme::kSearchKeycapPaddingH + qCeil(metrics.horizontalAdvance(text()));
     }
 };
 
@@ -803,13 +796,6 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     toolbarLayout->setContentsMargins(0, 0, 0, 0);
     toolbarLayout->setSpacing(theme::kSpacingSmall);
 
-    formatBar_ = new QTabBar(resultsToolbar_);
-    formatBar_->setObjectName(QStringLiteral("formatPillBar"));
-    formatBar_->setExpanding(false);
-    formatBar_->setDrawBase(false);
-    formatBar_->hide();
-    connect(formatBar_, &QTabBar::currentChanged, this, [this](int) { applyFormatFilter(); });
-    toolbarLayout->addWidget(formatBar_, 0, Qt::AlignVCenter);
     toolbarLayout->addStretch(1);
 
     resultsSortBox_ = new QComboBox(resultsToolbar_);
@@ -888,12 +874,22 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     rootLayout_->addWidget(resultsToolbar_, 0);
     syncResultsSortToolbar();
 
+    // Dedicated full-width format pill row so format tabs never clip or collide
+    // with the sort and view-mode controls.
+    formatBar_ = new QTabBar(this);
+    formatBar_->setObjectName(QStringLiteral("formatPillBar"));
+    formatBar_->setExpanding(false);
+    formatBar_->setDrawBase(false);
+    formatBar_->hide();
+    connect(formatBar_, &QTabBar::currentChanged, this, [this](int) { applyFormatFilter(); });
+    rootLayout_->addWidget(formatBar_, 0);
+
     // Single stacked container for Grid, List, Skeleton, and Empty/Error states
     // so the main content area always owns vertical stretch=1 and headers never expand.
     resultsViewStack_ = new QStackedWidget(this);
     resultsViewStack_->setObjectName(QStringLiteral("resultsViewStack"));
 
-    resultsGridHost_ = new QWidget(resultsViewStack_);
+    resultsGridHost_ = new FlowScrollHost(resultsViewStack_);
     resultsGridHost_->setObjectName(QStringLiteral("searchResultsGrid"));
     resultsGridLayout_ = new FlowLayout(theme::kSpacingMedium, theme::kSpacingMedium);
     resultsGridLayout_->setContentsMargins(0, theme::kSpacingXs, theme::kSpacingSmall,
@@ -1268,7 +1264,10 @@ void SearchPage::updateResultsHeading() {
         return;
     }
     const QString countSuffix =
-        total_ > 0 ? QStringLiteral(" · ") + tr("%n title(s)", nullptr, total_) : QString();
+        total_ > 0
+            ? QStringLiteral(" · ") +
+                  (total_ == 1 ? tr("1 title") : tr("%1 titles").arg(QLocale().toString(total_)))
+            : QString();
     if (teamBrowseMode_) {
         resultsHeading_->setText(tr("Anime from %1").arg(activeTeam_.name) + countSuffix);
     } else if (!currentQuery_.isEmpty()) {
@@ -1392,7 +1391,8 @@ void SearchPage::rebuildActiveFilterChips() {
     const bool hasChips = activeFiltersLayout_->count() > 0;
     if (hasChips) {
         auto* clearAll = new QPushButton(tr("Clear all"), activeFiltersBar_);
-        theme::applyActionRole(clearAll, theme::ActionRole::Ghost);
+        clearAll->setObjectName(QStringLiteral("clearFiltersChip"));
+        clearAll->setCursor(Qt::PointingHandCursor);
         connect(clearAll, &QPushButton::clicked, this, &SearchPage::resetCatalogueFilters);
         activeFiltersLayout_->addWidget(clearAll);
     }
@@ -1426,8 +1426,10 @@ void SearchPage::updateHomeIndicator() {
         const QString label = activeCount > 0 ? tr("Filters (%1)").arg(activeCount) : tr("Filters");
         filtersButton_->setText(label);
         filtersButton_->setToolTip(
-            activeCount > 0 ? tr("Filters — %n active criterion(s)", nullptr, activeCount)
-                            : tr("Filters"));
+            activeCount > 0
+                ? (activeCount == 1 ? tr("Filters — 1 active filter")
+                                    : tr("Filters — %1 active filters").arg(activeCount))
+                : tr("Filters"));
         filtersButton_->setAccessibleName(label);
     }
 }
@@ -1612,8 +1614,11 @@ void SearchPage::renderStatus() {
             status_->setText(tr("Searching…"));
             break;
         case Status::Results:
-            status_->setText(entries_.isEmpty() ? tr("Nothing found")
-                                                : tr("Found: %1").arg(total_));
+            status_->setText(entries_.isEmpty()
+                                 ? tr("Nothing found")
+                                 : (resultsHeading_ != nullptr && !resultsHeading_->isHidden()
+                                        ? QString()
+                                        : tr("Found: %1").arg(total_)));
             break;
         case Status::Failure: {
             // The same rule the failure surface uses: only a code the app words
@@ -2096,11 +2101,14 @@ void SearchPage::placeIntro(bool inDiscovery) {
         discoveryLayout_->insertWidget(0, pageIntro_);
     } else {
         discoveryLayout_->removeWidget(pageIntro_);
-        int index = formatBar_ != nullptr ? rootLayout_->indexOf(formatBar_) : -1;
-        if (index < 0 && results_ != nullptr) {
-            index = rootLayout_->indexOf(results_);
+        int index = activeFiltersBar_ != nullptr ? rootLayout_->indexOf(activeFiltersBar_) : -1;
+        if (index < 0 && resultsToolbar_ != nullptr) {
+            index = rootLayout_->indexOf(resultsToolbar_);
         }
-        rootLayout_->insertWidget(index < 0 ? rootLayout_->count() : index, pageIntro_);
+        if (index < 0 && resultsViewStack_ != nullptr) {
+            index = rootLayout_->indexOf(resultsViewStack_);
+        }
+        rootLayout_->insertWidget(index < 0 ? 1 : index, pageIntro_);
     }
     introInDiscovery_ = inDiscovery;
 }
@@ -3143,7 +3151,8 @@ void SearchPage::showCatalogueFilters() {
             auto* countBadge = new QLabel(owner);
             countBadge->setObjectName(QStringLiteral("muted"));
             auto* clearBtn = new QPushButton(tr("Clear"), owner);
-            theme::applyActionRole(clearBtn, theme::ActionRole::Ghost);
+            clearBtn->setObjectName(QStringLiteral("clearFiltersChip"));
+            clearBtn->setCursor(Qt::PointingHandCursor);
             headerRow->addWidget(countBadge, 1);
             headerRow->addWidget(clearBtn, 0);
             section->insertLayout(1, headerRow);
@@ -3190,12 +3199,7 @@ void SearchPage::showCatalogueFilters() {
             legend->setObjectName(QStringLiteral("muted"));
             section->addWidget(legend);
 
-            auto* board = new QWidget(owner);
-            {
-                QSizePolicy bp(QSizePolicy::Expanding, QSizePolicy::Minimum);
-                bp.setHeightForWidth(true);
-                board->setSizePolicy(bp);
-            }
+            auto* board = new FlowScrollHost(owner);
             auto* flow = new FlowLayout(theme::kSpacingXs, theme::kSpacingXs);
             flow->setContentsMargins(0, 0, 0, 0);
             board->setLayout(flow);
@@ -3317,12 +3321,7 @@ void SearchPage::showCatalogueFilters() {
     auto* release = addSection(tr("Release"));
 
     // Quick decade/year preset pills for fast range selection.
-    auto* yearPresetsHost = new QWidget(filterContent);
-    {
-        QSizePolicy yp(QSizePolicy::Expanding, QSizePolicy::Minimum);
-        yp.setHeightForWidth(true);
-        yearPresetsHost->setSizePolicy(yp);
-    }
+    auto* yearPresetsHost = new FlowScrollHost(filterContent);
     auto* yearPresetsFlow = new FlowLayout(theme::kSpacingXs, theme::kSpacingXs);
     yearPresetsFlow->setContentsMargins(0, 0, 0, 0);
     yearPresetsHost->setLayout(yearPresetsFlow);
@@ -3443,7 +3442,7 @@ void SearchPage::showCatalogueFilters() {
     auto* licensesStatus = new QLabel(tr("Loading official license holders…"), licensesSection->parentWidget());
     licensesStatus->setObjectName(QStringLiteral("muted"));
     licensesSection->addWidget(licensesStatus);
-    auto* licensesBoard = new QWidget(licensesSection->parentWidget());
+    auto* licensesBoard = new FlowScrollHost(licensesSection->parentWidget());
     auto* licensesFlow = new FlowLayout(theme::kSpacingXs, theme::kSpacingXs);
     licensesFlow->setContentsMargins(0, 0, 0, 0);
     licensesBoard->setLayout(licensesFlow);
@@ -3710,8 +3709,11 @@ void SearchPage::showCatalogueFilters() {
                         const auto res = result.value<backend::SearchResult>();
                         if (res.total.has_value()) {
                             const int n = *res.total;
-                            applyBtn->setText(n > 0 ? tr("Apply · %n title(s)", nullptr, n)
-                                                    : tr("Apply · No matches"));
+                            applyBtn->setText(
+                                n > 0
+                                    ? (n == 1 ? tr("Apply · 1 title")
+                                              : tr("Apply · %1 titles").arg(QLocale().toString(n)))
+                                    : tr("Apply · No matches"));
                         }
                     },
                     [previewSeq, seq, applyBtn](const backend::Failure&) {
@@ -3970,13 +3972,8 @@ void SearchPage::openTeamPicker() {
     theme::applyActionRole(teamOrderBtn, theme::ActionRole::Secondary);
     teamControlsRow->addWidget(teamOrderBtn);
 
-    auto* selectedStrip = new QWidget(&dialog);
+    auto* selectedStrip = new FlowScrollHost(&dialog);
     selectedStrip->setObjectName(QStringLiteral("teamSelectedChipsStrip"));
-    {
-        QSizePolicy sp(QSizePolicy::Expanding, QSizePolicy::Minimum);
-        sp.setHeightForWidth(true);
-        selectedStrip->setSizePolicy(sp);
-    }
     auto* selectedFlow = new FlowLayout(theme::kSpacingXs, theme::kSpacingXs);
     selectedFlow->setContentsMargins(0, 0, 0, 0);
     selectedStrip->setLayout(selectedFlow);
@@ -4055,7 +4052,8 @@ void SearchPage::openTeamPicker() {
             selectedFlow->addWidget(chip);
         }
         auto* clearBtn = new QPushButton(tr("Clear selected"), selectedStrip);
-        theme::applyActionRole(clearBtn, theme::ActionRole::Ghost);
+        clearBtn->setObjectName(QStringLiteral("clearFiltersChip"));
+        clearBtn->setCursor(Qt::PointingHandCursor);
         QObject::connect(clearBtn, &QPushButton::clicked, selectedStrip,
                          [pickedTeamIds, rows, selectedStrip, filterTeam]() {
                              pickedTeamIds->clear();
@@ -4441,7 +4439,10 @@ void SearchPage::browseSelectedTeam(const backend::Team& team) {
                         statusGuard->setText(tr("This team has no localized Ukrainian posters yet."));
                         return;
                     }
-                    statusGuard->setText(tr("%n localized Ukrainian poster(s)", nullptr, items.size()));
+                    statusGuard->setText(
+                        items.size() == 1
+                            ? tr("1 localized Ukrainian poster")
+                            : tr("%1 localized Ukrainian posters").arg(items.size()));
                     for (const QJsonValue& val : items) {
                         const QJsonObject obj = val.toObject();
                         const QString author = obj.value(QStringLiteral("author")).toString();
