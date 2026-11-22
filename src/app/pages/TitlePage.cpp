@@ -667,6 +667,9 @@ void TitlePage::buildUi() {
     // never nests a second scroller.
     overviewScroll_ = new QScrollArea(this);
     overviewScroll_->setObjectName(QStringLiteral("titleOverview"));
+    if (QScrollBar* vbar = overviewScroll_->verticalScrollBar()) {
+        vbar->setSingleStep(48);
+    }
     // The widget is sized explicitly from the column's own height-for-width in
     // reflowOverviewHeight(): letting QScrollArea size it from the children's
     // minimum hints is what produced hundreds of pixels of empty scroll.
@@ -1360,6 +1363,9 @@ void TitlePage::buildDetailsSheet() {
 
     detailsScroll_ = new QScrollArea(detailsPanel_);
     detailsScroll_->setObjectName(QStringLiteral("titleDetailsScroll"));
+    if (QScrollBar* vbar = detailsScroll_->verticalScrollBar()) {
+        vbar->setSingleStep(48);
+    }
     detailsScroll_->setWidgetResizable(true);
     detailsScroll_->setFrameShape(QFrame::NoFrame);
     detailsScroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);

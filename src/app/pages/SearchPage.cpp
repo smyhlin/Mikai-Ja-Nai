@@ -768,6 +768,9 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     // Show the slim themed vertical scrollbar whenever discovery overflows so
     // users have clear scroll-position awareness and drag-scrolling support.
     discoveryScroll_->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    if (QScrollBar* vbar = discoveryScroll_->verticalScrollBar()) {
+        vbar->setSingleStep(48);
+    }
     discoveryScroll_->viewport()->installEventFilter(this);
     discoveryScroll_->setFrameShape(QFrame::NoFrame);
     discoveryScroll_->setWidget(discovery);
@@ -902,6 +905,10 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     resultsGridScroll_->setFrameShape(QFrame::NoFrame);
     resultsGridScroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     resultsGridScroll_->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    if (QScrollBar* vbar = resultsGridScroll_->verticalScrollBar()) {
+        vbar->setSingleStep(48);
+    }
+    resultsGridScroll_->viewport()->installEventFilter(this);
     resultsGridScroll_->setWidget(resultsGridHost_);
     resultsViewStack_->addWidget(resultsGridScroll_);
 
@@ -1914,24 +1921,37 @@ void SearchPage::smoothScrollCarousel(CarouselSection& section, int direction) {
 }
 
 bool SearchPage::eventFilter(QObject* watched, QEvent* event) {
-    // Alt + wheel scrolls the discovery page even with its bar hidden. A plain
-    // wheel is left to the widget under the pointer, which is the same split the
-    // carousels use for their own Alt gesture.
-    if (discoveryScroll_ != nullptr && watched == discoveryScroll_->viewport() &&
-        event->type() == QEvent::Wheel) {
-        auto* wheel = static_cast<QWheelEvent*>(event);
-        if (wheel->modifiers().testFlag(Qt::AltModifier)) {
-            QScrollBar* bar = discoveryScroll_->verticalScrollBar();
-            if (bar != nullptr && bar->maximum() > bar->minimum()) {
-                const QPoint angle = wheel->angleDelta();
-                const int steps = angle.y() != 0 ? angle.y() : angle.x();
-                if (steps != 0) {
-                    const int delta = qRound(-steps / 120.0 * bar->singleStep() * 3.0);
-                    bar->setValue(qBound(bar->minimum(), bar->value() + delta, bar->maximum()));
-                    wheel->accept();
-                    return true;
-                }
+    const auto scrollVerticalCrisply = [](QScrollArea* area, QWheelEvent* wheel) -> bool {
+        if (area == nullptr || wheel == nullptr) return false;
+        QScrollBar* bar = area->verticalScrollBar();
+        if (bar == nullptr || bar->maximum() <= bar->minimum()) return false;
+        const QPoint pixel = wheel->pixelDelta();
+        const QPoint angle = wheel->angleDelta();
+        int delta = 0;
+        if (pixel.y() != 0) {
+            delta = qRound(-pixel.y() * 1.4);
+        } else {
+            const int steps = angle.y() != 0
+                                  ? angle.y()
+                                  : (wheel->modifiers().testFlag(Qt::AltModifier) ? angle.x() : 0);
+            if (steps != 0) {
+                delta = qRound(-steps / 120.0 * 120.0);
             }
+        }
+        if (delta == 0) return false;
+        const int before = bar->value();
+        bar->setValue(qBound(bar->minimum(), before + delta, bar->maximum()));
+        wheel->accept();
+        return true;
+    };
+
+    if (event->type() == QEvent::Wheel) {
+        auto* wheel = static_cast<QWheelEvent*>(event);
+        if (discoveryScroll_ != nullptr && watched == discoveryScroll_->viewport()) {
+            if (scrollVerticalCrisply(discoveryScroll_, wheel)) return true;
+        }
+        if (resultsGridScroll_ != nullptr && watched == resultsGridScroll_->viewport()) {
+            if (scrollVerticalCrisply(resultsGridScroll_, wheel)) return true;
         }
     }
     if ((watched == headerLogo_ || watched == sidebarBrandName_) &&
@@ -2005,14 +2025,18 @@ bool SearchPage::eventFilter(QObject* watched, QEvent* event) {
         }
     }
     if (event->type() == QEvent::Wheel) {
+        auto* wheel = static_cast<QWheelEvent*>(event);
         for (auto* section : carousels_) {
             if (section != nullptr && section->scroll != nullptr &&
                 watched == section->scroll->viewport()) {
-                if (handleCarouselWheel(*section, static_cast<QWheelEvent*>(event))) {
+                if (handleCarouselWheel(*section, wheel)) {
                     return true;
                 }
-                // Anything the carousel does not take is the discovery feed's:
-                // the page must keep scrolling normally over a card.
+                // Forward vertical wheel directly to the discovery page at full crisp speed
+                // instead of letting the child horizontal QScrollArea stall or swallow it.
+                if (scrollVerticalCrisply(discoveryScroll_, wheel)) {
+                    return true;
+                }
                 event->ignore();
                 return false;
             }
@@ -2020,7 +2044,8 @@ bool SearchPage::eventFilter(QObject* watched, QEvent* event) {
         if (auto* rowScroll = qobject_cast<QScrollArea*>(watched->parent());
             rowScroll != nullptr &&
             rowScroll->objectName() == QLatin1String("homeFeedRowScroll")) {
-            if (handleFeedRowWheel(rowScroll, static_cast<QWheelEvent*>(event))) return true;
+            if (handleFeedRowWheel(rowScroll, wheel)) return true;
+            if (scrollVerticalCrisply(discoveryScroll_, wheel)) return true;
             event->ignore();
             return false;
         }
@@ -2058,8 +2083,9 @@ bool SearchPage::handleCarouselWheel(CarouselSection& section, QWheelEvent* even
         if (pixel.y() != 0 && discoveryScroll_ != nullptr) {
             QScrollBar* pageBar = discoveryScroll_->verticalScrollBar();
             const int before = pageBar->value();
+            const int delta = qRound(-pixel.y() * 1.4);
             pageBar->setValue(static_cast<int>(qBound(
-                static_cast<qint64>(pageBar->minimum()), static_cast<qint64>(before) - pixel.y(),
+                static_cast<qint64>(pageBar->minimum()), static_cast<qint64>(before) + delta,
                 static_cast<qint64>(pageBar->maximum()))));
             event->setAccepted(pageBar->value() != before);
         } else {
