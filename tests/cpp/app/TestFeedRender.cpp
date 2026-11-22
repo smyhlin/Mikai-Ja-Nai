@@ -1672,7 +1672,8 @@ void TestFeedRender::settingsClosingDuringAcquisitionRestoresMainWindowInput() {
 
   QAbstractButton* settingsButton = nullptr;
   for (QAbstractButton* button : window.findChildren<QAbstractButton*>(QStringLiteral("settingsChip"))) {
-    if (button->accessibleName() == QStringLiteral("API token settings")) {
+    if (button->accessibleName() == QStringLiteral("Settings") ||
+        button->accessibleName() == QStringLiteral("API token settings")) {
       settingsButton = button;
       break;
     }
@@ -2139,6 +2140,9 @@ void TestFeedRender::loadedResultsRetranslateWithoutRefetchingOrLosingViewState(
   QTest::keyClicks(query, QStringLiteral("canned-many"));
   QTest::keyClick(query, Qt::Key_Return);
   QTRY_COMPARE_WITH_TIMEOUT(results->count(), 30, 30000);
+  if (auto* listBtn = page.findChild<QToolButton*>(QStringLiteral("resultsListButton"))) {
+    listBtn->click();
+  }
   QTRY_VERIFY_WITH_TIMEOUT(results->isVisible(), 5000);
 
   // The canned answer carries two formats, so the page offers a real filter.

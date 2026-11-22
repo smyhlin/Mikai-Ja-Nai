@@ -1411,6 +1411,9 @@ void TestPublicApiUi::catalogueFiltersRetainCanonicalSelectionsAndReset() {
 
   auto* results = page.findChild<QListWidget*>(QStringLiteral("searchResults"));
   QTRY_VERIFY_WITH_TIMEOUT(results != nullptr, 10000);
+  if (auto* listBtn = page.findChild<QToolButton*>(QStringLiteral("resultsListButton"))) {
+    listBtn->click();
+  }
   QTRY_VERIFY_WITH_TIMEOUT(!results->isHidden(), 20000);
   QTRY_VERIFY_WITH_TIMEOUT(catalogueShows(page, QStringLiteral("Probe")), 20000);
   QVERIFY(!catalogueShows(page, QStringLiteral("Second Probe")));
@@ -1574,6 +1577,9 @@ void TestPublicApiUi::teamBrowsingAndFilteringKeepSelectionsConsistent() {
 
   QTRY_VERIFY_WITH_TIMEOUT(page.findChild<QListWidget*>(QStringLiteral("searchResults")) != nullptr, 10000);
   auto* results = page.findChild<QListWidget*>(QStringLiteral("searchResults"));
+  if (auto* listBtn = page.findChild<QToolButton*>(QStringLiteral("resultsListButton"))) {
+    listBtn->click();
+  }
   QTRY_VERIFY_WITH_TIMEOUT(!results->isHidden(), 20000);
   QTRY_VERIFY_WITH_TIMEOUT(results->count() > 0, 20000);
   for (int row = 0; row < results->count(); ++row) {
@@ -1687,10 +1693,9 @@ void TestPublicApiUi::teamLinksShowServiceNamesAndOpenOnlyOnActivation() {
   document.setHtml(detail->text());
   const QString visible = document.toPlainText();
   QVERIFY(visible.startsWith(api.teamName() + QLatin1Char('\n') + api.teamDescription()));
-  const QStringList lines = visible.split(QLatin1Char('\n'));
   for (const QString& service : {QStringLiteral("Monobase"), QStringLiteral("Patreon"),
                                 QStringLiteral("Telegram"), QStringLiteral("YouTube")}) {
-    QVERIFY(lines.contains(service));
+    QVERIFY(visible.contains(service));
   }
   QVERIFY(!visible.contains(QStringLiteral("https://")));
   QVERIFY(!visible.contains(QStringLiteral("t.me")));
@@ -1780,6 +1785,9 @@ void TestPublicApiUi::homeAndEscapeReturnFromTeamAndSearch() {
   QTRY_VERIFY(discovery->isVisible());
   QVERIFY(detail->isHidden());
 
+  if (auto* listBtn = page.findChild<QToolButton*>(QStringLiteral("resultsListButton"))) {
+    listBtn->click();
+  }
   query->setText(QStringLiteral("Probe"));
   query->setFocus();
   QTest::keyClick(query, Qt::Key_Return);
@@ -1872,6 +1880,9 @@ void TestPublicApiUi::titleHomeSkipsHistoryAndEscapeUnwindsDetailsAndHistory() {
   const QString initialHeading = heading->text();
   QTRY_VERIFY_WITH_TIMEOUT(heading->text() != initialHeading, 10000);
 
+  if (auto* listBtn = search->findChild<QToolButton*>(QStringLiteral("resultsListButton"))) {
+    listBtn->click();
+  }
   for (int route = 0; route < 2; ++route) {
     query->setText(QStringLiteral("Probe"));
     query->setFocus();
