@@ -1,3 +1,4 @@
+#include <QToolButton>
 #include "TestPublicApiUi.hpp"
 
 #include <backend/MikaiClient.hpp>
