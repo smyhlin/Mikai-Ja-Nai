@@ -241,15 +241,20 @@ void ComparePane::mousePressEvent(QMouseEvent* event) {
 void ComparePane::mouseMoveEvent(QMouseEvent* event) {
     const QPoint point = event->position().toPoint();
     if (panning_) {
-        const QPoint delta = point - lastPanPoint_;
-        lastPanPoint_ = point;
-        horizontalScrollBar()->setValue(horizontalScrollBar()->value() - delta.x());
-        verticalScrollBar()->setValue(verticalScrollBar()->value() - delta.y());
-        if (!image_.isNull()) {
-            lastNormalizedCenter_ = centerNormalized();
+        if ((event->buttons() & Qt::LeftButton) == 0) {
+            panning_ = false;
+            unsetCursor();
+        } else {
+            const QPoint delta = point - lastPanPoint_;
+            lastPanPoint_ = point;
+            horizontalScrollBar()->setValue(horizontalScrollBar()->value() - delta.x());
+            verticalScrollBar()->setValue(verticalScrollBar()->value() - delta.y());
+            if (!image_.isNull()) {
+                lastNormalizedCenter_ = centerNormalized();
+            }
+            event->accept();
+            return;
         }
-        event->accept();
-        return;
     }
     if (!image_.isNull()) {
         const QPointF sp = mapToScene(point);
@@ -294,8 +299,10 @@ void ComparePane::leaveEvent(QEvent* event) {
 }
 
 void ComparePane::wheelEvent(QWheelEvent* event) {
-    const int steps = event->angleDelta().y() / 120;
-    if (steps == 0) {
+    const double steps = event->angleDelta().y() != 0
+                             ? event->angleDelta().y() / 120.0
+                             : event->pixelDelta().y() / 40.0;
+    if (steps == 0.0) {
         QGraphicsView::wheelEvent(event);
         return;
     }
