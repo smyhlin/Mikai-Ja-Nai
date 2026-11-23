@@ -156,12 +156,13 @@ QString hashFile(const QString& path, qint64* bytes, const std::function<bool()>
     while (!file.atEnd()) {
         if (cancelled && cancelled()) return {};
         const qint64 count = file.read(buffer.data(), buffer.size());
-        if (count <= 0) {
+        if (count < 0) {
             if (error != nullptr) {
                 *error = QStringLiteral("failed while reading: %1").arg(file.errorString());
             }
             return {};
         }
+        if (count == 0) break;
         hash.addData(QByteArrayView(buffer.constData(), count));
         total += count;
     }
@@ -467,7 +468,7 @@ bool ensureOwnedNativeDirectory(const QString& directory, QString* reason) {
 
 QStringList pruneNativeStore(const QString& rootOverride) {
     const QString root = rootOverride.isEmpty() ? nativeRoot() : QDir::cleanPath(rootOverride);
-    if (root.isEmpty() || !QFileInfo(root).isDir()) return {};
+    if (root.isEmpty() || !QFileInfo(root).isDir() || QFileInfo(root).isSymLink()) return {};
     // A writer holds a stage for the length of one archive extraction and a
     // partial for one file copy; an hour is far past either, and a backup is
     // only kept until its replacement finished, which is seconds. Anything
@@ -484,12 +485,13 @@ QStringList pruneNativeStore(const QString& rootOverride) {
     };
     const auto drop = [&](const QString& path) {
         const QFileInfo info(path);
-        const bool ok = info.isDir() ? QDir(path).removeRecursively() : QFile::remove(path);
+        const bool ok = (info.isDir() && !info.isSymLink()) ? QDir(path).removeRecursively() : QFile::remove(path);
         if (ok) removed.append(path);
     };
 
     const QString scratch = QDir(root).filePath(QStringLiteral("scratch"));
-    if (QFileInfo(scratch).isDir()) {
+    const QFileInfo scratchInfo(scratch);
+    if (scratchInfo.isDir() && !scratchInfo.isSymLink()) {
         const QFileInfoList entries = QDir(scratch).entryInfoList(
             QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System);
         for (const QFileInfo& entry : entries) {
@@ -507,9 +509,11 @@ QStringList pruneNativeStore(const QString& rootOverride) {
     // under the release directory — a killed install leaked hundreds of
     // MB forever. Both levels are scanned now.
     const QString components = QDir(root).filePath(QStringLiteral("components"));
-    if (QFileInfo(components).isDir()) {
+    const QFileInfo componentsInfo(components);
+    if (componentsInfo.isDir() && !componentsInfo.isSymLink()) {
         for (const QFileInfo& kind : QDir(components).entryInfoList(
                  QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden)) {
+            if (kind.isSymLink()) continue;
             for (const QFileInfo& entry : QDir(kind.absoluteFilePath()).entryInfoList(
                      QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden)) {
                 if (entry.isSymLink()) continue;
@@ -522,6 +526,7 @@ QStringList pruneNativeStore(const QString& rootOverride) {
             }
             for (const QFileInfo& release : QDir(kind.absoluteFilePath()).entryInfoList(
                      QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden)) {
+                if (release.isSymLink()) continue;
                 for (const QFileInfo& entry : QDir(release.absoluteFilePath()).entryInfoList(
                          QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden)) {
                     if (entry.isSymLink()) continue;
@@ -548,25 +553,17 @@ QStringList pruneNativeStore(const QString& rootOverride) {
 
 qint64 metadataChangeTimeMs(const QString& path, const QFileInfo& info) {
 #ifdef Q_OS_WIN
-    {
-        const QReadLocker locker(&metadataPublicationLock());
-        const QString nativePath = extendedWindowsPath(path);
-        const HANDLE handle = ::CreateFileW(
-            reinterpret_cast<LPCWSTR>(nativePath.utf16()), FILE_READ_ATTRIBUTES,
-            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
-            FILE_ATTRIBUTE_NORMAL, nullptr);
-        if (handle != INVALID_HANDLE_VALUE) {
-            FILE_BASIC_INFO basicInfo{};
-            const BOOL queried = ::GetFileInformationByHandleEx(
-                handle, FileBasicInfo, &basicInfo, sizeof(basicInfo));
-            ::CloseHandle(handle);
-            const qint64 ticks = basicInfo.ChangeTime.QuadPart;
-            if (queried && ticks > 0) {
-                constexpr qint64 kTicksPerMillisecond = 10000;               // FILETIME is 100 ns
-                constexpr qint64 kEpochOffsetMilliseconds = 11644473600000;  // 1601 -> 1970
-                return ticks / kTicksPerMillisecond - kEpochOffsetMilliseconds;
-            }
-        }
+    const QString extended = extendedWindowsPath(path);
+    const HANDLE handle = CreateFileW(reinterpret_cast<const wchar_t*>(extended.utf16()),
+                                      FILE_READ_ATTRIBUTES,
+                                      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                      nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    if (handle != INVALID_HANDLE_VALUE) {
+        FILE_BASIC_INFO basic{};
+        const BOOL ok =
+            GetFileInformationByHandleEx(handle, FileBasicInfo, &basic, sizeof(basic));
+        CloseHandle(handle);
+        if (ok) return static_cast<qint64>(basic.ChangeTime.QuadPart);
     }
 #else
     Q_UNUSED(path);
