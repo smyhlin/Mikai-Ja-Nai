@@ -9,6 +9,7 @@
 #include <QSettings>
 
 #include <algorithm>
+#include <cmath>
 
 namespace mikai::app {
 
@@ -77,6 +78,10 @@ void QualityCache::load() {
         // a value below 1e12 is the old double-seconds form, so multiply by
         // 1000; millisecond stamps are ~1.8e12 and cannot be confused with it.
         const double atValue = record.value(QStringLiteral("at")).toDouble(-1.0);
+        if (!std::isfinite(atValue) || atValue <= 0.0 || atValue >= 9e18) {
+            needsWrite = true;
+            continue;
+        }
         const qint64 fetchedAt = atValue < 1e12
                                      ? static_cast<qint64>(atValue * 1000.0)
                                      : static_cast<qint64>(atValue);
@@ -87,9 +92,13 @@ void QualityCache::load() {
         const QJsonObject heights = record.value(QStringLiteral("heights")).toObject();
         QMap<int, QString> map;
         for (auto h = heights.constBegin(); h != heights.constEnd(); ++h) {
+            bool ok = false;
+            const int height = h.key().toInt(&ok);
             const QString url = h.value().toString();
-            if (!url.isEmpty()) {
-                map.insert(h.key().toInt(), url);
+            if (ok && height > 0 && !url.isEmpty()) {
+                map.insert(height, url);
+            } else {
+                needsWrite = true;
             }
         }
         if (!map.isEmpty()) {
