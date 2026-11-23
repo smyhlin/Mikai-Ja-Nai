@@ -62,7 +62,7 @@ void TitlePage::loadRecommendations(const backend::AnimeDetail& detail) {
                 client->browsePopular(1, theme::kHomeCarouselMaxTitles));
         },
         [self, detail](const QVariant& result) {
-            if (self.isNull() || self->closed_) {
+            if (self.isNull() || self->closed_ || self->ref_ != detail.ref) {
                 return;
             }
             QSet<QString> excluded = {self->ref_, detail.ref};
@@ -431,6 +431,9 @@ void TitlePage::scrollToEpisodes() {
                      : episodeAvailability_ != nullptr && episodeAvailability_->isVisible()
                            ? static_cast<QWidget*>(episodeAvailability_)
                            : static_cast<QWidget*>(episodesHeading_);
+    }
+    if (target == nullptr) {
+        return;
     }
     target->setFocus(Qt::OtherFocusReason);
     overviewScroll_->ensureWidgetVisible(target, 0, 0);
