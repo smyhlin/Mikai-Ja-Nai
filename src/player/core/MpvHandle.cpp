@@ -361,6 +361,9 @@ MpvHandle& MpvHandle::operator=(MpvHandle&& other) noexcept {
     cancelAllAsync();
     observers_.clear();
     if (handle_ != nullptr) {
+        if (api_.setWakeupCallback != nullptr) {
+            api_.setWakeupCallback(handle_, nullptr, nullptr);
+        }
         api_.terminateDestroy(handle_);
     }
     handle_ = nullptr;
@@ -412,6 +415,7 @@ void MpvHandle::require(int error, const char* what, const std::string& property
 // ── playback commands ──────────────────────────────────────────────────────
 
 void MpvHandle::loadFile(const std::string& url) {
+    if (handle_ == nullptr) throw MpvError("loadfile: no core", url);
     // A new source: anything outstanding belongs to the old one, so its
     // callbacks are dropped before the source changes.
     invalidateAsyncEpoch();
@@ -420,6 +424,7 @@ void MpvHandle::loadFile(const std::string& url) {
 }
 
 void MpvHandle::seek(double seconds) {
+    if (handle_ == nullptr) throw MpvError("seek: no core");
     // Locale-independent: mpv parses the argument itself, and "1,5" is a parse
     // error rather than a time.
     const std::string at = mpvNumber(seconds);
@@ -430,6 +435,7 @@ void MpvHandle::seek(double seconds) {
 }
 
 void MpvHandle::seekExact(double seconds) {
+    if (handle_ == nullptr) throw MpvError("seek: no core");
     const std::string at = mpvNumber(seconds);
     const char* cmd[] = {"seek", at.c_str(), "absolute+exact", nullptr};
     require(api_.command(handle_, cmd), "seek");
@@ -481,17 +487,20 @@ std::string MpvHandle::getString(const std::string& name) const {
 }
 
 void MpvHandle::setNumber(const std::string& name, double value) {
+    if (handle_ == nullptr) throw MpvError("setNumber: no core", name);
     const int rc = api_.setProperty(handle_, name.c_str(), MPV_FORMAT_DOUBLE, &value);
     if (rc < 0) throw MpvError("setNumber: " + errorText(rc), name);
 }
 
 void MpvHandle::setFlag(const std::string& name, bool value) {
+    if (handle_ == nullptr) throw MpvError("setFlag: no core", name);
     int flag = value ? 1 : 0;
     const int rc = api_.setProperty(handle_, name.c_str(), MPV_FORMAT_FLAG, &flag);
     if (rc < 0) throw MpvError("setFlag: " + errorText(rc), name);
 }
 
 void MpvHandle::setString(const std::string& name, const std::string& value) {
+    if (handle_ == nullptr) throw MpvError("setString: no core", name);
     const int rc = api_.setPropertyString(handle_, name.c_str(), value.c_str());
     if (rc < 0) throw MpvError("setString: " + errorText(rc), name);
 }
