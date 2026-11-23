@@ -55,7 +55,8 @@ void appendRenderFrameTimingLog(const QString& line);
 /// API 2.2+ reports target_time in nanoseconds; API 2.1 in microseconds.
 inline std::optional<int> clientPacingDelayMilliseconds(
     int64_t rawTargetTime, int64_t nowUs, double renderLeadMs, uint64_t apiVersion) {
-    if (rawTargetTime <= 0 || !std::isfinite(renderLeadMs) || renderLeadMs < 0.0)
+    if (rawTargetTime <= 0 || !std::isfinite(renderLeadMs) || renderLeadMs < 0.0 ||
+        renderLeadMs > 100.0)
         return std::nullopt;
     const uint64_t major = apiVersion >> 16;
     const uint64_t minor = apiVersion & 0xffffu;
