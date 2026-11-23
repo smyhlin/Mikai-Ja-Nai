@@ -36,6 +36,7 @@ Item {
                                       && !controller.subtitleDownloadBusy
     readonly property bool canDownload: canSearch && resultsList.count > 0
                                          && resultsList.currentIndex >= 0
+                                         && resultsList.currentIndex < resultsList.count
     readonly property string remedyMessage: controller.processingMessage !== ""
                                             ? controller.processingMessage
                                             : controller.processingReason
@@ -96,7 +97,11 @@ Item {
         } else {
             const restore = previousFocus
             previousFocus = null
-            if (restore && restore.visible) restore.forceActiveFocus()
+            if (remediesVisible) {
+                Qt.callLater(() => remedyLayer.focusFirstRemedy())
+            } else if (restore && restore.visible) {
+                restore.forceActiveFocus()
+            }
         }
     }
 
@@ -447,6 +452,16 @@ Item {
                         activeFocusOnTab: true
                         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
+                        onCountChanged: {
+                            if (count === 0) {
+                                currentIndex = -1
+                            } else if (currentIndex < 0) {
+                                currentIndex = 0
+                            } else if (currentIndex >= count) {
+                                currentIndex = count - 1
+                            }
+                        }
+
                         Keys.onTabPressed: event => {
                             downloadButton.forceActiveFocus()
                             event.accepted = true
@@ -683,6 +698,10 @@ Item {
             onPressed: mouse => {
                 root.controller.noteUserActivity()
                 mouse.accepted = true
+            }
+            onWheel: wheel => {
+                root.controller.noteUserActivity()
+                wheel.accepted = true
             }
         }
 
