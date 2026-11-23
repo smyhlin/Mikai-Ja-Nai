@@ -663,7 +663,9 @@ void TestAnimeJanaiRuntime::rtxRuntimeClosureAndPlatformContract() {
     QVERIFY(queued.contains(QStringLiteral("trtrtx-runtime")));
     QVERIFY(!queued.contains(QStringLiteral("trt-runtime")));
     QVERIFY(!queued.contains(QStringLiteral("directml-1.15.4")));
-    QVERIFY(queuedBytes < 70 * 1024 * 1024);
+    // v0.32.0 adds native GPU kernels + aji_vk.dll alongside the RTX backend
+    // (~80 MiB total), still well below the >200 MiB DirectML / classic TRT closures.
+    QVERIFY(queuedBytes < 128 * 1024 * 1024);
     QCOMPARE(animeJanaiMissingDownloadBytes(Backend::TensorRTRTX), queuedBytes);
 
     QVERIFY(writeRecord(Backend::TensorRTRTX));
