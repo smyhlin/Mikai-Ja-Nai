@@ -320,11 +320,11 @@ QWidget* SettingsDialog::buildProcessingTab() {
     for (QWidget* widget : std::initializer_list<QWidget*>{
              nativeConfigCard_, nativeAssetsCard_, nativeRifeCard_,
              nativeBackend_, nativeRecipe_, backendRowLabel_, recipeRowLabel_,
-             nativeStatus_, nativeError_, assetsPanel, rifeHeading_, nativeRife_}) {
+             nativeStatus_, assetsPanel, rifeHeading_, nativeRife_}) {
         if (widget != nullptr) widget->setVisible(showPrivateWorkflow);
     }
-    if (showPrivateWorkflow && !nativeLoadError.isEmpty()) {
-        nativeError_->show();
+    if (nativeError_ != nullptr) {
+        nativeError_->setVisible(showPrivateWorkflow && !nativeError_->text().isEmpty());
     }
     connect(runtimeChoice_, &QComboBox::currentIndexChanged, this, [this](int) {
         refreshRuntimeHint();
@@ -342,8 +342,11 @@ QWidget* SettingsDialog::buildProcessingTab() {
         for (QWidget* widget : std::initializer_list<QWidget*>{
                  nativeConfigCard_, nativeAssetsCard_, nativeRifeCard_,
                  nativeBackend_, nativeRecipe_, backendRowLabel_, recipeRowLabel_,
-                 nativeStatus_, nativeError_, assetsPanel_, rifeHeading_, nativeRife_}) {
+                 nativeStatus_, assetsPanel_, rifeHeading_, nativeRife_}) {
             if (widget != nullptr) widget->setVisible(showPrivateWorkflow);
+        }
+        if (nativeError_ != nullptr) {
+            nativeError_->setVisible(showPrivateWorkflow && !nativeError_->text().isEmpty());
         }
         if (showPrivateWorkflow && assetsWereRefreshed) assetsPanel_->refresh();
         refreshNativeStatus();
@@ -516,19 +519,6 @@ void SettingsDialog::retranslateProcessingTab() {
         }
     }
     nativeRecipe_->setAccessibleName(tr("Native recipe"));
-    if (!unavailableRecipeId_.isEmpty()) {
-        const int index = nativeRecipe_->findData(unavailableRecipeId_);
-        if (index >= 0) {
-            nativeRecipe_->setItemText(index, unavailableRecipeCaption(unavailableRecipeId_));
-        }
-    }
-    const int noneIndex = nativeRecipe_->findData(QString());
-    if (noneIndex >= 0) {
-        nativeRecipe_->setItemText(noneIndex, tr("None (original pipeline)"));
-    }
-    if (!nativeRecipe_->isEnabled()) {
-        nativeRecipe_->setToolTip(tr("No native recipe is available in this build."));
-    }
     nativeStatus_->setAccessibleName(tr("Native processing availability"));
     const int standardIndex =
         runtimeChoice_->findData(static_cast<int>(mplayer::native::RuntimeChoice::Standard));
@@ -552,10 +542,12 @@ void SettingsDialog::retranslateProcessingTab() {
 
     // The cached availability holds the app-owned refusal wording materialized
     // when it was last sourced. Re-source it from the same typed context the
-    // dialog already holds so the fixed reasons are rendered in the language
-    // that is now active; an opaque factory/loader diagnostic is carried
-    // through verbatim because no language may re-word it.
+    // dialog already holds so the fixed reasons and built-in profile labels are
+    // rendered in the language that is now active.
+    const QString selectedRecipe =
+        nativeRecipe_ != nullptr ? nativeRecipe_->currentData().toString() : QString();
     nativeAvailability_ = currentSourceAvailability();
+    populateRecipeChoices(selectedRecipe);
     refreshNativeStatus();
     refreshRuntimeStatus();
 }
