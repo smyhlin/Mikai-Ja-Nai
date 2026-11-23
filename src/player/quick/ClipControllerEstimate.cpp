@@ -4,6 +4,7 @@
 #include <QDebug>
 #include <QLocale>
 #include <QMetaObject>
+#include <QPointer>
 #include <QRunnable>
 #include <QThreadPool>
 
@@ -15,7 +16,7 @@
 namespace mplayer::quick {
 
 struct ClipEstimateSlot {
-    QPointer<ClipController> target;
+    ClipController* target = nullptr;
     std::atomic_bool alive{true};
     std::atomic<quint64> generation{0};
 };
@@ -77,7 +78,7 @@ void ClipController::initializeSizeEstimator() {
 void ClipController::scheduleSizeEstimate() {
     if (!estimateSlot_ || invalidated_ || stopped_) return;
     ++estimateGeneration_;
-    estimateSlot_->generation.store(estimateGeneration_, std::memory_order_relaxed);
+    estimateSlot_->generation.store(estimateGeneration_, std::memory_order_release);
     estimateFeatures_.reset();
     sizeEstimate_.reset();
     estimateBatch_.reset();
@@ -177,8 +178,8 @@ void ClipController::analyzeEstimateSamples() {
     QThreadPool::globalInstance()->start(QRunnable::create(
         [slot, generation, fps, batch = std::move(batch), knownProfile] {
             const auto current = [&] {
-                return slot->alive.load(std::memory_order_relaxed) &&
-                    slot->generation.load(std::memory_order_relaxed) == generation;
+                return slot->alive.load(std::memory_order_acquire) &&
+                    slot->generation.load(std::memory_order_acquire) == generation;
             };
             if (!current()) return;
             auto profile = knownProfile;
@@ -205,9 +206,10 @@ void ClipController::analyzeEstimateSamples() {
             auto* dispatcher = QCoreApplication::instance();
             if (dispatcher == nullptr) return;
             QMetaObject::invokeMethod(dispatcher, [slot, generation, profile, features, error] {
-                if (!slot->alive.load(std::memory_order_relaxed) ||
-                    slot->generation.load(std::memory_order_relaxed) != generation) return;
-                auto* target = slot->target.data();
+                if (!slot->alive.load(std::memory_order_acquire) ||
+                    slot->generation.load(std::memory_order_acquire) != generation) return;
+                const QPointer<ClipController> guard(slot->target);
+                auto* target = guard.data();
                 if (target == nullptr || target->invalidated_ || target->stopped_ ||
                     !target->source_ || target->source_->sourceEpoch() != target->sourceEpoch_) return;
                 target->estimateAnalyzing_ = false;
@@ -244,8 +246,8 @@ void ClipController::refreshSizeEstimate() {
 void ClipController::stopSizeEstimator() {
     estimateTimer_.stop();
     if (estimateSlot_) {
-        estimateSlot_->alive.store(false, std::memory_order_relaxed);
-        estimateSlot_->target.clear();
+        estimateSlot_->alive.store(false, std::memory_order_release);
+        estimateSlot_->target = nullptr;
     }
     estimateBatch_.reset();
     estimateFeatures_.reset();
