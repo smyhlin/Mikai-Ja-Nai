@@ -167,7 +167,7 @@ QWidget* SettingsDialog::buildPresetsTab() {
         list->addWidget(rowWidget);
         presetRows_.append({mode.id, label, mode.category, edit, name, rowWidget, mode.mode});
         connect(edit, &QKeySequenceEdit::keySequenceChanged, this,
-                [this, edit, rowWidget, label,
+                [this, edit, rowWidget, modeValue = mode.mode,
                  previous = edit->keySequence()](const QKeySequence& sequence) mutable {
                     if (!sequence.isEmpty()) {
                         const mplayer::shell::ShortcutConflict conflict =
@@ -178,7 +178,8 @@ QWidget* SettingsDialog::buildPresetsTab() {
                             rowWidget->setProperty("hasBinding", !previous.isEmpty());
                             theme::repolish(rowWidget);
                             showPresetError(presetConflictMessage(
-                                conflict, mplayer::shell::shortcutClaimKey(sequence), label));
+                                conflict, mplayer::shell::shortcutClaimKey(sequence),
+                                mplayer::anime4k::displayLabel(modeValue)));
                             return;
                         }
                     }
@@ -303,9 +304,7 @@ void SettingsDialog::retranslatePresetsTab() {
     }
     for (PresetRow& row : presetRows_) {
         const auto found = catalogue.constFind(row.mode);
-        if (found != catalogue.constEnd()) {
-            row.label = found->label;
-        }
+        row.label = mplayer::anime4k::displayLabel(row.mode);
         const QString hint = found != catalogue.constEnd() ? found->hint : QString();
         row.name->setText(row.label);
         row.name->setToolTip(hint);
