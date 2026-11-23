@@ -137,10 +137,12 @@ Rectangle {
             Accessible.role: Accessible.ProgressBar
             Accessible.name: qsTr("Preparation progress")
             Accessible.description: root.controller.preparationStageCount > 0
-                                    ? qsTr("%1 of %2 stages").arg(Math.max(0,
-                                                                          Math.min(
-                                                                              root.controller.preparationStageIndex,
-                                                                              to)))
+                                    ? qsTr("%1 of %2 stages").arg(root.succeeded
+                                                                  ? to
+                                                                  : Math.max(0,
+                                                                             Math.min(
+                                                                                 root.controller.preparationStageIndex + 1,
+                                                                                 to)))
                                                              .arg(to)
                                     : qsTr("Stage count not known yet")
 
