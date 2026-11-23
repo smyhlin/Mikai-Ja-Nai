@@ -142,15 +142,6 @@ QStringList pagerChipLabels(const QWidget& pager) {
   return labels;
 }
 
-QLabel* labelContaining(const QWidget& widget, const QString& needle) {
-  for (QLabel* label : widget.findChildren<QLabel*>()) {
-    if (label->text().contains(needle)) {
-      return label;
-    }
-  }
-  return nullptr;
-}
-
 /// A loopback endpoint that answers every request with an empty successful
 /// schedule and the quota headers the test hands it. The quota a label renders
 /// therefore comes from a real HTTP answer read by MikaiClient, not from a
