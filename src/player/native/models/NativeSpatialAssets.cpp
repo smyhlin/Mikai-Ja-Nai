@@ -173,7 +173,7 @@ bool licenseFromJson(const QJsonObject& object, QString* spdx, QString* error) {
 bool readStored(const QString& root, const QString& directory, StoredSpatialAsset* out,
                 QString* reasonKey, QString* reason, bool requirePublishedName) {
   const QFileInfo directoryInfo(directory);
-  if (!directoryInfo.isDir() || !pathWithinRoot(root, directory) ||
+  if (!directoryInfo.isDir() || directoryInfo.isSymLink() || !pathWithinRoot(root, directory) ||
       !pathHasNoReparsePoints(root, directory)) {
     fail(reasonKey, reason, QStringLiteral("spatial.asset.directory"),
          QStringLiteral("%1 is not an owned directory").arg(directory));
@@ -181,6 +181,13 @@ bool readStored(const QString& root, const QString& directory, StoredSpatialAsse
   }
 
   const QString manifestPath = QDir(directory).filePath(QString::fromLatin1(kManifestFileName));
+  const QFileInfo manifestInfo(manifestPath);
+  if (!manifestInfo.exists() || manifestInfo.isSymLink() || !manifestInfo.isFile() ||
+      !pathWithinRoot(root, manifestPath) || !pathHasNoReparsePoints(root, manifestPath)) {
+    fail(reasonKey, reason, QStringLiteral("spatial.asset.manifest"),
+         QStringLiteral("%1 is not an owned regular manifest file").arg(manifestPath));
+    return false;
+  }
   QFile manifestFile(manifestPath);
   if (!manifestFile.open(QIODevice::ReadOnly)) {
     fail(reasonKey, reason, QStringLiteral("spatial.asset.manifest"),
@@ -288,7 +295,7 @@ bool readStored(const QString& root, const QString& directory, StoredSpatialAsse
 
   const QString graphPath = QDir(directory).filePath(QString::fromLatin1(kGraphFileName));
   const QFileInfo graphInfo(graphPath);
-  if (!graphInfo.isFile() || !pathWithinRoot(root, graphPath) ||
+  if (!graphInfo.isFile() || graphInfo.isSymLink() || !pathWithinRoot(root, graphPath) ||
       !pathHasNoReparsePoints(root, graphPath)) {
     fail(reasonKey, reason, QStringLiteral("spatial.asset.graph"),
          QStringLiteral("%1 is not an owned regular file").arg(graphPath));
@@ -424,6 +431,10 @@ bool SpatialAssetStore::isOwned(QString* reason) const {
     if (reason)
       *reason = QStringLiteral("assets root %1 is not absolute, so it cannot be shown to be ours")
                     .arg(root_);
+    return false;
+  }
+  if (QFileInfo(root_).isSymLink()) {
+    if (reason) *reason = QStringLiteral("assets root %1 is a reparse point").arg(root_);
     return false;
   }
   // The app's own root must lie inside the app-owned assets hierarchy. An
