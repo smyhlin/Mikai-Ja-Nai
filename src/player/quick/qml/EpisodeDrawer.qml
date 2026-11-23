@@ -57,20 +57,28 @@ PlayerPanel {
             list.forceActiveFocus();
             let selected = -1;
             for (let i = 0; i < list.count; ++i) {
-                if (menuModel.data(menuModel.index(i, 0), PlayerMenuModel.SelectedRole)) {
+                if (rowIsSelectable(i) &&
+                        menuModel.data(menuModel.index(i, 0), PlayerMenuModel.SelectedRole)) {
                     selected = i;
                     break;
                 }
             }
-            list.currentIndex = selected >= 0 ? selected : 0;
-            list.positionViewAtIndex(list.currentIndex, ListView.Contain);
+            if (selected >= 0) {
+                list.currentIndex = selected;
+                list.positionViewAtIndex(selected, ListView.Contain);
+            } else {
+                jumpCursor(true);
+            }
         } else {
             drawer.forceActiveFocus();
         }
     }
 
     function rowIsSelectable(row) {
-        return menuModel !== null && menuModel.isSelectable(row);
+        if (menuModel === null || !menuModel.isSelectable(row)) return false;
+        if (drawer.filterText === "") return true;
+        const lbl = menuModel.data(menuModel.index(row, 0), PlayerMenuModel.LabelRole);
+        return String(lbl).toLowerCase().indexOf(drawer.filterText) >= 0;
     }
 
     function moveCursor(step) {
@@ -114,7 +122,14 @@ PlayerPanel {
         drawer.activateRow(row);
     }
 
-    onVisibleChanged: if (visible) takeFocus()
+    onVisibleChanged: {
+        if (visible) {
+            takeFocus();
+        } else {
+            filterBar.text = "";
+            drawer.filterText = "";
+        }
+    }
 
     Keys.onPressed: function(event) {
         if (event.key === Qt.Key_Escape) {
@@ -164,7 +179,6 @@ PlayerPanel {
         font.pixelSize: 12
         leftPadding: 10
         rightPadding: 10
-        text: drawer.filterText
         onTextChanged: drawer.filterText = text.trim().toLowerCase()
         background: Rectangle {
             radius: Math.max(3, Math.min(6, drawer.controller.cornerRadius))
