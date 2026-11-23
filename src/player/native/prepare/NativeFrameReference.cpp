@@ -150,6 +150,11 @@ bool readPpmUint(const QByteArray& data, qsizetype* pos, quint32* value, QString
 
 bool readPpmFixture(const QString& path, FrameFixture* fixture, QString* reasonKey,
                     QString* reason) {
+  if (fixture == nullptr) {
+    refuseWith(reasonKey, reason, QStringLiteral("fixture.unreadable"),
+               QStringLiteral("no FrameFixture destination was supplied"));
+    return false;
+  }
   const QFileInfo info(QDir::cleanPath(path));
   QFile file(info.absoluteFilePath());
   if (!info.isAbsolute() || !info.isFile() || !file.open(QIODevice::ReadOnly)) {
@@ -158,6 +163,11 @@ bool readPpmFixture(const QString& path, FrameFixture* fixture, QString* reasonK
     return false;
   }
   const QByteArray data = file.readAll();
+  if (file.error() != QFile::NoError) {
+    refuseWith(reasonKey, reason, QStringLiteral("fixture.unreadable"),
+               QStringLiteral("'%1' could not be read: %2").arg(path, file.errorString()));
+    return false;
+  }
   file.close();
 
   if (data.size() < 2 || data.at(0) != 'P' || data.at(1) != '6') {
@@ -237,6 +247,10 @@ bool exportCpuFrameReference(const InspectionRuntime& runtime, const QByteArray&
     if (reason != nullptr) *reason = text;
     return false;
   };
+  if (result == nullptr) {
+    return refuse(QStringLiteral("reference.output.null"),
+                  QStringLiteral("no ReferenceExport destination was supplied"));
+  }
 
   const QFileInfo dirInfo(QDir::cleanPath(request.directory));
   if (dirInfo.exists()) {
@@ -305,6 +319,11 @@ bool exportCpuFrameReference(const InspectionRuntime& runtime, const QByteArray&
                           .arg(raw.name, raw.filePath));
       }
       const QByteArray data = file.readAll();
+      if (file.error() != QFile::NoError) {
+        return refuse(QStringLiteral("reference.inputs.unreadable"),
+                      QStringLiteral("--reference-input '%1' could not read '%2': %3")
+                          .arg(raw.name, raw.filePath, file.errorString()));
+      }
       file.close();
 
       const qint64 needed = elements * elementSizeOf(raw.dtype);
