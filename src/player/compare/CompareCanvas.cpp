@@ -590,6 +590,10 @@ void CompareCanvas::mousePressEvent(QMouseEvent* event) {
 
 void CompareCanvas::mouseMoveEvent(QMouseEvent* event) {
     const QPoint at = event->position().toPoint();
+    if ((panning_ || dragging_) && !(event->buttons() & Qt::LeftButton)) {
+        panning_ = false;
+        dragging_ = false;
+    }
     if (panning_) {
         const QPoint delta = at - lastPanPoint_;
         lastPanPoint_ = at;
@@ -748,13 +752,22 @@ void CompareCanvas::drawForeground(QPainter* painter, const QRectF&) {
 }
 
 void CompareCanvas::wheelEvent(QWheelEvent* event) {
-    const int steps = event->angleDelta().y() / 120;
-    if (steps == 0) {
+    const int angleY = event->angleDelta().y();
+    const int pixelY = event->pixelDelta().y();
+    if (angleY == 0 && pixelY == 0) {
         QGraphicsView::wheelEvent(event);
         return;
     }
     const QPointF anchor = mapToScene(event->position().toPoint());
-    camera_.zoomBySteps(steps, anchor.x(), anchor.y(), viewport()->width(), viewport()->height());
+    if (angleY != 0 && (angleY % 120) == 0) {
+        camera_.zoomBySteps(angleY / 120, anchor.x(), anchor.y(),
+                            viewport()->width(), viewport()->height());
+    } else {
+        const double steps = (angleY != 0) ? (static_cast<double>(angleY) / 120.0)
+                                           : (static_cast<double>(pixelY) / 60.0);
+        camera_.zoomTo(camera_.clampedZoom() * std::pow(kCompareWheelStep, steps),
+                       anchor.x(), anchor.y(), viewport()->width(), viewport()->height());
+    }
     viewTouched_ = true;
     applyView();
     event->accept();
