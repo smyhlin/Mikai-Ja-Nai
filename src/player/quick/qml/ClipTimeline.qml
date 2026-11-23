@@ -74,7 +74,9 @@ Item {
             if (pressed) root.editor.seekTo(root.timeForX(mouse.x))
         }
         onWheel: wheel => {
-            root.editor.stepSeconds((wheel.angleDelta.y > 0 ? 1 : -1)
+            const delta = wheel.angleDelta.y !== 0 ? wheel.angleDelta.y : wheel.pixelDelta.y
+            if (delta === 0) return
+            root.editor.stepSeconds((delta > 0 ? 1 : -1)
                                    * ((wheel.modifiers & Qt.ShiftModifier) ? 0.1 : 1))
             wheel.accepted = true
         }
