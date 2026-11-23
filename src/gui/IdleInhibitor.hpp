@@ -37,7 +37,7 @@ private:
     bool inhibitThroughGnomeSession();
     void releaseGnomeSession();
 
-    std::unique_ptr<Platform> platform_;
+    std::shared_ptr<Platform> platform_;
     // Unbounded: an owner is a reason, not a slot, so the 9th owner is
     // tracked exactly like the 2nd — the old fixed array silently dropped
     // it. Only 2 owners exist today (main player + PiP float).

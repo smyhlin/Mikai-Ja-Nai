@@ -45,10 +45,16 @@ namespace {
 constexpr auto kInhibitReason = "Player window is open";
 }  // namespace
 
-IdleInhibitor::IdleInhibitor() : platform_(std::make_unique<Platform>()) {}
+IdleInhibitor::IdleInhibitor() : platform_(std::make_shared<Platform>()) {}
 
 IdleInhibitor::~IdleInhibitor() {
+#ifdef Q_OS_WIN
+    if (!owners_.empty()) {
+        SetThreadExecutionState(ES_CONTINUOUS);
+    }
+#endif
 #ifdef Q_OS_LINUX
+    platform_->desiredActive = false;
     // Closing the descriptor is what releases a logind lock.
     platform_->logindFd = QDBusUnixFileDescriptor();
 #endif
@@ -73,12 +79,14 @@ bool IdleInhibitor::inhibitThroughLogind() {
         << QString::fromLatin1(kInhibitReason) << QStringLiteral("block");
     auto* watcher = new QDBusPendingCallWatcher(
         QDBusConnection::systemBus().asyncCall(msg, 500));
+    const std::weak_ptr<Platform> weakPlatform = platform_;
     QObject::connect(watcher, &QDBusPendingCallWatcher::finished, watcher,
-                     [this, watcher]() {
+                     [weakPlatform, watcher]() {
+                         const auto platform = weakPlatform.lock();
                          QDBusPendingReply<QDBusUnixFileDescriptor> reply = *watcher;
-                         if (reply.isValid() && platform_->desiredActive) {
+                         if (reply.isValid() && platform && platform->desiredActive) {
                              const QDBusUnixFileDescriptor fd = reply.value();
-                             if (fd.isValid()) platform_->logindFd = fd;
+                             if (fd.isValid()) platform->logindFd = fd;
                          }
                          watcher->deleteLater();
                      });
@@ -96,13 +104,16 @@ bool IdleInhibitor::inhibitThroughScreenSaver() {
         msg << QStringLiteral("mikai") << QString::fromLatin1(kInhibitReason);
         auto* watcher = new QDBusPendingCallWatcher(
             QDBusConnection::sessionBus().asyncCall(msg, 500));
+        const std::weak_ptr<Platform> weakPlatform = platform_;
         QObject::connect(watcher, &QDBusPendingCallWatcher::finished, watcher,
-                         [this, service, kde, watcher]() {
+                         [weakPlatform, service, kde, watcher]() {
+                             const auto platform = weakPlatform.lock();
                              QDBusPendingReply<quint32> reply = *watcher;
                              if (reply.isValid() && reply.value() != 0) {
-                                 if (platform_->desiredActive && platform_->screenSaverCookie == 0) {
-                                     platform_->screenSaverCookie = reply.value();
-                                     platform_->kdeScreenSaver = kde;
+                                 if (platform && platform->desiredActive &&
+                                     platform->screenSaverCookie == 0) {
+                                     platform->screenSaverCookie = reply.value();
+                                     platform->kdeScreenSaver = kde;
                                  } else {
                                      QDBusMessage uninhibit = QDBusMessage::createMethodCall(
                                          service, QStringLiteral("/ScreenSaver"),
@@ -140,12 +151,15 @@ bool IdleInhibitor::inhibitThroughPowerManagement() {
     msg << QStringLiteral("Mikai Ja Nai") << QString::fromLatin1(kInhibitReason);
     auto* watcher = new QDBusPendingCallWatcher(
         QDBusConnection::sessionBus().asyncCall(msg, 500));
+    const std::weak_ptr<Platform> weakPlatform = platform_;
     QObject::connect(watcher, &QDBusPendingCallWatcher::finished, watcher,
-                     [this, watcher]() {
+                     [weakPlatform, watcher]() {
+                         const auto platform = weakPlatform.lock();
                          QDBusPendingReply<quint32> reply = *watcher;
                          if (reply.isValid() && reply.value() != 0) {
-                             if (platform_->desiredActive && platform_->powerManagementCookie == 0) {
-                                 platform_->powerManagementCookie = reply.value();
+                             if (platform && platform->desiredActive &&
+                                 platform->powerManagementCookie == 0) {
+                                 platform->powerManagementCookie = reply.value();
                              } else {
                                  QDBusMessage uninhibit = QDBusMessage::createMethodCall(
                                      QStringLiteral("org.freedesktop.PowerManagement.Inhibit"),
@@ -185,12 +199,15 @@ bool IdleInhibitor::inhibitThroughGnomeSession() {
         << QString::fromLatin1(kInhibitReason) << kInhibitSuspendAndIdle;
     auto* watcher = new QDBusPendingCallWatcher(
         QDBusConnection::sessionBus().asyncCall(msg, 500));
+    const std::weak_ptr<Platform> weakPlatform = platform_;
     QObject::connect(watcher, &QDBusPendingCallWatcher::finished, watcher,
-                     [this, watcher]() {
+                     [weakPlatform, watcher]() {
+                         const auto platform = weakPlatform.lock();
                          QDBusPendingReply<quint32> reply = *watcher;
                          if (reply.isValid() && reply.value() != 0) {
-                             if (platform_->desiredActive && platform_->gnomeSessionCookie == 0) {
-                                 platform_->gnomeSessionCookie = reply.value();
+                             if (platform && platform->desiredActive &&
+                                 platform->gnomeSessionCookie == 0) {
+                                 platform->gnomeSessionCookie = reply.value();
                              } else {
                                  QDBusMessage uninhibit = QDBusMessage::createMethodCall(
                                      QStringLiteral("org.gnome.SessionManager"),
