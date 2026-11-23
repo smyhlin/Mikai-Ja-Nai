@@ -321,6 +321,7 @@ QVector<QualityVariant> moonVariants(QNetworkAccessManager* manager, const QStri
 }
 
 QVector<QVariantMap> parseMoonSkipSegments(const QString& html, const QString& pageUrl) {
+    const QString redactedUrl = redactDiagnostic(pageUrl);
     QString js;
     try {
         js = decodeMoonPayload(html, pageUrl);
@@ -338,7 +339,7 @@ QVector<QVariantMap> parseMoonSkipSegments(const QString& html, const QString& p
     const QRegularExpressionMatch skipMatch = skipPattern.match(js);
     if (!skipMatch.hasMatch()) {
         qWarning().noquote()
-            << "mikai: moonanime skip metadata pattern not found in" << pageUrl;
+            << "mikai: moonanime skip metadata pattern not found in" << redactedUrl;
         return {};
     }
 
@@ -347,7 +348,7 @@ QVector<QVariantMap> parseMoonSkipSegments(const QString& html, const QString& p
     const QRegularExpressionMatch keyMatch = keyPattern.match(js);
     if (!keyMatch.hasMatch() || keyMatch.captured(1).isEmpty()) {
         qWarning().noquote()
-            << "mikai: moonanime skip metadata key not found in" << pageUrl;
+            << "mikai: moonanime skip metadata key not found in" << redactedUrl;
         return {};
     }
 
@@ -362,13 +363,14 @@ QVector<QVariantMap> parseMoonSkipSegments(const QString& html, const QString& p
     QJsonParseError parseError{};
     const QJsonDocument document = QJsonDocument::fromJson(decoded, &parseError);
     if (parseError.error != QJsonParseError::NoError) {
-        qWarning().noquote() << "mikai: moonanime skip metadata is not valid JSON in" << pageUrl
-                             << "at byte" << parseError.offset << "-" << parseError.errorString();
+        qWarning().noquote() << "mikai: moonanime skip metadata is not valid JSON in"
+                             << redactedUrl << "at byte" << parseError.offset << "-"
+                             << parseError.errorString();
         return {};
     }
     if (!document.isArray()) {
         qWarning().noquote()
-            << "mikai: moonanime skip metadata is not a JSON array in" << pageUrl;
+            << "mikai: moonanime skip metadata is not a JSON array in" << redactedUrl;
         return {};
     }
 
@@ -399,7 +401,7 @@ QVector<QVariantMap> parseMoonSkipSegments(const QString& html, const QString& p
     }
     if (rejected > 0) {
         qWarning().noquote() << "mikai: moonanime skip metadata ignored" << rejected
-                             << "invalid segment(s) in" << pageUrl;
+                             << "invalid segment(s) in" << redactedUrl;
     }
     return segments;
 }
