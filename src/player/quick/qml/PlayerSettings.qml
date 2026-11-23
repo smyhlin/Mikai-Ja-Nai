@@ -47,7 +47,9 @@ PlayerPanel {
         if (!visible) return;
         if (list.count > 0) {
             list.forceActiveFocus();
-            if (list.currentIndex < 0) list.currentIndex = 0;
+            if (list.currentIndex < 0 || !rowIsSelectable(list.currentIndex)) {
+                jumpCursor(true);
+            }
         } else {
             panel.forceActiveFocus();
         }
@@ -167,7 +169,10 @@ PlayerPanel {
             value: panel.controller.rate
             activeFocusOnTab: true
             Accessible.name: qsTr("Playback speed")
-            onMoved: panel.controller.setRate(value)
+            onMoved: {
+                panel.controller.noteUserActivity()
+                panel.controller.setRate(value)
+            }
             Keys.onTabPressed: event => {
                 list.forceActiveFocus()
                 event.accepted = true
@@ -222,7 +227,10 @@ PlayerPanel {
                     height: 32
                     text: Number(modelData).toFixed(2).replace(/0+$/, "").replace(/\.$/, "") + "×"
                     Accessible.name: text
-                    onClicked: panel.controller.setRate(modelData)
+                    onClicked: {
+                        panel.controller.noteUserActivity()
+                        panel.controller.setRate(modelData)
+                    }
 
                     background: Rectangle {
                         radius: Math.max(0, Math.min(panel.controller.cornerRadius, height / 2))
