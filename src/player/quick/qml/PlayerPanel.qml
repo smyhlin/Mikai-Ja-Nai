@@ -38,10 +38,12 @@ Item {
     readonly property real titleGap: 10
 
     implicitWidth: Math.ceil(inset * 2 + Math.max(titleText.implicitWidth,
-                                                  contentHost.implicitWidth))
+                                                  contentHost.implicitWidth,
+                                                  contentHost.childrenRect.width))
     implicitHeight: Math.ceil(inset * 2 + (titleText.visible ? titleText.implicitHeight
                                                             + titleGap : 0)
-                              + contentHost.childrenRect.height)
+                              + Math.max(contentHost.implicitHeight,
+                                         contentHost.childrenRect.height))
 
     Accessible.role: Accessible.Pane
     Accessible.name: root.title.length > 0 ? root.title : ""

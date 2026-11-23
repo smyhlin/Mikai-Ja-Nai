@@ -58,7 +58,7 @@ ToolButton {
     Accessible.checked: checkable && checked
     Accessible.focusable: activeFocusOnTab
     Accessible.onPressAction: if (enabled) click()
-    Accessible.onToggleAction: if (checkable) toggle()
+    Accessible.onToggleAction: if (enabled && checkable) toggle()
 
     ToolTip.visible: (hovered || visualFocus) && toolTip.length > 0
     ToolTip.text: toolTip
