@@ -97,6 +97,7 @@ void RateLimitLabel::changeEvent(QEvent* event) {
         // the reset window or the queue depth, and it must not ask the server
         // for anything. The rendered-cache comparison below notices the new
         // wording and repaints.
+        setAccessibleDescription(tr("Open the API access settings"));
         renderState(state_);
     }
 }
