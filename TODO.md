@@ -1,12 +1,12 @@
 ## Active Tracking
 
-Active defects and enhancements are tracked on [GitHub Issues](https://github.com/smyhlin/Mikai-Ja-Nai/issues) (`v0.2.4` shipped 2026-11-22):
+Active defects and enhancements are tracked on [GitHub Issues](https://github.com/smyhlin/Mikai-Ja-Nai/issues) (`v0.2.4.1`).
 
-- [ ] Player black frame blink during upscale/shader reconfiguration (#155)
-- [ ] Player overlay elements stacking under video surface (#156)
-- [ ] Ukrainian translations for new 0.2.4 Categories/Search/Teams strings (#154)
 ## Done
 
+- [x] Player black frame blink during upscale/shader reconfiguration (#155)
+- [x] Player overlay elements stacking under video surface (#156)
+- [x] Ukrainian translations for new 0.2.4 Categories/Search/Teams strings (#154)
 - [x] cpp fixes
 - [x] fix watch episode button not opening player
 - [x] fix video screenshot resets playback and reloads stream ("Відкриття потоку...")
