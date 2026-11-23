@@ -172,10 +172,12 @@ HttpFetchResult runBlockingRequest(QNetworkAccessManager* manager, HttpMethod me
             loop.quit();
         }
     });
-    timer.start(options.timeoutMs);
-    cancelWatch.start();
-    loop.exec();
-    timer.stop();
+    if (!reply->isFinished()) {
+        timer.start(options.timeoutMs);
+        cancelWatch.start();
+        loop.exec();
+        timer.stop();
+    }
     if (reply->isRunning()) {
         // Bound the abort drain so a pool thread cannot wait indefinitely.
         reply->abort();
