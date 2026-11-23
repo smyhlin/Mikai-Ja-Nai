@@ -41,7 +41,13 @@ Item {
     readonly property bool loadingVisible: controller.openingLoading
                                            || controller.compareLoading
 
-    onInteractionHoldChanged: controller.setInteractionActive(interactionHold)
+    onInteractionHoldChanged: {
+        if (interactionHold) singleClickPlayTimer.stop()
+        controller.setInteractionActive(interactionHold)
+    }
+    onLoadingVisibleChanged: {
+        if (loadingVisible) singleClickPlayTimer.stop()
+    }
     onPipModeChanged: controller.hideHoverPreview()
 
     function openMenuAt(menuId, anchorRect) {
@@ -119,6 +125,10 @@ Item {
         interval: Math.min(220, Qt.styleHints.mouseDoubleClickInterval)
         repeat: false
         onTriggered: {
+            if (root.loadingVisible || dialogs.modalVisible || overlay.anyMenuVisible
+                    || shortcutSheet.visible) {
+                return
+            }
             root.forceActiveFocus()
             root.controller.togglePlayPause()
         }
@@ -207,6 +217,20 @@ Item {
 
         Accessible.role: Accessible.StaticText
         Accessible.name: loadingHeadline.text
+
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.AllButtons
+            hoverEnabled: true
+            onPressed: mouse => {
+                root.controller.noteUserActivity()
+                mouse.accepted = true
+            }
+            onWheel: wheel => {
+                root.controller.noteUserActivity()
+                wheel.accepted = true
+            }
+        }
 
         Column {
             anchors.centerIn: parent
