@@ -43,9 +43,13 @@ QString computeOpenSubtitlesMovieHash(const QString& localPath) {
             hash += word;
         }
     };
-    accumulate(file.read(kChunk));
+    const QByteArray head = file.read(kChunk);
+    if (head.size() != kChunk) return {};
+    accumulate(head);
     if (!file.seek(size - kChunk)) return {};
-    accumulate(file.read(kChunk));
+    const QByteArray tail = file.read(kChunk);
+    if (tail.size() != kChunk) return {};
+    accumulate(tail);
     return QStringLiteral("%1").arg(hash, 16, 16, QLatin1Char('0'));
 }
 constexpr qint64 kMaxSubtitleResponseBytes = 10 * 1024 * 1024;
@@ -130,11 +134,13 @@ QByteArray postJson(const QNetworkRequest& request, const QByteArray& body,
         payload.append(chunk);
     });
     QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-    timer.start(timeoutMs);
-    cancelPoll.start();
-    loop.exec();
-    timer.stop();
-    cancelPoll.stop();
+    if (!reply->isFinished()) {
+        timer.start(timeoutMs);
+        cancelPoll.start();
+        loop.exec();
+        timer.stop();
+        cancelPoll.stop();
+    }
 
     if (reply->isRunning()) {
         reply->abort();
