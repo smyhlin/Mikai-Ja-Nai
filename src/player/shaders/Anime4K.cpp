@@ -366,12 +366,16 @@ QString hintFromFile(const QString& file, Kind kind) {
     // free to put the scale and the size in whatever order reads in its
     // language.
     QString size;
-    for (const QString& candidate : {QStringLiteral("VL"), QStringLiteral("UUL"),
-                                     QStringLiteral("UL"), QStringLiteral("L"),
-                                     QStringLiteral("M"), QStringLiteral("S")}) {
-        if (label.endsWith(QLatin1Char(' ') + candidate) || label.endsWith(candidate)) {
-            size = candidate;
-            break;
+    if (file.endsWith(QLatin1String("_US.glsl")) || file.contains(QLatin1String("_US_"))) {
+        size = QStringLiteral("US");
+    } else {
+        for (const QString& candidate : {QStringLiteral("VL"), QStringLiteral("UUL"),
+                                         QStringLiteral("UL"), QStringLiteral("L"),
+                                         QStringLiteral("M"), QStringLiteral("S")}) {
+            if (label.endsWith(QLatin1Char(' ') + candidate) || label == candidate) {
+                size = candidate;
+                break;
+            }
         }
     }
     const QString family = kindLabel(kind);
@@ -535,7 +539,7 @@ QMap<QString, ShaderFileListing>& shaderFileCache() {
 
 QStringList shaderFiles(const QString& dir) {
     const QDateTime modified = QFileInfo(dir).lastModified();
-    {
+    if (modified.isValid()) {
         QMutexLocker lock(&shaderFileCacheMutex());
         const auto it = shaderFileCache().find(dir);
         if (it != shaderFileCache().end() && it->dirModified == modified) {
@@ -544,8 +548,10 @@ QStringList shaderFiles(const QString& dir) {
     }
     const QStringList files =
         QDir(dir).entryList({QStringLiteral("*.glsl")}, QDir::Files, QDir::Name);
-    QMutexLocker lock(&shaderFileCacheMutex());
-    shaderFileCache().insert(dir, ShaderFileListing{files, modified});
+    if (modified.isValid()) {
+        QMutexLocker lock(&shaderFileCacheMutex());
+        shaderFileCache().insert(dir, ShaderFileListing{files, modified});
+    }
     return files;
 }
 
@@ -632,7 +638,8 @@ bool chainIsComplete(const Candidate& candidate, const QString& shadersDir) {
         return false;
     }
     for (const QString& file : candidate.files) {
-        if (!QFileInfo::exists(QDir(dir).filePath(file))) {
+        const QFileInfo info(QDir(dir).filePath(file));
+        if (!info.exists() || !info.isFile()) {
             return false;
         }
     }
