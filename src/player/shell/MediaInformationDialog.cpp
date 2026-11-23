@@ -194,6 +194,7 @@ void MediaInformationDialog::requestInformation() {
         return;
     }
     cancelRequest();
+    if (retryButton_ != nullptr) retryButton_->hide();
     timedOut_ = false;
     information_.loading = true;
     timeout_->start();
@@ -204,6 +205,7 @@ void MediaInformationDialog::requestInformation() {
             information.sourceEpoch != guard->information_.sourceEpoch) return;
         guard->information_ = information;
         if (!information.loading) {
+            guard->requestActive_ = false;
             guard->timeout_->stop();
             guard->renderInformation();
         }
@@ -288,8 +290,13 @@ void MediaInformationDialog::updatePlainText() {
 
 void MediaInformationDialog::changeEvent(QEvent* event) {
     QDialog::changeEvent(event);
-    if (event->type() == QEvent::LanguageChange || event->type() == QEvent::LocaleChange)
+    if (event->type() == QEvent::LanguageChange) {
+        if (copyButton_ != nullptr) copyButton_->setText(tr("Copy"));
+        if (retryButton_ != nullptr) retryButton_->setText(tr("Retry"));
         renderInformation();
+    } else if (event->type() == QEvent::LocaleChange) {
+        renderInformation();
+    }
 }
 
 void MediaInformationDialog::closeEvent(QCloseEvent* event) {
