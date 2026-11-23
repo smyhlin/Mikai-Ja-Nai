@@ -350,13 +350,26 @@ void TitleCard::applyEpisodes(int aired, int planned) {
 }
 
 void TitleCard::applySearchHighlight(const QString& query, const backend::Titles& titles) {
-    const QString needle = query.trimmed();
-    if (needle.isEmpty() || title_ == nullptr) {
-        if (altTitle_ != nullptr) altTitle_->hide();
+    if (title_ == nullptr) {
         return;
     }
-    const QString plain = title_->text();
-    const int pos = plain.indexOf(needle, 0, Qt::CaseInsensitive);
+    QFont titleFont = title_->font();
+    titleFont.setPixelSize(13);
+    titleFont.setWeight(QFont::DemiBold);
+    const int titleMaxWidth = theme::kHomeCardWidth - theme::kSpacingMedium -
+                              theme::kHomePosterWidth - theme::kSpacingMedium -
+                              theme::kSpacingLarge - 8;
+    const QString plain = elideTwoLines(rawTitle_, titleFont, titleMaxWidth);
+
+    const QString needle = query.trimmed();
+    if (needle.isEmpty()) {
+        title_->setTextFormat(Qt::PlainText);
+        title_->setText(plain);
+        if (altTitle_ != nullptr) altTitle_->hide();
+        setToolTip(rawTitle_);
+        return;
+    }
+    const qsizetype pos = plain.indexOf(needle, 0, Qt::CaseInsensitive);
     if (pos >= 0) {
         const QString before = plain.left(pos).toHtmlEscaped().replace(QLatin1Char('\n'), QStringLiteral("<br>"));
         const QString match = plain.mid(pos, needle.size()).toHtmlEscaped().replace(QLatin1Char('\n'), QStringLiteral("<br>"));
@@ -364,14 +377,19 @@ void TitleCard::applySearchHighlight(const QString& query, const backend::Titles
         title_->setTextFormat(Qt::RichText);
         title_->setText(QStringLiteral("%1<span style=\"background:rgba(255,210,77,0.28);border-radius:3px;\">%2</span>%3")
                             .arg(before, match, after));
+    } else {
+        title_->setTextFormat(Qt::PlainText);
+        title_->setText(plain);
     }
-    if (rawTitle_.indexOf(needle, 0, Qt::CaseInsensitive) < 0 && altTitle_ != nullptr) {
+    if (altTitle_ != nullptr) {
         QString matchedAlt;
-        for (const QString& candidate : {titles.ua, titles.english, titles.original}) {
-            if (!candidate.trimmed().isEmpty() && candidate != rawTitle_ &&
-                candidate.indexOf(needle, 0, Qt::CaseInsensitive) >= 0) {
-                matchedAlt = candidate.trimmed();
-                break;
+        if (rawTitle_.indexOf(needle, 0, Qt::CaseInsensitive) < 0) {
+            for (const QString& candidate : {titles.ua, titles.english, titles.original}) {
+                if (!candidate.trimmed().isEmpty() && candidate != rawTitle_ &&
+                    candidate.indexOf(needle, 0, Qt::CaseInsensitive) >= 0) {
+                    matchedAlt = candidate.trimmed();
+                    break;
+                }
             }
         }
         if (!matchedAlt.isEmpty()) {
@@ -381,6 +399,9 @@ void TitleCard::applySearchHighlight(const QString& query, const backend::Titles
             altTitle_->setText(fm.elidedText(matchedAlt, Qt::ElideRight, qMax(80, maxW)));
             altTitle_->show();
             setToolTip(rawTitle_ + QStringLiteral("\n") + matchedAlt);
+        } else {
+            altTitle_->hide();
+            setToolTip(rawTitle_);
         }
     }
 }
