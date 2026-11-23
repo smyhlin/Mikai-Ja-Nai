@@ -38,7 +38,7 @@ inline bool jsonInteger(const QJsonValue& value, qint64* out) {
     if (!std::isfinite(d)) return false;
     if (std::floor(d) != d) return false;
     if (d < -9.2e18 || d > 9.2e18) return false;
-    *out = static_cast<qint64>(d);
+    if (out != nullptr) *out = static_cast<qint64>(d);
     return true;
 }
 
@@ -46,7 +46,7 @@ inline bool jsonInteger(const QJsonValue& value, qint64* out) {
 inline bool jsonString(const QJsonObject& object, const QString& key, QString* out) {
     const QJsonValue value = object.value(key);
     if (!value.isString()) return false;
-    *out = value.toString();
+    if (out != nullptr) *out = value.toString();
     return true;
 }
 
