@@ -575,19 +575,32 @@ void PlayerWindow::setHoverPreviewFrame(quint64 token, const QImage& image) {
 void PlayerWindow::clearHoverPreviewFrame() {
     auto* provider = static_cast<HoverPreviewImageProvider*>(hoverPreviewProvider_);
     if (provider == nullptr) {
+        hoverPreviewToken_ = 0;
         hoverPreviewImage_ = QImage();
         return;
     }
     QMutexLocker locker(&provider->mutex);
+    hoverPreviewToken_ = 0;
     hoverPreviewImage_ = QImage();
     provider->clearLocked();
 }
 
 QUrl PlayerWindow::hoverPreviewSource() const {
-    if (hoverPreviewToken_ == 0 || hoverPreviewImage_.isNull()) return QUrl();
+    auto* provider = static_cast<HoverPreviewImageProvider*>(hoverPreviewProvider_);
+    quint64 token = 0;
+    bool hasImage = false;
+    if (provider != nullptr) {
+        QMutexLocker locker(&provider->mutex);
+        token = hoverPreviewToken_;
+        hasImage = !hoverPreviewImage_.isNull();
+    } else {
+        token = hoverPreviewToken_;
+        hasImage = !hoverPreviewImage_.isNull();
+    }
+    if (token == 0 || !hasImage) return QUrl();
     return QUrl(QStringLiteral("image://%1/%2")
                     .arg(QLatin1String(kHoverPreviewProviderId))
-                    .arg(hoverPreviewToken_));
+                    .arg(token));
 }
 
 void PlayerWindow::acceptClose() {
