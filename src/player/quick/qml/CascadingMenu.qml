@@ -48,7 +48,7 @@ PlayerPanel {
     function takeFocus() {
         if (!visible) return;
         body.forceActiveFocus();
-        if (body.count > 0 && body.currentIndex < 0) jumpCursor(true);
+        if (body.count > 0 && !rowIsSelectable(body.currentIndex)) jumpCursor(true);
     }
 
     function rowSceneRect(row) {
@@ -163,7 +163,12 @@ PlayerPanel {
         }
     }
 
-    onVisibleChanged: if (!visible) hoverIntentTimer.stop()
+    onVisibleChanged: {
+        if (!visible) {
+            hoverIntentTimer.stop();
+            hoverIntentTimer.pendingRow = -1;
+        }
+    }
 
     Item {
         id: bodyHost
