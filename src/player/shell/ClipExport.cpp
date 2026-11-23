@@ -382,7 +382,7 @@ void ClipExport::start(const ClipExportRequest& request) {
                     if (end == nullptr || end->reason != MPV_END_FILE_REASON_EOF || end->error < 0) {
                         if (end != nullptr && end->error < 0)
                             failure = errorText("mpv encoding failed", end->error, api);
-                        else
+                        else if (failure.isEmpty())
                             failure = QObject::tr("mpv ended the encode before normal end-of-file (reason %1).")
                                 .arg(end ? int(end->reason) : -1);
                     }
@@ -399,6 +399,7 @@ void ClipExport::start(const ClipExportRequest& request) {
                         failure = QObject::tr("The selected audio track could not be loaded.");
                         const char* stop[] = {"stop", nullptr};
                         api.functions().command(handle->raw(), stop);
+                        break;
                     }
                     publish(slot, 0.1, false, false, outputPath, {});
                 }
