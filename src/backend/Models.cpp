@@ -32,12 +32,22 @@ QVariant optionalVariant(const QJsonValue& value) {
 }
 
 // P1-07: an external-link id is a single path segment. Anything containing
-// a separator, a query/fragment marker or a parent traversal is rejected
-// outright instead of being encoded into a link.
+// a separator, a percent sign, whitespace/control characters, a query/fragment
+// marker or a parent traversal is rejected outright instead of being encoded
+// into a link.
 bool externalLinkIdIsSafe(const QString& id) {
-    return !id.isEmpty() && !id.contains(QLatin1Char('/')) &&
-           !id.contains(QLatin1Char('?')) && !id.contains(QLatin1Char('#')) &&
-           !id.contains(QStringLiteral(".."));
+    if (id.isEmpty() || id.contains(QLatin1Char('/')) ||
+        id.contains(QLatin1Char('\\')) || id.contains(QLatin1Char('%')) ||
+        id.contains(QLatin1Char('?')) || id.contains(QLatin1Char('#')) ||
+        id.contains(QStringLiteral(".."))) {
+        return false;
+    }
+    for (const QChar ch : id) {
+        if (ch.isSpace() || ch.category() == QChar::Other_Control) {
+            return false;
+        }
+    }
+    return true;
 }
 
 }  // namespace
