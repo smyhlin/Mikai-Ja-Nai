@@ -106,9 +106,11 @@ UpdateCheckResult parseLatestReleaseResponse(const QByteArray& response, const Q
             obj.value(QStringLiteral("browser_download_url")).toString().trimmed(),
             QUrl::StrictMode);
         const qint64 size = obj.value(QStringLiteral("size")).toVariant().toLongLong();
-        if (name.isEmpty() || !downloadUrl.isValid() ||
+        if (name.isEmpty() || size <= 0 || !downloadUrl.isValid() ||
             downloadUrl.scheme() != QLatin1String("https") ||
-            downloadUrl.host() != QLatin1String("github.com") ||
+            downloadUrl.host() != QLatin1String("github.com") || downloadUrl.port() != -1 ||
+            !downloadUrl.userName().isEmpty() || !downloadUrl.password().isEmpty() ||
+            !downloadUrl.query().isEmpty() || !downloadUrl.fragment().isEmpty() ||
             !downloadUrl.path().startsWith(QStringLiteral("/smyhlin/Mikai-Ja-Nai/releases/download/"))) {
             continue;
         }
@@ -174,9 +176,11 @@ UpdateCheckResult parseNightlyReleaseResponse(const QByteArray& response,
             obj.value(QStringLiteral("browser_download_url")).toString().trimmed(),
             QUrl::StrictMode);
         const qint64 size = obj.value(QStringLiteral("size")).toVariant().toLongLong();
-        if (name.isEmpty() || !downloadUrl.isValid() ||
+        if (name.isEmpty() || size <= 0 || !downloadUrl.isValid() ||
             downloadUrl.scheme() != QLatin1String("https") ||
-            downloadUrl.host() != QLatin1String("github.com") ||
+            downloadUrl.host() != QLatin1String("github.com") || downloadUrl.port() != -1 ||
+            !downloadUrl.userName().isEmpty() || !downloadUrl.password().isEmpty() ||
+            !downloadUrl.query().isEmpty() || !downloadUrl.fragment().isEmpty() ||
             !downloadUrl.path().startsWith(QStringLiteral("/smyhlin/Mikai-Ja-Nai/releases/download/nightly/"))) {
             continue;
         }
@@ -489,15 +493,24 @@ bool launchUpdateInstaller(const StagedUpdate& staged, qint64 currentPid, QStrin
             "param([int]$PidToWait, [string]$ZipPath, [string]$TargetDir, [string]$ExePath)\n"
             "try { Wait-Process -Id $PidToWait -Timeout 30 -ErrorAction SilentlyContinue } catch {}\n"
             "$backup = \"$TargetDir.bak\"\n"
-            "if (Test-Path $backup) { Remove-Item -Recurse -Force $backup -ErrorAction SilentlyContinue }\n"
+            "if (Test-Path -LiteralPath $backup) { Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue }\n"
             "try {\n"
-            "  Expand-Archive -Path $ZipPath -DestinationPath $TargetDir -Force\n"
+            "  Expand-Archive -LiteralPath $ZipPath -DestinationPath $TargetDir -Force\n"
             "  Start-Process -FilePath $ExePath\n"
             "} catch {\n"
             "  exit 1\n"
             "}\n");
-        script.write(ps.toUtf8());
+        const QByteArray psBytes = ps.toUtf8();
+        if (script.write(psBytes) != psBytes.size() || !script.flush()) {
+            script.close();
+            return fail(QCoreApplication::translate(
+                "UpdateCheck", "Could not write portable updater script."));
+        }
         script.close();
+        if (script.error() != QFile::NoError) {
+            return fail(QCoreApplication::translate(
+                "UpdateCheck", "Could not write portable updater script."));
+        }
         QProcess proc;
         proc.setProgram(QStringLiteral("powershell.exe"));
         proc.setArguments({QStringLiteral("-NoProfile"), QStringLiteral("-ExecutionPolicy"),
@@ -539,8 +552,16 @@ bool launchUpdateInstaller(const StagedUpdate& staged, qint64 currentPid, QStrin
             "  mv -f \"$BACKUP\" \"$TARGET\" || true\n"
             "  exit 1\n"
             "fi\n";
-        script.write(sh);
+        if (script.write(sh) != sh.size() || !script.flush()) {
+            script.close();
+            return fail(QCoreApplication::translate(
+                "UpdateCheck", "Could not write AppImage updater script."));
+        }
         script.close();
+        if (script.error() != QFile::NoError) {
+            return fail(QCoreApplication::translate(
+                "UpdateCheck", "Could not write AppImage updater script."));
+        }
         QFile::setPermissions(scriptPath, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
         if (!startDetachedHostTool(QStringLiteral("/bin/sh"),
                                    {scriptPath, QString::number(currentPid), staged.stagedPath, targetAppImage})) {
@@ -569,8 +590,16 @@ bool launchUpdateInstaller(const StagedUpdate& staged, qint64 currentPid, QStrin
             "cp -a \"$TMP_EXTRACT\"/. \"$TARGET_DIR\"/\n"
             "rm -rf \"$TMP_EXTRACT\"\n"
             "exec \"$EXE_PATH\" &\n";
-        script.write(sh);
+        if (script.write(sh) != sh.size() || !script.flush()) {
+            script.close();
+            return fail(QCoreApplication::translate(
+                "UpdateCheck", "Could not write tarball updater script."));
+        }
         script.close();
+        if (script.error() != QFile::NoError) {
+            return fail(QCoreApplication::translate(
+                "UpdateCheck", "Could not write tarball updater script."));
+        }
         QFile::setPermissions(scriptPath, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
         if (!startDetachedHostTool(QStringLiteral("/bin/sh"),
                                    {scriptPath, QString::number(currentPid), staged.stagedPath, installDir, exePath})) {
@@ -601,7 +630,7 @@ QStringList pruneStagedUpdates(qint64 maxAgeSeconds) {
     for (const QFileInfo& info : entries) {
         if (info.lastModified().toUTC() > cutoff) continue;
         const QString path = info.absoluteFilePath();
-        const bool ok = info.isDir() ? QDir(path).removeRecursively() : QFile::remove(path);
+        const bool ok = (info.isDir() && !info.isSymLink()) ? QDir(path).removeRecursively() : QFile::remove(path);
         if (ok) removed.append(info.fileName());
     }
     return removed;
