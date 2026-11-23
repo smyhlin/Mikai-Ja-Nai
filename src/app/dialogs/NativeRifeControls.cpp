@@ -200,7 +200,7 @@ NativeRifeControls::NativeRifeControls(QWidget* parent) : QWidget(parent) {
 
     // The closed caption is bounded, so the tooltip carries the whole choice: a
     // long order or shape stays readable without widening the row.
-    for (QComboBox* combo : {order_, mode_}) {
+    for (QComboBox* combo : {version_, order_, mode_}) {
         combo->setToolTip(combo->currentText());
         connect(combo, &QComboBox::currentIndexChanged, this,
                 [combo](int) { combo->setToolTip(combo->currentText()); });
@@ -288,11 +288,13 @@ NativeRifeControls::NativeRifeControls(QWidget* parent) : QWidget(parent) {
         updateCapabilityNote();
     });
     connect(variant_, &QComboBox::currentIndexChanged, this, [this](int) {
+        variant_->setToolTip(variant_->currentText());
         updateEnsembleChoice();
         updateCapabilityNote();
     });
     connect(ensemble_, &QCheckBox::toggled, this, [this](bool) { updateCapabilityNote(); });
 
+    updateEnsembleChoice();
     updateCombineControls();
     updateCapabilityNote();
 }
@@ -332,7 +334,9 @@ void NativeRifeControls::retranslateUi() {
         const auto version = static_cast<native::RifeVersion>(version_->itemData(i).toInt());
         version_->setItemText(i, QStringLiteral("v%1").arg(native::stableName(version)));
     }
+    version_->setToolTip(version_->currentText());
     variant_->setAccessibleName(tr("RIFE variant"));
+    variant_->setToolTip(variant_->currentText());
 
     const QString ensembleExplanation =
         tr("Applies ensembling on top of the chosen variant; it is not a third variant.");
@@ -636,18 +640,32 @@ void NativeRifeControls::applyStoredRecipe(const native::Recipe& recipe) {
     QSignalBlocker blockMode(mode_);
     QSignalBlocker blockBase(base_);
 
-    version_->setCurrentIndex(version_->findData(static_cast<int>(stage.version)));
+    if (const int versionIndex = version_->findData(static_cast<int>(stage.version));
+        versionIndex >= 0) {
+        version_->setCurrentIndex(versionIndex);
+    }
+    version_->setToolTip(version_->currentText());
     updateVariantChoices();
-    variant_->setCurrentIndex(variant_->findData(static_cast<int>(stage.variant)));
+    if (const int variantIndex = variant_->findData(static_cast<int>(stage.variant));
+        variantIndex >= 0) {
+        variant_->setCurrentIndex(variantIndex);
+    }
+    variant_->setToolTip(variant_->currentText());
     ensemble_->setChecked(stage.ensemble);
     updateEnsembleChoice();
     factorNum_->setValue(stage.factor.num);
     factorDen_->setValue(stage.factor.den);
     threshold_->setText(thresholdText(stage.sceneThreshold, &thresholdLocale_));
-    order_->setCurrentIndex(order_->findData(static_cast<int>(stage.order)));
+    if (const int orderIndex = order_->findData(static_cast<int>(stage.order));
+        orderIndex >= 0) {
+        order_->setCurrentIndex(orderIndex);
+    }
+    order_->setToolTip(order_->currentText());
 
     if (recipe.shape() == native::RecipeShape::Combined && !recipe.spatial.isEmpty()) {
-        mode_->setCurrentIndex(mode_->findData(1));
+        if (const int combineIndex = mode_->findData(1); combineIndex >= 0) {
+            mode_->setCurrentIndex(combineIndex);
+        }
         // The combined document does not record the base's id, so the base is the
         // stored spatial recipe whose chain is exactly this one - matched by the
         // chain, never by an index that a re-read could repoint.
@@ -662,10 +680,15 @@ void NativeRifeControls::applyStoredRecipe(const native::Recipe& recipe) {
                 break;
             }
         }
-        base_->setCurrentIndex(match >= 0 ? match : 0);
+        if (base_->count() > 0) {
+            base_->setCurrentIndex(match >= 0 ? match : 0);
+        }
     } else {
-        mode_->setCurrentIndex(mode_->findData(0));
+        if (const int rifeOnlyIndex = mode_->findData(0); rifeOnlyIndex >= 0) {
+            mode_->setCurrentIndex(rifeOnlyIndex);
+        }
     }
+    mode_->setToolTip(mode_->currentText());
     updateCombineControls();
     // The variant just changed under blocked signals, so the availability note
     // is refreshed explicitly: it must name the loaded variant's own store fact.
