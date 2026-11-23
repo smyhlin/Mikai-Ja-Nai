@@ -175,6 +175,7 @@ void PreparationWindow::hideEvent(QHideEvent* event) {
     if (finishTimer_ != nullptr) finishTimer_->stop();
     if (elapsedTimer_ != nullptr) elapsedTimer_->stop();
     stopStackingTimer();
+    yieldedForModal_ = false;
     const bool hadRun = run_ != Run::Idle;
     QQuickView::hideEvent(event);
     setRun(Run::Idle);
@@ -264,6 +265,7 @@ void PreparationWindow::maintainTopmost() {
         stackingFailureReported_ = true;
     }
 #else
+    yieldedForModal_ = false;
     // QWindow::raise() is non-activating on X11; the timer is not created on
     // Wayland, where the compositor alone controls global stacking.
     raise();
