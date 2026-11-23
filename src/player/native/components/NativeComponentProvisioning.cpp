@@ -35,7 +35,8 @@ QMutex g_rifeRunMutex;
 bool g_rifeRunning = false;
 
 bool validateRifeArchiveListing(const QString& sevenZip, const QString& archive,
-                                const QVector<RifeModelPin>& pins, QString* reason) {
+                                const QVector<RifeModelPin>& pins,
+                                const std::function<bool()>& cancelled, QString* reason) {
     QProcess process;
     process.setProcessEnvironment(mikai::backend::hostToolEnvironment());
     process.start(sevenZip, {QStringLiteral("l"), QStringLiteral("-slt"), archive});
@@ -44,16 +45,17 @@ bool validateRifeArchiveListing(const QString& sevenZip, const QString& archive,
         return false;
     }
     // X-H6: was waitForFinished(-1) — unbounded. 100 ms slices, 60 s cap,
-    // honouring the surrounding cancellation scope; the child is killed
-    // on cancel or timeout.
+    // honouring both the surrounding cancellation scope and the caller's
+    // cancelled predicate; the child is killed on cancel or timeout.
     {
         QElapsedTimer deadline;
         deadline.start();
-        bool cancelled = false;
+        bool wasCancelled = false;
         bool timedOut = false;
         while (!process.waitForFinished(100)) {
-            if (mikai::backend::WorkCancellationScope::cancellationRequested()) {
-                cancelled = true;
+            if (mikai::backend::WorkCancellationScope::cancellationRequested() ||
+                (cancelled && cancelled())) {
+                wasCancelled = true;
                 break;
             }
             if (deadline.elapsed() >= 60000) {
@@ -62,11 +64,11 @@ bool validateRifeArchiveListing(const QString& sevenZip, const QString& archive,
             }
             if (process.state() == QProcess::NotRunning) break;
         }
-        if (cancelled || timedOut) {
+        if (wasCancelled || timedOut) {
             process.kill();
             process.waitForFinished();
-            *reason = cancelled ? QStringLiteral("the RIFE archive listing was cancelled")
-                                : QStringLiteral("the RIFE archive listing timed out after 60 seconds");
+            *reason = wasCancelled ? QStringLiteral("the RIFE archive listing was cancelled")
+                                   : QStringLiteral("the RIFE archive listing timed out after 60 seconds");
             return false;
         }
     }
@@ -267,7 +269,11 @@ ComponentProvisionResult provisionTensorRtComponents(
         QDir().mkpath(extractDir);
         QString extractReason;
         if (!mikai::backend::extractArchive(sevenZip, archive, extractDir, &extractReason)) {
-            return fail(QStringLiteral("native.components.extract"), extractReason);
+            const bool wasCancelled = mikai::backend::WorkCancellationScope::cancellationRequested() ||
+                                      (cancelled && cancelled());
+            return fail(wasCancelled ? QStringLiteral("native.components.cancelled")
+                                     : QStringLiteral("native.components.extract"),
+                        extractReason);
         }
 
         if (cancelled && cancelled()) {
@@ -368,8 +374,12 @@ ComponentProvisionResult provisionRifeArchive(
 
     if (progress) progress({pack.name, receivedBytes, totalBytes, ComponentProvisionStage::Extracting});
     QString listingReason;
-    if (!validateRifeArchiveListing(sevenZip, archive, pins, &listingReason)) {
-        return fail(QStringLiteral("native.components.extract"), listingReason);
+    if (!validateRifeArchiveListing(sevenZip, archive, pins, cancelled, &listingReason)) {
+        const bool wasCancelled = mikai::backend::WorkCancellationScope::cancellationRequested() ||
+                                  (cancelled && cancelled());
+        return fail(wasCancelled ? QStringLiteral("native.components.cancelled")
+                                 : QStringLiteral("native.components.extract"),
+                    listingReason);
     }
 
     const QString extraction = scratch.filePath(QStringLiteral("extract"));
@@ -379,7 +389,11 @@ ComponentProvisionResult provisionRifeArchive(
     }
     QString extractReason;
     if (!mikai::backend::extractArchive(sevenZip, archive, extraction, &extractReason)) {
-        return fail(QStringLiteral("native.components.extract"), extractReason);
+        const bool wasCancelled = mikai::backend::WorkCancellationScope::cancellationRequested() ||
+                                  (cancelled && cancelled());
+        return fail(wasCancelled ? QStringLiteral("native.components.cancelled")
+                                 : QStringLiteral("native.components.extract"),
+                    extractReason);
     }
     if (cancelled && cancelled()) {
         return fail(QStringLiteral("native.components.cancelled"),
