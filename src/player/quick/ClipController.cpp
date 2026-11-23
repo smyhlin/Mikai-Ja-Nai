@@ -91,7 +91,10 @@ void ClipThumbnailModel::setImage(int row, const QUrl& source) {
     rows_[row].source = source;
     emit dataChanged(index(row), index(row), {ImageSourceRole});
 }
-double ClipThumbnailModel::timeAt(int row) const { return rows_.at(row).time; }
+double ClipThumbnailModel::timeAt(int row) const {
+    if (row < 0 || row >= rows_.size()) return 0.0;
+    return rows_.at(row).time;
+}
 
 ClipController::ClipController(VideoSession* source, QString caption, QObject* parent,
                                const shell::FramePreviewService* seedPreview)
@@ -562,7 +565,16 @@ void ClipController::requestExport() {
     exportState_ = ExportState::Choosing;
     QString name = QFileInfo(QUrl::fromUserInput(sourceUrl_).path()).completeBaseName();
     if (name.isEmpty()) name = tr("clip");
-    const QString directory = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    QString directory = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    if (directory.isEmpty() || !QDir(directory).exists()) {
+        directory = QStandardPaths::writableLocation(QStandardPaths::MoviesLocation);
+    }
+    if (directory.isEmpty() || !QDir(directory).exists()) {
+        directory = QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
+    }
+    if (directory.isEmpty() || !QDir(directory).exists()) {
+        directory = QDir::homePath();
+    }
     emit stateChanged();
     emit outputRequested(QUrl::fromLocalFile(QDir(directory).filePath(name + QStringLiteral(".mp4"))));
 }
@@ -629,7 +641,10 @@ void ClipController::revealOutput() {
         setStatus(QT_TR_NOOP("Could not open the containing folder."));
 }
 void ClipController::copyOutputPath() {
-    if (!completedPath_.isEmpty()) QGuiApplication::clipboard()->setText(completedPath_);
+    if (completedPath_.isEmpty()) return;
+    if (QClipboard* clipboard = QGuiApplication::clipboard()) {
+        clipboard->setText(completedPath_);
+    }
 }
 void ClipController::invalidate(const char* message) {
     if (invalidated_) return;
