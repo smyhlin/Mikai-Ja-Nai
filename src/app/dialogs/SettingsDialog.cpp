@@ -541,6 +541,8 @@ void SettingsDialog::save() {
                                 : nativeReason);
             return;
         }
+        nativePreferences_.backend = chosenBackend;
+        nativePreferences_.recipeId = chosenRecipe;
     }
 
     const auto runtimeChoice =
@@ -647,6 +649,12 @@ void SettingsDialog::save() {
                 settings.setValue(QString::fromLatin1(kUpdateChannel), selectedChannel);
                 switchedChannel = selectedChannel;
                 emit updateChannelChanged(switchedChannel);
+            } else {
+                const int previousIndex = updateChannel_->findData(previousChannel);
+                if (previousIndex >= 0) {
+                    QSignalBlocker blocker(updateChannel_);
+                    updateChannel_->setCurrentIndex(previousIndex);
+                }
             }
         }
     }
