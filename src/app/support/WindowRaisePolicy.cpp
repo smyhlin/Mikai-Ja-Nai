@@ -236,9 +236,10 @@ void WindowRaisePolicy::install() {
     // Idempotent: one live policy per process. Installing a second instance
     // would run the same Show twice per window, which is a wasted request per
     // window rather than a different result, but the promise is one instance and
-    // a test that installs twice proves it.
-    static WindowRaisePolicy* policy = nullptr;
-    if (policy == nullptr) {
+    // a test that installs twice proves it. QPointer clears automatically if
+    // the owning QCoreApplication is torn down and recreated.
+    static QPointer<WindowRaisePolicy> policy;
+    if (policy.isNull()) {
         policy = new WindowRaisePolicy(application);
     }
     application->removeEventFilter(policy);
