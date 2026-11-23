@@ -21,6 +21,8 @@
 #include <QTimer>
 #include <QVBoxLayout>
 
+#include <algorithm>
+
 #ifdef Q_OS_WIN
 #include <QtCore/qt_windows.h>
 #endif
@@ -117,6 +119,7 @@ QString progressQss() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 void clearChoiceMenu(QMenu* menu) {
+    if (menu == nullptr) return;
     // The submenus are widgets owned by this menu: clear() drops the actions,
     // so they are deleted explicitly or a rebuild/shrink would leak a tree.
     QVector<QMenu*> stale;
@@ -139,6 +142,7 @@ void fillChoiceMenu(QMenu* menu, const QVector<ChoiceEntry>& entries, const QStr
         leaves->clear();
         leaves->reserve(entries.size());
     }
+    if (menu == nullptr) return;
     clearChoiceMenu(menu);
     const QString menuSheet = choiceMenuQss();
     menu->setStyleSheet(menuSheet);
@@ -391,8 +395,10 @@ void MenuPopup::popupNear(const QPoint& anchorGlobal, bool preferAbove) {
     if (preferAbove && above < bounds.top()) {
         y = anchor.y() + 8;
     }
-    x = qBound(bounds.left(), x, bounds.right() - width() + 1);
-    y = qBound(bounds.top(), y, bounds.bottom() - height() + 1);
+    const int maxX = std::max(bounds.left(), bounds.right() - width() + 1);
+    const int maxY = std::max(bounds.top(), bounds.bottom() - height() + 1);
+    x = qBound(bounds.left(), x, maxX);
+    y = qBound(bounds.top(), y, maxY);
     move(x, y);
     raise();
     setFocus(Qt::OtherFocusReason);
@@ -410,8 +416,10 @@ void MenuPopup::popupBeside(const QRect& anchor, bool preferLeft, int gap) {
     // The preferred side is taken as given: a tree that flipped sides per level
     // would stack its own panels on top of each other.
     const int beside = preferLeft ? anchor.left() - gap - width() : anchor.right() + 1 + gap;
-    const int x = qBound(bounds.left(), beside, bounds.right() - width() + 1);
-    const int y = qBound(bounds.top(), anchor.top(), bounds.bottom() - height() + 1);
+    const int maxX = std::max(bounds.left(), bounds.right() - width() + 1);
+    const int maxY = std::max(bounds.top(), bounds.bottom() - height() + 1);
+    const int x = qBound(bounds.left(), beside, maxX);
+    const int y = qBound(bounds.top(), anchor.top(), maxY);
     move(x, y);
     raise();
     setFocus(Qt::OtherFocusReason);
