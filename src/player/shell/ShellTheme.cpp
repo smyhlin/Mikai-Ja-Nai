@@ -49,6 +49,7 @@ AccentNotifier& accentNotifier() {
 
 QColor compareSideB(const QColor& accentColor) {
     const int hue = accentColor.hue();
+    if (hue < 0) return QColor(245, 158, 11);  // #f59e0b
     const int distance = qAbs(((hue - kCompareAmberHue) % 360 + 540) % 360 - 180);
     if (distance > kCompareHueWindow) return QColor(245, 158, 11);  // #f59e0b
     // Amber would read as the accent at a glance, so side B moves to the
@@ -92,7 +93,7 @@ CornerRadiusNotifier& cornerRadiusNotifier() {
 double cornerRadius() { return cornerRadiusStorage(); }
 
 void setCornerRadius(double radius) {
-    if (radius < 0.0) return;
+    if (!std::isfinite(radius) || radius < 0.0) return;
     const double previous = cornerRadiusStorage();
     if (std::abs(previous - radius) < 0.001) return;
     cornerRadiusStorage() = radius;
@@ -417,16 +418,17 @@ void IconPainter::keyboard(QPainter& p, qreal x, qreal y, qreal s, const QColor&
 }
 
 void IconPainter::hdr(QPainter& p, qreal x, qreal y, qreal s, const QColor& c) {
-    // HDR badge: rounded rect with "HDR" text
+    // HDR badge: rounded rect with "HDR" text. fill() already scales the
+    // painter to the 24-unit grid, so font pixelSize stays in 24-unit space.
     const QColor color = resolve(c, w90());
     fill(p, x, y, s);
     p.setPen(Qt::NoPen);
     p.setBrush(QBrush(color));
     p.drawRoundedRect(QRectF(2, 4, 20, 16), 3, 3);
-    p.setPen(glyphPen(resolve(c, QColor(0, 0, 0)), 1.4 * 24 / s));
+    p.setPen(glyphPen(inkOn(color), 1.4 * 24 / s));
     QFont font = p.font();
     font.setBold(true);
-    font.setPixelSize(static_cast<int>(10 * s / 24));
+    font.setPixelSize(10);
     p.setFont(font);
     p.drawText(QRectF(2, 4, 20, 16), Qt::AlignCenter, QStringLiteral("HDR"));
     p.restore();
@@ -442,7 +444,7 @@ void IconPainter::dolbyVision(QPainter& p, qreal x, qreal y, qreal s, const QCol
     p.setPen(glyphPen(white(255), 1.4 * 24 / s));
     QFont font = p.font();
     font.setBold(true);
-    font.setPixelSize(static_cast<int>(11 * s / 24));
+    font.setPixelSize(11);
     p.setFont(font);
     p.drawText(QRectF(2, 4, 20, 16), Qt::AlignCenter, QStringLiteral("DV"));
     p.restore();
@@ -460,7 +462,7 @@ void IconPainter::dolbyAtmos(QPainter& p, qreal x, qreal y, qreal s, const QColo
     p.setPen(glyphPen(white(255), 1.6 * 24 / s));
     QFont font = p.font();
     font.setBold(true);
-    font.setPixelSize(static_cast<int>(12 * s / 24));
+    font.setPixelSize(12);
     p.setFont(font);
     p.drawText(QRectF(3, 4, 16, 16), Qt::AlignCenter, QStringLiteral("A"));
     p.restore();
@@ -474,7 +476,7 @@ void IconPainter::codecH264(QPainter& p, qreal x, qreal y, qreal s, const QColor
     p.setBrush(Qt::NoBrush);
     p.drawRoundedRect(QRectF(2, 5, 20, 14), 2.5, 2.5);
     QFont font = p.font();
-    font.setPixelSize(static_cast<int>(8 * s / 24));
+    font.setPixelSize(8);
     p.setFont(font);
     p.setPen(QPen(color, 1.2 * 24 / s));
     p.drawText(QRectF(2, 5, 20, 14), Qt::AlignCenter, QStringLiteral("H.264"));
@@ -489,7 +491,7 @@ void IconPainter::codecH265(QPainter& p, qreal x, qreal y, qreal s, const QColor
     p.setBrush(Qt::NoBrush);
     p.drawRoundedRect(QRectF(2, 5, 20, 14), 2.5, 2.5);
     QFont font = p.font();
-    font.setPixelSize(static_cast<int>(8 * s / 24));
+    font.setPixelSize(8);
     p.setFont(font);
     p.setPen(QPen(color, 1.2 * 24 / s));
     p.drawText(QRectF(2, 5, 20, 14), Qt::AlignCenter, QStringLiteral("HEVC"));
@@ -504,7 +506,7 @@ void IconPainter::codecAv1(QPainter& p, qreal x, qreal y, qreal s, const QColor&
     p.setBrush(Qt::NoBrush);
     p.drawRoundedRect(QRectF(2, 5, 20, 14), 2.5, 2.5);
     QFont font = p.font();
-    font.setPixelSize(static_cast<int>(9 * s / 24));
+    font.setPixelSize(9);
     p.setFont(font);
     p.setPen(QPen(color, 1.2 * 24 / s));
     p.drawText(QRectF(2, 5, 20, 14), Qt::AlignCenter, QStringLiteral("AV1"));
@@ -519,7 +521,7 @@ void IconPainter::codecVp9(QPainter& p, qreal x, qreal y, qreal s, const QColor&
     p.setBrush(Qt::NoBrush);
     p.drawRoundedRect(QRectF(2, 5, 20, 14), 2.5, 2.5);
     QFont font = p.font();
-    font.setPixelSize(static_cast<int>(9 * s / 24));
+    font.setPixelSize(9);
     p.setFont(font);
     p.setPen(QPen(color, 1.2 * 24 / s));
     p.drawText(QRectF(2, 5, 20, 14), Qt::AlignCenter, QStringLiteral("VP9"));
