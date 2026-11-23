@@ -29,8 +29,13 @@ Item {
 
     Keys.onPressed: event => {
         if (replaceDialog.visible || editor.choosingOutput) return
-        if (event.key === Qt.Key_Escape) editor.requestClose()
-        else if (event.key === Qt.Key_Space) editor.togglePlay()
+        if (event.key === Qt.Key_Escape) {
+            editor.requestClose()
+            event.accepted = true
+            return
+        }
+        if (!editor.editingEnabled) return
+        if (event.key === Qt.Key_Space) editor.togglePlay()
         else if (event.key === Qt.Key_M) editor.toggleMute()
         else if (event.key === Qt.Key_BracketLeft) editor.setStartToCurrent()
         else if (event.key === Qt.Key_BracketRight) editor.setEndToCurrent()
@@ -460,7 +465,10 @@ Item {
         nameFilters: [qsTr("MP4 video (*.mp4)")]
         defaultSuffix: "mp4"
         options: NativeDialogs.FileDialog.DontConfirmOverwrite
-        onAccepted: root.editor.acceptOutput(selectedFile)
+        onAccepted: {
+            root.editor.acceptOutput(selectedFile)
+            if (!root.editor.overwritePending) root.forceActiveFocus()
+        }
         onRejected: {
             root.editor.cancelOutput()
             root.forceActiveFocus()
