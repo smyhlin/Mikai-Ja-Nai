@@ -132,11 +132,13 @@ void CompareExportDialog::acceptExport() {
                              tr("The selected output folder is unavailable or not writable."));
         return;
     }
+    const QString base = QFileInfo(name).completeBaseName().trimmed();
     if (name.isEmpty() || name == QStringLiteral(".") || name == QStringLiteral("..") ||
         name.contains(QLatin1Char('/')) || name.contains(QLatin1Char('\\')) ||
         QFileInfo(name).isAbsolute() || QFileInfo(name).fileName() != name ||
         name.contains(QChar::Null) || name.contains(QLatin1Char('\n')) ||
-        name.contains(QLatin1Char('\r'))) {
+        name.contains(QLatin1Char('\r')) || base.isEmpty() ||
+        base == QStringLiteral(".") || base == QStringLiteral("..")) {
         QMessageBox::warning(this, tr("Invalid file name"),
                              tr("Enter a file name without a folder path."));
         fileNameEdit_->setFocus();
@@ -145,7 +147,7 @@ void CompareExportDialog::acceptExport() {
     }
 
     const QString expectedSuffix = extensionFor(format());
-    const QString finalName = QFileInfo(name).completeBaseName() + QLatin1Char('.') + expectedSuffix;
+    const QString finalName = base + QLatin1Char('.') + expectedSuffix;
     const QString target = QDir(directory).filePath(finalName);
     const QFileInfo targetInfo(target);
     if (targetInfo.exists()) {
