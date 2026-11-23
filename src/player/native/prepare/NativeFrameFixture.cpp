@@ -33,18 +33,25 @@ namespace {
  * TestNativeAssets::rgbFrameComponentsArePreservedInNchwFp16Planes.
  */
 QByteArray frameToFp16Tensor(const FrameFixture& fixture) {
+  if (fixture.size.width() <= 0 || fixture.size.height() <= 0) {
+    return {};
+  }
   const qint64 planePixels =
       static_cast<qint64>(fixture.size.width()) * fixture.size.height();
   const qint64 elements = planePixels * 3;
+  if (fixture.rgb.size() < elements) {
+    return {};
+  }
   QByteArray tensor(static_cast<qsizetype>(elements) * 2, '\0');
   const auto* in = reinterpret_cast<const quint8*>(fixture.rgb.constData());
+  char* out = tensor.data();
   for (qint64 channel = 0; channel < 3; ++channel) {
     for (qint64 pixel = 0; pixel < planePixels; ++pixel) {
       const qint64 sourceIndex = pixel * 3 + channel;
       const qint64 tensorIndex = channel * planePixels + pixel;
       const quint16 half =
           builder_detail::floatToHalf(static_cast<float>(in[sourceIndex]) / 255.0f);
-      qToLittleEndian<quint16>(half, tensor.data() + tensorIndex * 2);
+      qToLittleEndian<quint16>(half, out + tensorIndex * 2);
     }
   }
   return tensor;
