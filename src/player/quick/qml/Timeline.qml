@@ -225,6 +225,10 @@ Item {
                 root.previewDismissed()
             }
         }
+        onCanceled: {
+            dragStarted = false
+            root.previewDismissed()
+        }
         onExited: {
             if (!pressed) root.previewDismissed()
         }

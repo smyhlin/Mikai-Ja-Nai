@@ -158,7 +158,10 @@ Item {
                     const angleDelta = wheel.angleDelta.y
                     const pixelDelta = wheel.pixelDelta.y
                     const steps = angleDelta !== 0 ? angleDelta / 120 : pixelDelta / 15
-                    if (steps !== 0) root.controller.adjustVolume(steps * 0.1)
+                    if (steps !== 0) {
+                        root.controller.noteUserActivity()
+                        root.controller.adjustVolume(steps * 0.1)
+                    }
                     wheel.accepted = true
                 }
             }
