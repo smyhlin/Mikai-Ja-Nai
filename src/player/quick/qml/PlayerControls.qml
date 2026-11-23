@@ -33,6 +33,8 @@ Item {
     // Hover movement wakes the chrome, but passive hover is not an idle hold:
     // a pointer resting over the dock must not prevent fullscreen auto-hide.
     readonly property bool interactionActive: timeline.dragging
+                                              || volume.interactionActive
+                                              || compactVolume.interactionActive
                                               || root.focusInside
                                               || pointerPress.pressed
 
@@ -334,6 +336,7 @@ Item {
                 VolumeControl {
                     id: compactVolume
                     controller: root.controller
+                    compact: true
                     Layout.alignment: Qt.AlignVCenter
                     Layout.preferredWidth: 104
                     Layout.minimumWidth: 96
@@ -521,6 +524,10 @@ Item {
                     Accessible.name: root.showTotalDuration
                                      ? qsTr("Total duration (click for remaining time)")
                                      : qsTr("Remaining time (click for total duration)")
+                    Accessible.onPressAction: {
+                        root.controller.noteUserActivity()
+                        root.showTotalDuration = !root.showTotalDuration
+                    }
 
                     MouseArea {
                         anchors.fill: parent
