@@ -31,7 +31,7 @@ directory the process loader searches, and the store is not on `LD_LIBRARY_PATH`
 
 `prepareAnimeJanaiPlan` records both verified shared runtime and GPU-builder folders in
 `AnimeJanaiPlan::backendLibDirs`; the player and Compare preload their `.so` files with
-`RTLD_NOW | RTLD_GLOBAL` before attachment. The v0.27.0 dispatcher also resolves its shared mapping
+`RTLD_NOW | RTLD_GLOBAL` before attachment. The v0.32.0 dispatcher also resolves its shared mapping
 and loads pack libraries by absolute path. Local flat imports retain the legacy bare-soname
 contract. `trtexec-libdir` configures the child build, not the filter's own loader.
 
@@ -51,13 +51,13 @@ stage one:
   in-process engine building, no `trtexec`/`trtexec-libdir`, `.trtrtx-<ver>.gpu-<gpu>.rtxengine` and
   `.jitcache` caches, and only the five RTX builder flags — cannot be exercised here.
 - On Windows, explicit installation stages only the dispatcher, backend-only RTX DLL and mapping
-  under `components/aji/v0.27.0/trtrtx`. The runtime-2 RTX pack and all CUDA/NVIDIA notices remain
+  under `components/aji/v0.32.0/trtrtx`. The runtime-2 RTX pack and all CUDA/NVIDIA notices remain
   in the shared store. A shim root containing `aji_trt.dll` is refused, preventing silent fallback.
   No runtime, helper or model store is bundled in the base distribution.
 
 ## 2. The engine build must receive a shell-safe path
 
-Managed v0.27.0 plans leave `trtexec-libdir` unset. The runtime resolves `aji-runtime.json`,
+Managed v0.32.0 plans leave `trtexec-libdir` unset. The runtime resolves `aji-runtime.json`,
 selects the shared `trtexec` and quotes a combined runtime/builder-resource `LD_LIBRARY_PATH`.
 Paths containing spaces therefore work without a mirror. Classic TensorRT requires SM 7.5+.
 
@@ -216,8 +216,8 @@ while the same run's model effects measure 1.17-1.51 levels.
 
 ## 7. Version Upgrade Checklist & Multi-Backend Store Caveats
 
-The current cohort is package **3.11.0**, inference **v0.27.0 / ABI 9**, runtime index
-**runtime-2** and store manager **v0.2.1**. Their pins and evidence boundaries are recorded in
+The current cohort is package **3.12.5**, inference **v0.32.0 / ABI 9**, runtime index
+**runtime-2** and store manager **v0.3.0**. Their pins and evidence boundaries are recorded in
 [`animejanai-release.json`](../native/manifest/animejanai-release.json).
 
 ### 7.1 Backend Separation & Store Layout

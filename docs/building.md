@@ -133,11 +133,11 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_PREFIX_PATH=/path/to/Qt/6.12+/gcc_64 \
   -DCMAKE_CXX_COMPILER=/path/to/Qt/6.12+/gcc_64/bin/g++ \
   -DMIKAI_LINUX_BUNDLE_MPV=ON \
-  -DMIKAI_LINUX_MPV_ARCHIVE=/path/to/mpv-linux-x64-2026-11-11-5bbd4c1-tls.tar.zst
+  -DMIKAI_LINUX_MPV_ARCHIVE=/path/to/mpv-linux-x64-2026-11-15-41868e1-tls.tar.zst
 cmake --build build --parallel 2 --target mikai
 ```
 
-The pinned Linux runtime is `mpv-linux-x64-2026-11-11-5bbd4c1-tls.tar.zst`, 42,823,270 bytes, SHA-256 prefix `84cd7729076c`; full digest: `../packaging/provenance/linux-runtime.json`. Its mpv source is `5bbd4c16181f30b729cdff9b9a81725cc8efa38d`; the live runtime reports `v0.42.0-dev-g5bbd4c161`.
+The pinned Linux runtime is `mpv-linux-x64-2026-11-15-41868e1-tls.tar.zst`, 42,564,982 bytes, SHA-256 prefix `acfed9f617df`; full digest: `../packaging/provenance/linux-runtime.json`. Its mpv source is `41868e1757bea768b07b0e020aa11b9654772c22`; the live runtime reports `v0.42.0-dev-g41868e175`.
 
 - It is produced by `packaging/mpv/build-tls-archive.sh` from the archive published at that commit: the published archive was configured without an FFmpeg TLS backend, so every https URL failed with "No protocol handler found".
 - The script rebuilds FFmpeg at the same tag with the same flags plus `--enable-openssl`, replaces that family inside the archive and adds OpenSSL 3.0 from the Ubuntu 22.04 baseline.
