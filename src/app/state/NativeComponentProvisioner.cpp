@@ -32,20 +32,29 @@ QString translated(const char* message) {
     return QCoreApplication::translate("NativeComponentProvisioner", message);
 }
 
-/// The one provisioner the current run delivers for, or null once its owner
-/// has gone away. One run per process, so this is a class-wide slot rather
-/// than per-instance state: the delivered bodies resolve their owner through
+struct ActiveRun {
+    QPointer<NativeComponentProvisioner> owner;
+    quint64 id = 0;
+};
+
+/// The one provisioner and run ID currently in flight, or empty once settled or
+/// its owner has gone away. One run per process, so this is a class-wide slot
+/// rather than per-instance state: delivered bodies resolve their owner through
 /// it on the GUI thread. A QPointer — a weak, auto-nulling observer that never
-/// keeps the provisioner alive — so destroying the owner nulls the slot even
-/// if the destructor's own clear never runs. Function-local statics, like
-/// Runner's runnerRegistryMutex()/runnerRegistry().
-QPointer<NativeComponentProvisioner>& currentRunSlot() {
-    static QPointer<NativeComponentProvisioner> slot;
+/// keeps the provisioner alive — so destroying the owner nulls the slot even if
+/// the destructor's own clear never runs.
+ActiveRun& activeRun() {
+    static ActiveRun slot;
     return slot;
 }
 
-/// Guards currentRunSlot() (and the running_ check in the destructor): the
-/// slot is claimed, read and cleared only under this lock.
+quint64& nextRunId() {
+    static quint64 counter = 0;
+    return counter;
+}
+
+/// Guards activeRun() and nextRunId() (and the running_ check in the
+/// destructor): the slot is claimed, read and cleared only under this lock.
 QMutex& currentRunSlotMutex() {
     static QMutex mutex;
     return mutex;
@@ -68,36 +77,42 @@ QStringList declaredFilesForDir(const native::Bundle& bundle, const QString& dir
 }  // namespace
 
 NativeComponentProvisioner::NativeComponentProvisioner(Runner& runner, QObject* parent)
-    : QObject(parent), runner_(runner) {
-    // Claim the slot only if it is empty: a second provisioner never takes
-    // over a run that is already in flight.
+    : QObject(parent), runner_(runner) {}
+
+bool NativeComponentProvisioner::hasActiveRun() {
     const QMutexLocker lock(&currentRunSlotMutex());
-    if (currentRunSlot().isNull()) {
-        currentRunSlot() = this;
-    }
+    return !activeRun().owner.isNull() && activeRun().id != 0;
 }
 
-NativeComponentProvisioner* NativeComponentProvisioner::currentRun() {
+NativeComponentProvisioner* NativeComponentProvisioner::currentRun(quint64 runId) {
     // Only ever called from a body the Runner's dispatcher delivered, which is
     // on the GUI thread, in the one moment the owner is known to be readable.
     const QMutexLocker lock(&currentRunSlotMutex());
-    return currentRunSlot().data();
+    if (runId == 0 || activeRun().id != runId || activeRun().owner.isNull()) {
+        return nullptr;
+    }
+    return activeRun().owner.data();
 }
 
-void NativeComponentProvisioner::runFinished(NativeComponentProvisioner* finished) {
-    // One settled run frees the slot so the same owner can run again — but
-    // only if the slot still points at the run that settled. A second run
+void NativeComponentProvisioner::runFinished(NativeComponentProvisioner* finished, quint64 runId) {
+    // One settled run frees the slot so the same or another owner can run again
+    // — but only if the slot still points at the run that settled. A second run
     // that re-claimed the slot must not have it yanked from under it, or its
     // completion would find no owner and its running_ would stay true forever.
     // GUI thread only: every delivery arrives through the Runner's dispatcher.
     const QMutexLocker lock(&currentRunSlotMutex());
-    if (currentRunSlot() == finished) {
-        currentRunSlot() = nullptr;
+    if (activeRun().owner == finished && activeRun().id == runId) {
+        activeRun() = {};
     }
 }
 
-void NativeComponentProvisioner::finish(bool ok, bool cancelled, const QString& summary) {
-    runFinished(this);
+void NativeComponentProvisioner::finish(quint64 runId, bool ok, bool cancelled,
+                                        const QString& summary) {
+    if (runId == 0 || activeRunId_ != runId) {
+        return;
+    }
+    runFinished(this, runId);
+    activeRunId_ = 0;
     running_ = false;
     emit finished(ok, cancelled, summary);
 }
@@ -154,7 +169,7 @@ bool NativeComponentProvisioner::ensure(QString* reason) {
                       translated(QT_TRANSLATE_NOOP("NativeComponentProvisioner", "The components for %1 are already available.")).arg(native::computeCapabilityText(gpu)));
     }
 
-    if (running_) {
+    if (running_ || hasActiveRun()) {
         return refuse("native.components.busy", translated(QT_TRANSLATE_NOOP("NativeComponentProvisioner", "A component download is already running.")));
     }
 
@@ -179,7 +194,7 @@ bool NativeComponentProvisioner::ensureStore(QString* reason) {
         qInfo().noquote() << "native components:" << key << text;
         return false;
     };
-    if (running_) {
+    if (running_ || hasActiveRun()) {
         return refuse("native.components.busy",
                       translated(QT_TRANSLATE_NOOP("NativeComponentProvisioner", "A component download is already running.")));
     }
@@ -262,15 +277,21 @@ bool NativeComponentProvisioner::needsDownload(QString* reason) const {
 
 bool NativeComponentProvisioner::startProvisioning(const native::ComponentStore& store,
                                                    const QVector<native::ComponentPack>& packs) {
-    running_ = true;
-    cancelFlag_ = std::make_shared<std::atomic<bool>>(false);
-    // Each run re-claims the shared delivery slot: `finish()` clears it when a
-    // run settles, so without this re-claim the second run's completion would
-    // find no owner and `running_` would stay true forever.
+    // Claim the shared delivery slot atomically under the mutex and mint a
+    // unique run ID so stale callbacks from any earlier run cannot settle a
+    // newer run.
+    quint64 runId = 0;
     {
         const QMutexLocker lock(&currentRunSlotMutex());
-        currentRunSlot() = this;
+        if (!activeRun().owner.isNull() && activeRun().id != 0) {
+            return false;
+        }
+        runId = ++nextRunId();
+        activeRun() = {this, runId};
     }
+    activeRunId_ = runId;
+    running_ = true;
+    cancelFlag_ = std::make_shared<std::atomic<bool>>(false);
     const QString scratchRoot = native::nativeSubdirectory(QStringLiteral("scratch"));
     const std::shared_ptr<std::atomic<bool>> flag = cancelFlag_;
 
@@ -281,7 +302,7 @@ bool NativeComponentProvisioner::startProvisioning(const native::ComponentStore&
     // The worker captures no owner pointer at all: the binder is its only route
     // back, and every body it posts resolves the owner on the GUI thread.
     runner_.runTransfer(
-        [store, packs, scratchRoot, flag, post]() -> QVariant {
+        [store, packs, scratchRoot, flag, post, runId]() -> QVariant {
             QDir().mkpath(scratchRoot);
             QTemporaryDir scratchDir(
                 QDir(scratchRoot).filePath(QStringLiteral("components-XXXXXX")));
@@ -291,13 +312,13 @@ bool NativeComponentProvisioner::startProvisioning(const native::ComponentStore&
             }
             const native::ComponentProvisionResult outcome = native::provisionTensorRtComponents(
                 store, packs, scratchDir.path(),
-                [post](const native::ComponentProvisionProgress& update) {
+                [post, runId](const native::ComponentProvisionProgress& update) {
                     // A binder call never touches a widget and never reads the
                     // owner: it hands this body to the GUI thread, where the
                     // owner is resolved and the delivery either lands or is
                     // dropped.
-                    post([update]() {
-                        NativeComponentProvisioner* target = currentRun();
+                    post([update, runId]() {
+                        NativeComponentProvisioner* target = currentRun(runId);
                         if (target == nullptr) return;
                         emit target->progress(update);
                     });
@@ -314,19 +335,21 @@ bool NativeComponentProvisioner::startProvisioning(const native::ComponentStore&
             }
             return QVariant{};
         },
-        [](const QVariant&) {
-            NativeComponentProvisioner* target = currentRun();
+        [runId](const QVariant&) {
+            NativeComponentProvisioner* target = currentRun(runId);
             if (target == nullptr) return;
-            target->finish(true, false, translated(QT_TRANSLATE_NOOP("NativeComponentProvisioner", "Components installed.")));
+            target->finish(runId, true, false,
+                           translated(QT_TRANSLATE_NOOP("NativeComponentProvisioner",
+                                                        "Components installed.")));
         },
-        [](const backend::Failure& failure) {
+        [runId](const backend::Failure& failure) {
             // The downloader tags a cancelled run in its own message, so this
             // stays a message check rather than a code one.
             const bool cancelled =
                 failure.message.startsWith(QStringLiteral("native.components.cancelled"));
-            NativeComponentProvisioner* target = currentRun();
+            NativeComponentProvisioner* target = currentRun(runId);
             if (target == nullptr) return;
-            target->finish(false, cancelled, failure.message);
+            target->finish(runId, false, cancelled, failure.message);
         });
     return true;
 }
@@ -351,15 +374,15 @@ NativeComponentProvisioner::~NativeComponentProvisioner() {
     //
     // The cancel is gated on running_ under the slot lock: a run that already
     // settled must not have its flag set after the fact. The slot is cleared
-    // only if it still points at this provisioner, so destroying one owner
-    // never yanks the slot from a second run that re-claimed it.
+    // only if it still points at this provisioner and run ID, so destroying one
+    // owner never yanks the slot from a second run that re-claimed it.
     {
         const QMutexLocker lock(&currentRunSlotMutex());
         if (running_) {
             cancel();
         }
-        if (currentRunSlot() == this) {
-            currentRunSlot() = nullptr;
+        if (activeRun().owner == this && activeRun().id == activeRunId_) {
+            activeRun() = {};
         }
     }
 }

@@ -56,30 +56,28 @@ signals:
     void finished(bool ok, bool cancelled, const QString& summary);
 
 private:
-    /// The one provisioner the current run delivers for, or null once its owner
-    /// has gone away. GUI-thread only: it is read from the bodies the Runner's
-    /// dispatcher delivered, which is the one place the owner is known to be
-    /// readable. The slot itself is a QPointer guarded by a QMutex (defined in
-    /// the .cpp): a weak, auto-nulling observer — it never keeps the
-    /// provisioner alive — and the lock serialises claim, read and clear, so
-    /// two provisioners (Settings dialog + startup prompt) cannot interleave
-    /// on a raw pointer. Runner::runnerRegistry() was checked first and does
-    /// NOT fit: it is a registry of Runner pool states, not a named
-    /// provisioner slot, so it is not forced (tasks/05 P1-06).
-    static NativeComponentProvisioner* currentRun();
+    /// True while any provisioner instance in this process has an active run in
+    /// flight. Checked under the shared run-slot mutex so a second provisioner
+    /// (Settings dialog vs. startup prompt) cannot hijack an in-flight run.
+    static bool hasActiveRun();
+    /// The one provisioner the run `runId` delivers for, or null once its owner
+    /// has gone away or `runId` is no longer the active run. GUI-thread only:
+    /// it is read from the bodies the Runner's dispatcher delivered, which is
+    /// the one place the owner is known to be readable.
+    static NativeComponentProvisioner* currentRun(quint64 runId);
     /// Frees the shared run slot when a run settles — only if the slot still
-    /// points at the provisioner that settled, so a second run that re-claimed
-    /// the slot is not yanked and left with running_ stuck true. GUI thread
-    /// only, for the same reason as `currentRun()`.
-    static void runFinished(NativeComponentProvisioner* finished);
+    /// points at the provisioner and run ID that settled, so a second run that
+    /// re-claimed the slot is not yanked and left with running_ stuck true.
+    static void runFinished(NativeComponentProvisioner* finished, quint64 runId);
     /// Applies one settled run. GUI-thread only, for the same reason.
-    void finish(bool ok, bool cancelled, const QString& summary);
+    void finish(quint64 runId, bool ok, bool cancelled, const QString& summary);
 
     bool startProvisioning(const mplayer::native::ComponentStore& store,
                            const QVector<mplayer::native::ComponentPack>& packs);
 
     Runner& runner_;
     bool running_ = false;
+    quint64 activeRunId_ = 0;
     std::shared_ptr<std::atomic<bool>> cancelFlag_;
 };
 
