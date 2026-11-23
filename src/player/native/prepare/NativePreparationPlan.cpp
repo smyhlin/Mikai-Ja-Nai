@@ -56,6 +56,11 @@ std::optional<int> uniformIntegerScale(const QSize& input, const QSize& output) 
 }
 
 QSize padToTensorAlignment(const QSize& size, int* padL, int* padT) {
+  if (size.width() <= 0 || size.height() <= 0) {
+    if (padL != nullptr) *padL = 0;
+    if (padT != nullptr) *padT = 0;
+    return QSize();
+  }
   const int paddedWidth = roundUpTo(size.width(), kTensorAlign);
   const int paddedHeight = roundUpTo(size.height(), kTensorAlign);
   if (padL != nullptr) *padL = floorEven((paddedWidth - size.width()) / 2);
@@ -83,7 +88,8 @@ std::optional<QSize> displayGeometry(const std::optional<QSize>& codedSize,
     // A crop that leaves nothing, or reaches outside the coded frame, is a
     // property this build cannot honour rather than one to silently clamp.
     if (crop->isEmpty() || crop->x() < 0 || crop->y() < 0 ||
-        crop->x() + crop->width() > size.width() || crop->y() + crop->height() > size.height()) {
+        static_cast<qint64>(crop->x()) + static_cast<qint64>(crop->width()) > size.width() ||
+        static_cast<qint64>(crop->y()) + static_cast<qint64>(crop->height()) > size.height()) {
       return std::nullopt;
     }
     size = crop->size();
@@ -270,6 +276,11 @@ class PlanBuilder {
   QVector<PlanBlocker> blockers;
 };
 
+void setPlanFailure(QString* reasonKey, QString* reason, const QString& key, const QString& text) {
+  if (reasonKey != nullptr) *reasonKey = key;
+  if (reason != nullptr) *reason = text;
+}
+
 /// The pre-resize a recipe stage asks for, as a target size. The reference
 /// computes this from a percentage or a 16:9 height; a recipe states the size
 /// directly, and the same rule applies to both: even on both axes so 4:2:0 chroma
@@ -278,29 +289,29 @@ class PlanBuilder {
 bool resolvePreResize(const SpatialStage& stage, QSize* target, QString* reasonKey,
                       QString* reason) {
   if (!stage.preResizeEnabled) {
-    *reasonKey = QStringLiteral("stage.preresize.absent");
+    setPlanFailure(reasonKey, reason, QStringLiteral("stage.preresize.absent"), QString());
     return false;
   }
   const QSize requested = stage.preResize;
   if (isRefusableGeometry(requested)) {
-    *reasonKey = QStringLiteral("stage.preresize.invalid");
-    *reason = QStringLiteral("spatial stage %1 requests a pre-resize of %2x%3, which is not a "
-                             "usable frame size")
-                  .arg(stage.modelId)
-                  .arg(requested.width())
-                  .arg(requested.height());
+    setPlanFailure(reasonKey, reason, QStringLiteral("stage.preresize.invalid"),
+                   QStringLiteral("spatial stage %1 requests a pre-resize of %2x%3, which is not a "
+                                  "usable frame size")
+                       .arg(stage.modelId)
+                       .arg(requested.width())
+                       .arg(requested.height()));
     return false;
   }
   if ((requested.width() & 1) != 0 || (requested.height() & 1) != 0) {
-    *reasonKey = QStringLiteral("stage.preresize.odd");
-    *reason = QStringLiteral("spatial stage %1 requests a pre-resize of %2x%3; both sides must be "
-                             "even so 4:2:0 chroma stays aligned")
-                  .arg(stage.modelId)
-                  .arg(requested.width())
-                  .arg(requested.height());
+    setPlanFailure(reasonKey, reason, QStringLiteral("stage.preresize.odd"),
+                   QStringLiteral("spatial stage %1 requests a pre-resize of %2x%3; both sides must be "
+                                  "even so 4:2:0 chroma stays aligned")
+                       .arg(stage.modelId)
+                       .arg(requested.width())
+                       .arg(requested.height()));
     return false;
   }
-  *target = requested;
+  if (target != nullptr) *target = requested;
   return true;
 }
 
@@ -309,6 +320,11 @@ bool resolvePreResize(const SpatialStage& stage, QSize* target, QString* reasonK
 bool resolveSpatialGeometry(const ModelRecord& record, const QSize& resolvedAt,
                             const DynamicProfileResolver& resolver, ResolvedStage* stage,
                             QString* reasonKey, QString* reason) {
+  if (stage == nullptr) {
+    setPlanFailure(reasonKey, reason, QStringLiteral("stage.geometry.invalid"),
+                   QStringLiteral("spatial stage %1 has no target stage record").arg(record.id));
+    return false;
+  }
   const ModelProfile& declared = record.actualProfile;
 
   QSize input = resolvedAt;
@@ -317,46 +333,46 @@ bool resolveSpatialGeometry(const ModelRecord& record, const QSize& resolvedAt,
 
   if (declared.isDynamicGeometry()) {
     if (!resolver) {
-      *reasonKey = QStringLiteral("stage.dynamic.unresolved");
-      *reason = QStringLiteral("spatial stage %1 leaves H and W dynamic and no resolver was "
-                               "supplied, so its geometry at %2x%3 is unknown; a scale is not "
-                               "assumed from the file name")
-                    .arg(record.id)
-                    .arg(resolvedAt.width())
-                    .arg(resolvedAt.height());
+      setPlanFailure(reasonKey, reason, QStringLiteral("stage.dynamic.unresolved"),
+                     QStringLiteral("spatial stage %1 leaves H and W dynamic and no resolver was "
+                                    "supplied, so its geometry at %2x%3 is unknown; a scale is not "
+                                    "assumed from the file name")
+                         .arg(record.id)
+                         .arg(resolvedAt.width())
+                         .arg(resolvedAt.height()));
       return false;
     }
     const std::optional<ResolvedProfile> resolved = resolver(record, resolvedAt);
     if (!resolved.has_value()) {
-      *reasonKey = QStringLiteral("stage.dynamic.unresolved");
-      *reason = QStringLiteral("spatial stage %1 leaves H and W dynamic and reported no geometry "
-                               "at %2x%3; a scale is not assumed from the file name")
-                    .arg(record.id)
-                    .arg(resolvedAt.width())
-                    .arg(resolvedAt.height());
+      setPlanFailure(reasonKey, reason, QStringLiteral("stage.dynamic.unresolved"),
+                     QStringLiteral("spatial stage %1 leaves H and W dynamic and reported no geometry "
+                                    "at %2x%3; a scale is not assumed from the file name")
+                         .arg(record.id)
+                         .arg(resolvedAt.width())
+                         .arg(resolvedAt.height()));
       return false;
     }
     if (resolved->input != resolvedAt) {
-      *reasonKey = QStringLiteral("stage.dynamic.mismatch");
-      *reason = QStringLiteral("spatial stage %1 resolved geometry for a %2x%3 input, but this "
-                               "stage runs at %4x%5")
-                    .arg(record.id)
-                    .arg(resolved->input.width())
-                    .arg(resolved->input.height())
-                    .arg(resolvedAt.width())
-                    .arg(resolvedAt.height());
+      setPlanFailure(reasonKey, reason, QStringLiteral("stage.dynamic.mismatch"),
+                     QStringLiteral("spatial stage %1 resolved geometry for a %2x%3 input, but this "
+                                    "stage runs at %4x%5")
+                         .arg(record.id)
+                         .arg(resolved->input.width())
+                         .arg(resolved->input.height())
+                         .arg(resolvedAt.width())
+                         .arg(resolvedAt.height()));
       return false;
     }
     if (isRefusableGeometry(resolved->output) || resolved->inputChannels <= 0 ||
         resolved->outputChannels <= 0) {
-      *reasonKey = QStringLiteral("stage.dynamic.invalid");
-      *reason = QStringLiteral("spatial stage %1 resolved to %2x%3 at a %4x%5 input, which is not "
-                               "a usable tensor shape")
-                    .arg(record.id)
-                    .arg(resolved->output.width())
-                    .arg(resolved->output.height())
-                    .arg(resolved->input.width())
-                    .arg(resolved->input.height());
+      setPlanFailure(reasonKey, reason, QStringLiteral("stage.dynamic.invalid"),
+                     QStringLiteral("spatial stage %1 resolved to %2x%3 at a %4x%5 input, which is not "
+                                    "a usable tensor shape")
+                         .arg(record.id)
+                         .arg(resolved->output.width())
+                         .arg(resolved->output.height())
+                         .arg(resolved->input.width())
+                         .arg(resolved->input.height()));
       return false;
     }
     input = resolved->input;
@@ -368,23 +384,23 @@ bool resolveSpatialGeometry(const ModelRecord& record, const QSize& resolvedAt,
     const std::optional<QSize> declaredInput = declared.sourceGeometry();
     const std::optional<QSize> declaredOutput = declared.outputGeometry();
     if (!declaredInput.has_value() || !declaredOutput.has_value()) {
-      *reasonKey = QStringLiteral("stage.geometry.partial");
-      *reason = QStringLiteral("spatial stage %1 declares input %2 and output %3, which is not a "
-                               "fully declared geometry")
-                    .arg(record.id, declared.input.describe(), declared.output.describe());
+      setPlanFailure(reasonKey, reason, QStringLiteral("stage.geometry.partial"),
+                     QStringLiteral("spatial stage %1 declares input %2 and output %3, which is not a "
+                                    "fully declared geometry")
+                         .arg(record.id, declared.input.describe(), declared.output.describe()));
       return false;
     }
     if (*declaredInput != resolvedAt) {
       // A fixed graph cannot be fed another size: its engine binds one shape. The
       // reference builds per resolution and would refuse too.
-      *reasonKey = QStringLiteral("stage.geometry.mismatch");
-      *reason = QStringLiteral("spatial stage %1 declares a fixed input of %2x%3, but this stage "
-                               "runs at %4x%5; a fixed graph is built for the size it declares")
-                    .arg(record.id)
-                    .arg(declaredInput->width())
-                    .arg(declaredInput->height())
-                    .arg(resolvedAt.width())
-                    .arg(resolvedAt.height());
+      setPlanFailure(reasonKey, reason, QStringLiteral("stage.geometry.mismatch"),
+                     QStringLiteral("spatial stage %1 declares a fixed input of %2x%3, but this stage "
+                                    "runs at %4x%5; a fixed graph is built for the size it declares")
+                         .arg(record.id)
+                         .arg(declaredInput->width())
+                         .arg(declaredInput->height())
+                         .arg(resolvedAt.width())
+                         .arg(resolvedAt.height()));
       return false;
     }
     input = *declaredInput;
@@ -395,14 +411,14 @@ bool resolveSpatialGeometry(const ModelRecord& record, const QSize& resolvedAt,
 
   const std::optional<int> scale = uniformIntegerScale(input, output);
   if (!scale.has_value()) {
-    *reasonKey = QStringLiteral("stage.scale.invalid");
-    *reason = QStringLiteral("spatial stage %1 produces %2x%3 from a %4x%5 input, which is not a "
-                             "uniform positive integer multiple")
-                  .arg(record.id)
-                  .arg(output.width())
-                  .arg(output.height())
-                  .arg(input.width())
-                  .arg(input.height());
+    setPlanFailure(reasonKey, reason, QStringLiteral("stage.scale.invalid"),
+                   QStringLiteral("spatial stage %1 produces %2x%3 from a %4x%5 input, which is not a "
+                                  "uniform positive integer multiple")
+                       .arg(record.id)
+                       .arg(output.width())
+                       .arg(output.height())
+                       .arg(input.width())
+                       .arg(input.height()));
     return false;
   }
 
