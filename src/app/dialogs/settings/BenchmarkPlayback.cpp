@@ -166,6 +166,9 @@ BenchmarkSampleResult runBenchmarkSample(
     GLint targetDepthBits = 0;
     gl->glGetFramebufferAttachmentParameteriv(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                                                0x8212, &targetDepthBits);
+    // Drain any benign GL error from the optional depth probe before entering
+    // the render loop so it cannot poison the first frame's glGetError() check.
+    while (gl->glGetError() != GL_NO_ERROR) {}
     const int targetFormat =
         static_cast<int>(framebuffer.format().internalTextureFormat());
     const int targetDepth = targetDepthBits > 0 ? targetDepthBits : 0;
