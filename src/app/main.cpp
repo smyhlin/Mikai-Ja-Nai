@@ -150,8 +150,21 @@ LaunchRequest parseLaunchRequest(const QStringList& arguments) {
                 "CommandLine", "The video URL scheme is not allowed: %1").arg(scheme);
             return request;
         }
-        if (path.contains(QLatin1String("://"))) {
-            request.video = QUrl(path).toString(QUrl::FullyEncoded);
+        if (scheme == QLatin1String("file")) {
+            const QString localPath = url.toLocalFile();
+            if (localPath.isEmpty()) {
+                request.error = QCoreApplication::translate(
+                    "CommandLine", "The video file path cannot be empty.");
+                return request;
+            }
+            request.video = QFileInfo(localPath).absoluteFilePath();
+        } else if (scheme == QLatin1String("http") || scheme == QLatin1String("https")) {
+            if (!url.isValid() || url.host().isEmpty()) {
+                request.error = QCoreApplication::translate(
+                    "CommandLine", "The video file path cannot be empty.");
+                return request;
+            }
+            request.video = url.toString(QUrl::FullyEncoded);
         } else {
             // mpv checks readability asynchronously; a UNC stat could block startup.
             request.video = QFileInfo(path).absoluteFilePath();
