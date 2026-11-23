@@ -91,12 +91,14 @@ bool probeNvml(GpuComputeCapability& cap) {
     if (getName) {
         char buffer[256] = {};
         if (getName(device, buffer, sizeof(buffer)) == 0) {
+            buffer[sizeof(buffer) - 1] = '\0';
             cap.name = QString::fromUtf8(buffer).trimmed();
         }
     }
     if (getDriver) {
         char buffer[256] = {};
         if (getDriver(buffer, sizeof(buffer)) == 0) {
+            buffer[sizeof(buffer) - 1] = '\0';
             cap.driverVersion = QString::fromUtf8(buffer);
         }
     }
@@ -168,12 +170,13 @@ bool probeCudaDriver(GpuComputeCapability& cap) {
 
     char buffer[256] = {};
     if (cuDeviceGetName(buffer, sizeof(buffer), dev) == 0) {
+        buffer[sizeof(buffer) - 1] = '\0';
         cap.name = QString::fromUtf8(buffer).trimmed();
     }
     if (cuDriverGetVersion) {
         int ver = 0;
         if (cuDriverGetVersion(&ver) == 0 && ver > 0) {
-            cap.driverVersion = QStringLiteral("%1.%2").arg(ver / 1000).arg((ver % 100) / 10);
+            cap.driverVersion = QStringLiteral("%1.%2").arg(ver / 1000).arg((ver % 1000) / 10);
         }
     }
     closeLib();
