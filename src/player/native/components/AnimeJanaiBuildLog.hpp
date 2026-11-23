@@ -72,11 +72,30 @@ inline std::optional<AnimeJanaiConfiguredSlot> parseAnimeJanaiConfiguredSlot(
                                               QRegularExpression::CaseInsensitiveOption);
     const QRegularExpressionMatch match = pattern.match(line.toString());
     if (!match.hasMatch()) return std::nullopt;
+    bool slotOk = false;
+    bool inWOk = false;
+    bool inHOk = false;
+    bool outWOk = false;
+    bool outHOk = false;
+    const int slot = match.captured(1).toInt(&slotOk);
+    const int inW = match.captured(2).toInt(&inWOk);
+    const int inH = match.captured(3).toInt(&inHOk);
+    const int outW = match.captured(4).toInt(&outWOk);
+    const int outH = match.captured(5).toInt(&outHOk);
+    if (!slotOk || !inWOk || !inHOk || !outWOk || !outHOk ||
+        inW <= 0 || inH <= 0 || outW <= 0 || outH <= 0) {
+        return std::nullopt;
+    }
     AnimeJanaiConfiguredSlot parsed;
-    parsed.slot = match.captured(1).toInt();
-    parsed.input = QSize(match.captured(2).toInt(), match.captured(3).toInt());
-    parsed.output = QSize(match.captured(4).toInt(), match.captured(5).toInt());
-    if (!match.captured(6).isEmpty()) parsed.depth = match.captured(6).toInt();
+    parsed.slot = slot;
+    parsed.input = QSize(inW, inH);
+    parsed.output = QSize(outW, outH);
+    if (!match.captured(6).isEmpty()) {
+        bool depthOk = false;
+        const int depth = match.captured(6).toInt(&depthOk);
+        if (!depthOk || depth < 0) return std::nullopt;
+        parsed.depth = depth;
+    }
     return parsed;
 }
 
@@ -163,8 +182,10 @@ inline QStringList readAnimeJanaiBuildLogTail(QStringView path, QStringView owne
 inline QString animeJanaiOutOfMemoryEngineBuildEvidence(QStringView modelDir,
                                                        QStringView ownedRoot) {
     const QString root = ownedRoot.toString();
-    const QString directory = QFileInfo(modelDir.toString()).absoluteFilePath();
-    if (root.isEmpty() || modelDir.isEmpty() || !QFileInfo(directory).isDir() ||
+    const QFileInfo modelInfo(modelDir.toString());
+    const QString directory = modelInfo.absoluteFilePath();
+    if (root.isEmpty() || modelDir.isEmpty() || !modelInfo.isAbsolute() ||
+        !modelInfo.isDir() || modelInfo.isSymLink() ||
         !pathWithinRoot(root, directory) || !pathHasNoReparsePoints(root, directory)) {
         return {};
     }
@@ -212,9 +233,10 @@ inline QString animeJanaiBuildFailureLogPath(QStringView prefix, QStringView lin
         prefix.compare(QLatin1String("aji"), Qt::CaseInsensitive) != 0) {
         return {};
     }
+    line = line.trimmed();
     // mpv hands the message text with its own "[aji] " header while the log
     // prefix arrives separately, so both shapes reach this parser.
-    if (line.startsWith(QLatin1String("[aji] "))) line = line.sliced(6);
+    if (line.startsWith(QLatin1String("[aji] "), Qt::CaseInsensitive)) line = line.sliced(6);
     struct Marker {
         QLatin1String text;
         QLatin1String suffix;
