@@ -39,6 +39,11 @@ UpscalersPanel::UpscalersPanel(QWidget* parent) : QWidget(parent) {
 
 UpscalersPanel::~UpscalersPanel() {
     alive_->store(false, std::memory_order_release);
+    for (Row& row : rows_) {
+        if (row.running && !row.removing && row.cancelFlag) {
+            row.cancelFlag->store(true, std::memory_order_release);
+        }
+    }
 }
 
 void UpscalersPanel::setRunner(Runner* runner) {
@@ -327,6 +332,7 @@ void UpscalersPanel::startDownload(Row& row) {
             if (!alive->load(std::memory_order_acquire)) return;
             if (Row* target = rowByFileName(fileName)) {
                 target->running = false;
+                target->cancelFlag.reset();
                 target->progress->hide();
                 setRowStatus(*target, tr("Installed."), false);
                 renderRow(*target);
@@ -338,6 +344,7 @@ void UpscalersPanel::startDownload(Row& row) {
             if (!alive->load(std::memory_order_acquire)) return;
             if (Row* target = rowByFileName(fileName)) {
                 target->running = false;
+                target->cancelFlag.reset();
                 target->progress->hide();
                 setRowStatus(*target, failure.message, true);
                 renderRow(*target);
