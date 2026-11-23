@@ -214,8 +214,9 @@ char g_reportBlock[kReportCapacityBytes] = {};
 /// never freed, like g_reportBlock.
 #ifdef _WIN32
 wchar_t g_reportPathW[kPathWideChars] = {};
-#endif
+#else
 char g_reportPathNarrow[kPathWideChars] = {};
+#endif
 
 void writeBytes(ReportWriter* out, const char* source, size_t count) {
     if (count == 0 || out->capacity == 0) {
