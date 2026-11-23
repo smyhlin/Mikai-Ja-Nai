@@ -103,7 +103,9 @@ public:
 
     void flush() {
         const std::lock_guard<std::mutex> lock(mutex_);
-        if (flushTimer_ != nullptr) {
+        QCoreApplication* app = QCoreApplication::instance();
+        if (app != nullptr && QThread::currentThread() == app->thread() &&
+            flushTimer_ != nullptr) {
             flushTimer_->stop();
         }
         if (pending_.isEmpty()) {
@@ -112,7 +114,7 @@ public:
             }
             return;
         }
-        if (QCoreApplication::instance() == nullptr) {
+        if (app == nullptr) {
             return;
         }
         QList<Item> items;
@@ -134,8 +136,9 @@ public:
                         QFile::copy(path, path + QStringLiteral(".bak"));
                     }
                     QSaveFile out(path);
+                    const QByteArray encoded = item.payload.toUtf8();
                     if (out.open(QIODevice::WriteOnly | QIODevice::Truncate) &&
-                        out.write(item.payload.toUtf8()) != -1 && out.commit()) {
+                        out.write(encoded) == encoded.size() && out.commit()) {
                         if (settings.contains(item.key)) {
                             settings.remove(item.key);
                             settingsTouched = true;
@@ -413,6 +416,9 @@ void WatchHistory::setEpisodesWatched(const QString& ref, const QStringList& epi
         for (const QString& episode : episodes) {
             if (requested.remove(episode)) {
                 it->watched.append(episode);
+                // A finished episode restarts from the beginning if it is replayed.
+                it->offsets.remove(episode);
+                it->durations.remove(episode);
             }
         }
     } else {
@@ -424,7 +430,8 @@ void WatchHistory::setEpisodesWatched(const QString& ref, const QStringList& epi
         if (removed == 0) {
             return;
         }
-        if (it->current.isEmpty() && it->watched.isEmpty()) {
+        if (it->current.isEmpty() && it->watched.isEmpty() && it->offsets.isEmpty() &&
+            it->durations.isEmpty()) {
             titles_.erase(it);
         }
     }
