@@ -556,34 +556,55 @@ void SearchPage::browseSelectedTeam(const backend::Team& team) {
             QPointer<QListWidget> listGuard(list);
             runner_.run(
                 [client, teamId] {
-                    return QVariant::fromValue(client->getUaPosters(1, 20, {}, teamId));
+                    return QVariant::fromValue(client->getUaPosters(1, 100, {}, teamId));
                 },
-                [statusGuard, listGuard](const QVariant& v) {
+                [statusGuard, listGuard, teamId](const QVariant& v) {
                     if (statusGuard.isNull() || listGuard.isNull()) return;
                     const QJsonObject payload = v.toJsonObject();
-                    const QJsonArray items = payload.value(QStringLiteral("items")).toArray();
+                    QJsonArray items = payload.value(QStringLiteral("result")).toArray();
                     if (items.isEmpty()) {
-                        statusGuard->setText(tr("This team has no localized Ukrainian posters yet."));
-                        return;
+                        items = payload.value(QStringLiteral("items")).toArray();
                     }
-                    statusGuard->setText(
-                        items.size() == 1
-                            ? tr("1 localized Ukrainian poster")
-                            : tr("%1 localized Ukrainian posters").arg(items.size()));
+                    int shown = 0;
                     for (const QJsonValue& val : items) {
                         const QJsonObject obj = val.toObject();
-                        const QString author = obj.value(QStringLiteral("author")).toString();
-                        const QString animeTitle =
-                            obj.value(QStringLiteral("anime")).toObject().value(QStringLiteral("title")).toString();
-                        const QString url =
-                            obj.value(QStringLiteral("images")).toObject().value(QStringLiteral("big")).toObject().value(QStringLiteral("webp")).toString();
-                        QString label = animeTitle.isEmpty() ? tr("Poster #%1").arg(obj.value(QStringLiteral("id")).toInteger())
-                                                             : animeTitle;
+                        const QJsonObject posterObj =
+                            obj.contains(QStringLiteral("poster"))
+                                ? obj.value(QStringLiteral("poster")).toObject()
+                                : obj;
+                        if (teamId > 0 && posterObj.contains(QStringLiteral("team"))) {
+                            const qint64 itemTeamId =
+                                posterObj.value(QStringLiteral("team")).toObject().value(QStringLiteral("id")).toInteger();
+                            if (itemTeamId > 0 && itemTeamId != teamId) continue;
+                        }
+                        const QString author = posterObj.value(QStringLiteral("author")).toString();
+                        const QJsonObject animeObj = obj.value(QStringLiteral("anime")).toObject();
+                        const QJsonObject titlesObj = animeObj.value(QStringLiteral("titles")).toObject();
+                        QString animeTitle = titlesObj.value(QStringLiteral("ua")).toString();
+                        if (animeTitle.isEmpty()) animeTitle = titlesObj.value(QStringLiteral("english")).toString();
+                        if (animeTitle.isEmpty()) animeTitle = titlesObj.value(QStringLiteral("original")).toString();
+                        if (animeTitle.isEmpty()) animeTitle = animeObj.value(QStringLiteral("title")).toString();
+                        const QJsonObject bigObj =
+                            posterObj.value(QStringLiteral("images")).toObject().value(QStringLiteral("big")).toObject();
+                        QString url = bigObj.value(QStringLiteral("webp")).toString();
+                        if (url.isEmpty()) url = bigObj.value(QStringLiteral("jpg")).toString();
+                        QString label = animeTitle.isEmpty()
+                                            ? tr("Poster #%1").arg(posterObj.value(QStringLiteral("id")).toInteger())
+                                            : animeTitle;
                         if (!author.isEmpty()) label += QStringLiteral(" · %1").arg(author);
                         auto* row = new QListWidgetItem(label, listGuard.data());
                         row->setData(Qt::UserRole, url);
                         row->setToolTip(url);
+                        ++shown;
                     }
+                    if (shown == 0) {
+                        statusGuard->setText(tr("This team has no localized Ukrainian posters yet."));
+                        return;
+                    }
+                    statusGuard->setText(
+                        shown == 1
+                            ? tr("1 localized Ukrainian poster")
+                            : tr("%1 localized Ukrainian posters").arg(shown));
                 },
                 [statusGuard](const backend::Failure& failure) {
                     if (!statusGuard.isNull()) {
