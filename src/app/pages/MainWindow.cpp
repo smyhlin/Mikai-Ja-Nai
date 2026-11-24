@@ -1126,12 +1126,19 @@ void MainWindow::startUpdateDownload(const QString& version, const QUrl& release
 
     const auto alive = updateCheckAlive_;
     auto cancelRequested = std::make_shared<std::atomic_bool>(false);
+    auto progressAlive = std::make_shared<std::atomic_bool>(true);
     connect(progress, &QProgressDialog::canceled, this, [cancelRequested] {
         cancelRequested->store(true, std::memory_order_release);
     });
+    connect(progress, &QObject::destroyed, this, [progressAlive] {
+        progressAlive->store(false, std::memory_order_release);
+    });
     QPointer<QProgressDialog> progressGuard(progress);
+    QProgressDialog* progressRaw = progress;
+    QObject* appTarget = QCoreApplication::instance();
     runner_->run(
-        [kind, progressGuard, channel, forceChannelSwitch, alive, cancelRequested] {
+        [kind, progressRaw, progressAlive, appTarget, channel, forceChannelSwitch, alive,
+         cancelRequested] {
             const auto isCancelled = [alive, cancelRequested]() {
                 return cancelRequested->load(std::memory_order_acquire) ||
                        !alive->load(std::memory_order_acquire);
@@ -1143,13 +1150,15 @@ void MainWindow::startUpdateDownload(const QString& version, const QUrl& release
             QString error;
             const bool ok = backend::downloadAndVerifyUpdate(
                 latest, kind,
-                [progressGuard](qint64 received, qint64 total) {
-                    if (total <= 0) return;
+                [progressRaw, progressAlive, appTarget](qint64 received, qint64 total) {
+                    if (total <= 0 || appTarget == nullptr) return;
                     const int pct = static_cast<int>(qBound(qint64{0}, (received * 100) / total, qint64{100}));
                     QMetaObject::invokeMethod(
-                        QCoreApplication::instance(),
-                        [progressGuard, pct] {
-                            if (progressGuard) progressGuard->setValue(pct);
+                        appTarget,
+                        [progressRaw, progressAlive, pct] {
+                            if (progressAlive->load(std::memory_order_acquire)) {
+                                progressRaw->setValue(pct);
+                            }
                         },
                         Qt::QueuedConnection);
                 },
