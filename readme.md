@@ -100,7 +100,7 @@ Application captures and their provenance are documented in [Screenshot provenan
   </tr>
 </table>
 
-These manual Windows captures show the Ukrainian interface with a custom pink appearance. Player and Compare use a synthetic local video; Components shows TensorRT for RTX selected but not installed. Catalogue artwork and availability can change upstream. The images do not establish provider playback, AI inference, performance or release QA.
+These automated Linux x86_64 captures (`gallery-2026-11-24/`, `mikai 0.2.4.1`, Qt 6.12.0, xcb/Xvfb) show the English interface with the shipped dark theme. Catalogue Home (36/36 live posters), Search Results Grid (50 live Action posters), Filters, and Title Page use the live anonymous Mikai public API; Player, Hover Preview, PiP, Clip, Compare, and Media Information use a 15-second 1080p24 HEVC/AAC synthetic `testsrc2` local fixture. Catalogue artwork and availability can change upstream. The images do not establish provider playback, AI inference, performance, or release QA.
 
 ## Download and install
 
@@ -112,7 +112,7 @@ The artifacts are unsigned, and [release status](docs/release-status.md) records
 
 Linux packages include the project's libmpv runtime, but still require compatible host graphics, audio and system libraries. They are not universal Linux bundles. The original Windows v0.1.0 packages have a startup-runtime issue; the [player and usability update](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.1.0-update-20261101) includes the fix.
 
-As checked on 2026-11-22, the latest published release is **[v0.2.3.1](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.2.3.1)**. Current source is **0.2.4** (60-issue Categories, Search, and Teams overhaul with tri-state filters, Grid/List search results, Teams Directory & Profiles, Ukrainian Posters gallery, crisp vertical wheel scrolling, `TitlePage` episode-grid fixes, and Qt Quick player cleanup). See the [application state and release status](docs/release-status.md) for observed checks, open issues and publication blockers.
+As checked on 2026-11-24, the latest published release is **[v0.2.3.1](https://github.com/smyhlin/Mikai-Ja-Nai/releases/tag/v0.2.3.1)**. Current source is **0.2.4.1** (Categories, Search, and Teams overhaul with tri-state filters, Grid/List search results, Teams Directory & Profiles, Ukrainian Posters gallery, crisp vertical wheel scrolling, `TitlePage` episode-grid fixes, Qt Quick player cleanup, and live Mikai API query fixes). See the [application state and release status](docs/release-status.md) for observed checks, open issues and publication blockers.
 
 ## Quick start
 

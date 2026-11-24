@@ -24,7 +24,7 @@ The player does not move or delete a local source file. Local media can have emb
 
 ![Player window with a paused local colour-pattern video, the dock, timeline and transport controls](images/gallery-2026-11-24/player.png)
 
-*A local file paused mid-playback, original pipeline, no processing preset. The pictured clip is a synthetic project-generated 12-second 320×180 HEVC colour-pattern fixture, not a provider stream or anime footage. This is a November 2026 capture of the prior player layout; it is not a screenshot of the current Quick scene.*
+*A local file paused mid-playback in the current Qt Quick/QML player (`mikai 0.2.4.1`, `gallery-2026-11-24`), original pipeline, no processing preset. The pictured clip is a synthetic project-generated 15-second 1920×1080 HEVC/AAC `testsrc2` colour-pattern fixture, not a provider stream or anime footage.*
 
 Catalogue variant selection and local track selection are different operations: a catalogue choice selects a provider variant, while a local-file choice selects a track in the active media.
 
@@ -142,7 +142,7 @@ For a local file, open the picture context menu and choose **Media information**
 
 ![Media information Overview dialog showing the local fixture's path, container, duration, dimensions, frame rate and HEVC codec](images/gallery-2026-11-24/media-info.png)
 
-*The **Overview** view for the same synthetic fixture; the path shown is the repository's own `tests/fixtures/media` copy. It is not a provider stream and involves no AI processing.*
+*The **Overview** view for the same 15-second 1920×1080 HEVC/AAC synthetic fixture (`gallery-2026-11-24`, opened from the probe's isolated scratch copy). It is not a provider stream and involves no AI processing.*
 
 ## Compare two processing results
 
@@ -163,7 +163,7 @@ Choose **Bilinear** or **Nearest Neighbor** in the **Filter:** list for scaling.
 
 ![Compare window in side-by-side mode with the original selected on the left and Anime4K A Fast selected on the right](images/gallery-2026-11-24/compare.png)
 
-*Compare on a paused synthetic 320×180 HEVC colour-pattern clip. Side A is disabled (the original frame); side B has **Anime4K A (Fast)** selected. The window clips that label, and the image does not establish that the shader finished rendering or provide a quality or performance result.*
+*Compare on the paused 15-second 1920×1080 HEVC/AAC synthetic fixture (`gallery-2026-11-24`). Side A is Original (`off`); Side B has **Anime4K A (Fast)** selected. The image does not establish performance or visual-quality benchmarks.*
 
 **Export…** appears only in Flicker mode, and stays disabled until both current A/B renders are ready; while a job runs it reads **Exporting…**. The dialog takes a **Folder:**, a **File name:** and one of three **Format:** choices: **GIF animation**, **MP4 video (silent)** and **Animated WebP**. The export alternates the two rendered stills at the current flicker rate: the GIF loops with a 256-colour palette per frame, the animated WebP loops the same pair, and the MP4 is a silent Motion JPEG clip of at most ten seconds. Use WebP or MP4 when more colour detail is needed; Motion JPEG may not play in every browser or video player. A completion window offers **Open file**, **Open folder** and **Copy file**. Exports are written atomically, so an error or a cancellation does not publish a partial file.
 

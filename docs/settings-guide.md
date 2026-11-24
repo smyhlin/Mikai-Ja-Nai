@@ -47,7 +47,7 @@ In **Customization → Appearance**:
 
 ![Appearance settings page](images/gallery-2026-11-24/settings.png)
 
-*The Appearance page with a custom pink accent and custom gradient — an example choice, not the shipped defaults. The capture was taken with no edit saved.*
+*The Appearance page (`gallery-2026-11-24`, Linux x86_64, `mikai 0.2.4.1`) showing the shipped dark-theme defaults after resetting the live appearance preview; no settings were saved.*
 
 Appearance and site/content display changes preview while Settings is open. **Save** keeps them; **Cancel**, Escape, or closing the dialog restores the appearance from when that Settings session opened.
 
@@ -149,7 +149,7 @@ The graphs land in the app-owned custom-model directory (`…/animejanai/models/
 
 ![Processing settings page](images/gallery-2026-11-24/settings-processing.png)
 
-*The Components page during the Windows capture: TensorRT for RTX selected, its runtime reported as not installed, and no download started. The capture does not show a working RTX runtime or any inference result.*
+*The **Settings → Playback → Processing** page (`gallery-2026-11-24`, Linux x86_64, `mikai 0.2.4.1`) showing Standard vs Native runtime selection and backend/recipe controls; no runtime download or inference was run.*
 
 **Playback → Benchmark** is headed **Benchmark**. The bottom toolbar displays the active engine (**Engine: <backend>**, e.g. *TensorRT for RTX*), following the global choice selected in Components and settings. Choose **Video clips** and **Enhancement models**, optionally keep **Include the unfiltered baseline**, then press **Run benchmark**. Its video runs support RIFE interpolation, including RIFE configured in mixed spatial-plus-interpolation profiles; Compare is a separate still-frame workflow and does not run temporal chains. A run uses the current selection and is not a saved preference. For clip locations, reports and limitations, see the [processing guide](processing-guide.md).
 

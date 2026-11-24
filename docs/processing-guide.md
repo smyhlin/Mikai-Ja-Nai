@@ -44,7 +44,7 @@ The recommended setup omits optional RIFE interpolation models by default. Selec
 
 ![Compare window](images/gallery-2026-11-24/compare.png)
 
-*The Components page with **TensorRT for RTX** selected and its runtime not installed. The capture was taken before any download: **Apply changes** was not used, nothing was installed and no inference was run.*
+*Side-by-side Compare window (`gallery-2026-11-24`): Original (`off`) on the left and **Anime4K A (Fast)** on the right, captured on the 15-second 1080p synthetic fixture without AI model downloads or inference.*
 
 Runtime and model availability are platform- and GPU-dependent. Linux Standard AnimeJaNai uses TensorRT and requires its compatible runtime closure; there is no Linux TensorRT for RTX runtime. On Windows, TensorRT for RTX is opt-in: selecting it downloads nothing, and its runtime is installed only when you acquire it in Components. RTX builds its plan in-process with NVIDIA's TensorRT-RTX 1.7 runtime instead of the classic CUDA/TensorRT pack and `trtexec`. Read [AnimeJaNai on Linux](animejanai.md) before diagnosing a Linux inference-context or engine-build failure. Do not substitute an unrelated system mpv: the app uses its pinned runtime.
 
