@@ -1040,15 +1040,24 @@ TeamsResult MikaiClient::getTeams(const QString& search, int page, int limit,
     return result;
 }
 
+namespace {
+QString encodePathSegment(const QString& raw) {
+    const QString trimmed = raw.trimmed();
+    if (trimmed == QLatin1String(".")) return QStringLiteral("%2E");
+    if (trimmed == QLatin1String("..")) return QStringLiteral("%2E%2E");
+    return QString::fromLatin1(QUrl::toPercentEncoding(trimmed, ":"));
+}
+}  // namespace
+
 TeamProfile MikaiClient::getTeam(const QString& ref) const {
-    return parseTeamProfile(get(QStringLiteral("/teams/") + ref)
+    return parseTeamProfile(get(QStringLiteral("/teams/") + encodePathSegment(ref))
                                 .value(QStringLiteral("result")).toObject());
 }
 
 SearchResult MikaiClient::getTeamAnime(const QString& ref, int page, int limit) const {
     QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
                                   {QStringLiteral("limit"), QString::number(limit)}};
-    return searchFromPayload(get(QStringLiteral("/teams/") + ref + QStringLiteral("/anime"), params), page);
+    return searchFromPayload(get(QStringLiteral("/teams/") + encodePathSegment(ref) + QStringLiteral("/anime"), params), page);
 }
 
 SearchResult MikaiClient::browseOngoing(int page, int limit) const {
@@ -1114,11 +1123,11 @@ AnimeDetail MikaiClient::getAnime(const QString& ref, const QStringList& include
         params.insert(QStringLiteral("include"), include.join(QLatin1Char(',')));
     }
     return parseDetail(
-        get(QStringLiteral("/anime/") + ref, params).value(QStringLiteral("result")).toObject());
+        get(QStringLiteral("/anime/") + encodePathSegment(ref), params).value(QStringLiteral("result")).toObject());
 }
 
 PlayerResult MikaiClient::getPlayer(const QString& ref) const {
-    return parsePlayer(get(QStringLiteral("/anime/") + ref + QStringLiteral("/player"))
+    return parsePlayer(get(QStringLiteral("/anime/") + encodePathSegment(ref) + QStringLiteral("/player"))
                            .value(QStringLiteral("result"))
                            .toObject());
 }
@@ -1183,7 +1192,7 @@ QJsonArray MikaiClient::getLicenseHolders() const {
 QVector<UaPoster> MikaiClient::getAnimePosters(const QString& ref) const {
     QVector<UaPoster> out;
     const QJsonArray items =
-        get(QStringLiteral("/anime/") + ref + QStringLiteral("/posters"))
+        get(QStringLiteral("/anime/") + encodePathSegment(ref) + QStringLiteral("/posters"))
             .value(QStringLiteral("result"))
             .toArray();
     out.reserve(items.size());
@@ -1219,7 +1228,7 @@ QJsonObject MikaiClient::getCharacters(const QString& search, int page, int limi
 }
 
 QJsonObject MikaiClient::getCharacter(const QString& ref) const {
-    return get(QStringLiteral("/characters/") + ref).value(QStringLiteral("result")).toObject();
+    return get(QStringLiteral("/characters/") + encodePathSegment(ref)).value(QStringLiteral("result")).toObject();
 }
 
 // ── API v1.5 Tier 2: Device Auth & Account (/auth/device*, /me/*) ─────────
@@ -1259,24 +1268,24 @@ QJsonObject MikaiClient::getMyList(const QString& status, int page, int limit,
 }
 
 QJsonObject MikaiClient::getMyListEntry(const QString& ref) const {
-    return get(QStringLiteral("/me/list/") + ref).value(QStringLiteral("result")).toObject();
+    return get(QStringLiteral("/me/list/") + encodePathSegment(ref)).value(QStringLiteral("result")).toObject();
 }
 
 QJsonObject MikaiClient::putMyListEntry(const QString& ref, const QJsonObject& entry) const {
-    return put(QStringLiteral("/me/list/") + ref, entry).value(QStringLiteral("result")).toObject();
+    return put(QStringLiteral("/me/list/") + encodePathSegment(ref), entry).value(QStringLiteral("result")).toObject();
 }
 
 QJsonObject MikaiClient::deleteMyListEntry(const QString& ref) const {
-    return del(QStringLiteral("/me/list/") + ref);
+    return del(QStringLiteral("/me/list/") + encodePathSegment(ref));
 }
 
 QJsonObject MikaiClient::addMyListRewatch(const QString& ref, const QJsonObject& payload) const {
-    return post(QStringLiteral("/me/list/") + ref + QStringLiteral("/rewatch"), payload)
+    return post(QStringLiteral("/me/list/") + encodePathSegment(ref) + QStringLiteral("/rewatch"), payload)
         .value(QStringLiteral("result")).toObject();
 }
 
 QJsonObject MikaiClient::deleteMyListRewatch(const QString& ref) const {
-    return del(QStringLiteral("/me/list/") + ref + QStringLiteral("/rewatch"));
+    return del(QStringLiteral("/me/list/") + encodePathSegment(ref) + QStringLiteral("/rewatch"));
 }
 
 QJsonObject MikaiClient::getMyHistory(int page, int limit) const {
@@ -1292,16 +1301,16 @@ QJsonObject MikaiClient::getMySubscriptions(int page, int limit) const {
 }
 
 QJsonObject MikaiClient::getMySubscription(const QString& ref) const {
-    return get(QStringLiteral("/me/subscriptions/") + ref).value(QStringLiteral("result")).toObject();
+    return get(QStringLiteral("/me/subscriptions/") + encodePathSegment(ref)).value(QStringLiteral("result")).toObject();
 }
 
 QJsonObject MikaiClient::putMySubscription(const QString& ref, const QJsonObject& payload) const {
-    return put(QStringLiteral("/me/subscriptions/") + ref, payload)
+    return put(QStringLiteral("/me/subscriptions/") + encodePathSegment(ref), payload)
         .value(QStringLiteral("result")).toObject();
 }
 
 QJsonObject MikaiClient::deleteMySubscription(const QString& ref) const {
-    return del(QStringLiteral("/me/subscriptions/") + ref);
+    return del(QStringLiteral("/me/subscriptions/") + encodePathSegment(ref));
 }
 
 QJsonObject MikaiClient::getMyNotifications(int page, int limit, bool unreadOnly) const {
@@ -1333,36 +1342,36 @@ QJsonObject MikaiClient::getMySavedCollections(int page, int limit) const {
 }
 
 QJsonObject MikaiClient::getMyCollection(const QString& id) const {
-    return get(QStringLiteral("/me/collections/") + id).value(QStringLiteral("result")).toObject();
+    return get(QStringLiteral("/me/collections/") + encodePathSegment(id)).value(QStringLiteral("result")).toObject();
 }
 
 QJsonObject MikaiClient::updateMyCollection(const QString& id, const QJsonObject& payload) const {
-    return patch(QStringLiteral("/me/collections/") + id, payload)
+    return patch(QStringLiteral("/me/collections/") + encodePathSegment(id), payload)
         .value(QStringLiteral("result")).toObject();
 }
 
 QJsonObject MikaiClient::deleteMyCollection(const QString& id) const {
-    return del(QStringLiteral("/me/collections/") + id);
+    return del(QStringLiteral("/me/collections/") + encodePathSegment(id));
 }
 
 QJsonObject MikaiClient::getMyCollectionAnime(const QString& id, int page, int limit) const {
     QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
                                   {QStringLiteral("limit"), QString::number(limit)}};
-    return get(QStringLiteral("/me/collections/") + id + QStringLiteral("/anime"), params);
+    return get(QStringLiteral("/me/collections/") + encodePathSegment(id) + QStringLiteral("/anime"), params);
 }
 
 QJsonObject MikaiClient::addAnimeToMyCollection(const QString& id, const QString& ref,
                                                 const QJsonObject& payload) const {
-    return put(QStringLiteral("/me/collections/") + id + QStringLiteral("/anime/") + ref, payload)
+    return put(QStringLiteral("/me/collections/") + encodePathSegment(id) + QStringLiteral("/anime/") + encodePathSegment(ref), payload)
         .value(QStringLiteral("result")).toObject();
 }
 
 QJsonObject MikaiClient::removeAnimeFromMyCollection(const QString& id, const QString& ref) const {
-    return del(QStringLiteral("/me/collections/") + id + QStringLiteral("/anime/") + ref);
+    return del(QStringLiteral("/me/collections/") + encodePathSegment(id) + QStringLiteral("/anime/") + encodePathSegment(ref));
 }
 
 QJsonObject MikaiClient::reorderMyCollection(const QString& id, const QJsonObject& payload) const {
-    return put(QStringLiteral("/me/collections/") + id + QStringLiteral("/order"), payload);
+    return put(QStringLiteral("/me/collections/") + encodePathSegment(id) + QStringLiteral("/order"), payload);
 }
 
 // ── API v1.5 Tier 3: Cast, Collections, Comments, Blog & Translit ─────────
@@ -1370,13 +1379,13 @@ QJsonObject MikaiClient::reorderMyCollection(const QString& id, const QJsonObjec
 QJsonObject MikaiClient::getCharacterAnime(const QString& ref, int page, int limit) const {
     QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
                                   {QStringLiteral("limit"), QString::number(limit)}};
-    return get(QStringLiteral("/characters/") + ref + QStringLiteral("/anime"), params);
+    return get(QStringLiteral("/characters/") + encodePathSegment(ref) + QStringLiteral("/anime"), params);
 }
 
 QJsonObject MikaiClient::getCharacterVoices(const QString& ref, int page, int limit) const {
     QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
                                   {QStringLiteral("limit"), QString::number(limit)}};
-    return get(QStringLiteral("/characters/") + ref + QStringLiteral("/voices"), params);
+    return get(QStringLiteral("/characters/") + encodePathSegment(ref) + QStringLiteral("/voices"), params);
 }
 
 QJsonObject MikaiClient::getPeople(const QString& search, int page, int limit) const {
@@ -1387,37 +1396,37 @@ QJsonObject MikaiClient::getPeople(const QString& search, int page, int limit) c
 }
 
 QJsonObject MikaiClient::getPerson(const QString& ref) const {
-    return get(QStringLiteral("/people/") + ref).value(QStringLiteral("result")).toObject();
+    return get(QStringLiteral("/people/") + encodePathSegment(ref)).value(QStringLiteral("result")).toObject();
 }
 
 QJsonObject MikaiClient::getPersonAnime(const QString& ref, int page, int limit) const {
     QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
                                   {QStringLiteral("limit"), QString::number(limit)}};
-    return get(QStringLiteral("/people/") + ref + QStringLiteral("/anime"), params);
+    return get(QStringLiteral("/people/") + encodePathSegment(ref) + QStringLiteral("/anime"), params);
 }
 
 QJsonObject MikaiClient::getPersonVoices(const QString& ref, int page, int limit) const {
     QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
                                   {QStringLiteral("limit"), QString::number(limit)}};
-    return get(QStringLiteral("/people/") + ref + QStringLiteral("/voices"), params);
+    return get(QStringLiteral("/people/") + encodePathSegment(ref) + QStringLiteral("/voices"), params);
 }
 
 QJsonObject MikaiClient::getPersonStaff(const QString& ref, int page, int limit) const {
     QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
                                   {QStringLiteral("limit"), QString::number(limit)}};
-    return get(QStringLiteral("/people/") + ref + QStringLiteral("/staff"), params);
+    return get(QStringLiteral("/people/") + encodePathSegment(ref) + QStringLiteral("/staff"), params);
 }
 
 QJsonObject MikaiClient::getAnimeCharacters(const QString& ref, int page, int limit) const {
     QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
                                   {QStringLiteral("limit"), QString::number(limit)}};
-    return get(QStringLiteral("/anime/") + ref + QStringLiteral("/characters"), params);
+    return get(QStringLiteral("/anime/") + encodePathSegment(ref) + QStringLiteral("/characters"), params);
 }
 
 QJsonObject MikaiClient::getAnimeStaff(const QString& ref, int page, int limit) const {
     QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
                                   {QStringLiteral("limit"), QString::number(limit)}};
-    return get(QStringLiteral("/anime/") + ref + QStringLiteral("/staff"), params);
+    return get(QStringLiteral("/anime/") + encodePathSegment(ref) + QStringLiteral("/staff"), params);
 }
 
 QJsonObject MikaiClient::getCollections(const QString& search, int page, int limit,
@@ -1431,25 +1440,25 @@ QJsonObject MikaiClient::getCollections(const QString& search, int page, int lim
 }
 
 QJsonObject MikaiClient::getCollection(const QString& ref) const {
-    return get(QStringLiteral("/collections/") + ref).value(QStringLiteral("result")).toObject();
+    return get(QStringLiteral("/collections/") + encodePathSegment(ref)).value(QStringLiteral("result")).toObject();
 }
 
 QJsonObject MikaiClient::getCollectionAnime(const QString& ref, int page, int limit) const {
     QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
                                   {QStringLiteral("limit"), QString::number(limit)}};
-    return get(QStringLiteral("/collections/") + ref + QStringLiteral("/anime"), params);
+    return get(QStringLiteral("/collections/") + encodePathSegment(ref) + QStringLiteral("/anime"), params);
 }
 
 QJsonObject MikaiClient::getCollectionComments(const QString& ref, int page, int limit) const {
     QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
                                   {QStringLiteral("limit"), QString::number(limit)}};
-    return get(QStringLiteral("/collections/") + ref + QStringLiteral("/comments"), params);
+    return get(QStringLiteral("/collections/") + encodePathSegment(ref) + QStringLiteral("/comments"), params);
 }
 
 QJsonObject MikaiClient::getUserCollections(const QString& username, int page, int limit) const {
     QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
                                   {QStringLiteral("limit"), QString::number(limit)}};
-    return get(QStringLiteral("/users/") + username + QStringLiteral("/collections"), params);
+    return get(QStringLiteral("/users/") + encodePathSegment(username) + QStringLiteral("/collections"), params);
 }
 
 QJsonObject MikaiClient::getComments(const QString& targetType, const QString& targetRef,
@@ -1464,19 +1473,19 @@ QJsonObject MikaiClient::getComments(const QString& targetType, const QString& t
 QJsonObject MikaiClient::getAnimeComments(const QString& ref, int page, int limit) const {
     QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
                                   {QStringLiteral("limit"), QString::number(limit)}};
-    return get(QStringLiteral("/anime/") + ref + QStringLiteral("/comments"), params);
+    return get(QStringLiteral("/anime/") + encodePathSegment(ref) + QStringLiteral("/comments"), params);
 }
 
 QJsonObject MikaiClient::getBlogPostComments(const QString& slug, int page, int limit) const {
     QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
                                   {QStringLiteral("limit"), QString::number(limit)}};
-    return get(QStringLiteral("/blog/posts/") + slug + QStringLiteral("/comments"), params);
+    return get(QStringLiteral("/blog/posts/") + encodePathSegment(slug) + QStringLiteral("/comments"), params);
 }
 
 QJsonObject MikaiClient::getCommentReplies(const QString& id, int page, int limit) const {
     QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
                                   {QStringLiteral("limit"), QString::number(limit)}};
-    return get(QStringLiteral("/comments/") + id + QStringLiteral("/replies"), params);
+    return get(QStringLiteral("/comments/") + encodePathSegment(id) + QStringLiteral("/replies"), params);
 }
 
 QJsonObject MikaiClient::getBlogPosts(int page, int limit, const QString& tag) const {
@@ -1487,7 +1496,7 @@ QJsonObject MikaiClient::getBlogPosts(int page, int limit, const QString& tag) c
 }
 
 QJsonObject MikaiClient::getBlogPost(const QString& slug) const {
-    return get(QStringLiteral("/blog/posts/") + slug).value(QStringLiteral("result")).toObject();
+    return get(QStringLiteral("/blog/posts/") + encodePathSegment(slug)).value(QStringLiteral("result")).toObject();
 }
 
 QJsonArray MikaiClient::getBlogTags() const {
