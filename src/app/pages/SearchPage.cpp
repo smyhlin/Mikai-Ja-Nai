@@ -421,7 +421,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
         qcFlow->addWidget(btn);
     };
     addQuickCat(tr("Top Rated"), [](backend::AnimeQuery& q) {
-        q.sort = QStringLiteral("score");
+        q.sort = QStringLiteral("mal_rating");
         q.order = QStringLiteral("desc");
     });
     addQuickCat(tr("This Season"), [](backend::AnimeQuery& q) {
@@ -431,20 +431,21 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     });
     addQuickCat(tr("Movies"), [](backend::AnimeQuery& q) {
         q.formats = {QStringLiteral("movie")};
-        q.sort = QStringLiteral("score");
+        q.sort = QStringLiteral("mal_rating");
         q.order = QStringLiteral("desc");
     });
     addQuickCat(tr("Completed"), [](backend::AnimeQuery& q) {
-        q.statuses = {QStringLiteral("completed")};
-        q.sort = QStringLiteral("score");
+        q.statuses = {QStringLiteral("finished")};
+        q.sort = QStringLiteral("mal_rating");
         q.order = QStringLiteral("desc");
     });
     for (const QString& genre : {QStringLiteral("Action"), QStringLiteral("Fantasy"),
                                  QStringLiteral("Romance"), QStringLiteral("Comedy"),
                                  QStringLiteral("Sci-Fi")}) {
-        addQuickCat(genre, [genre](backend::AnimeQuery& q) {
-            q.genres = {genre};
-            q.sort = QStringLiteral("score");
+        const QString slug = genre.toLower();
+        addQuickCat(genre, [slug](backend::AnimeQuery& q) {
+            q.genres = {slug};
+            q.sort = QStringLiteral("mal_rating");
             q.order = QStringLiteral("desc");
         });
     }
@@ -535,7 +536,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     resultsSortBox_->setToolTip(tr("Sort results"));
     resultsSortBox_->setAccessibleName(tr("Sort results"));
     resultsSortBox_->addItem(tr("Name"), QStringLiteral("name"));
-    resultsSortBox_->addItem(tr("Rating"), QStringLiteral("score"));
+    resultsSortBox_->addItem(tr("Rating"), QStringLiteral("mal_rating"));
     resultsSortBox_->addItem(tr("Release year"), QStringLiteral("year"));
     resultsSortBox_->addItem(tr("Views"), QStringLiteral("views"));
     resultsSortBox_->addItem(tr("Recently updated"), QStringLiteral("updated"));

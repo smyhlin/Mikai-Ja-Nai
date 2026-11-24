@@ -28,6 +28,10 @@
 #include <QPixmap>
 #include <QPointer>
 #include <QQuickItem>
+#include <QQuickStyle>
+#include <QQuickWindow>
+#include <QSGRendererInterface>
+#include <QSurfaceFormat>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QTranslator>
@@ -64,6 +68,7 @@
 #include "workers/Runner.hpp"
 #include "CompareWindow.hpp"
 #include "MediaInformationDialog.hpp"
+#include "MpvHandle.hpp"
 #include "PlayerController.hpp"
 #include "PlayerMenuModel.hpp"
 #include "PlayerWindow.hpp"
@@ -207,7 +212,7 @@ public:
     }
 
 private:
-    enum class Stage { Catalogue, FiltersOpen, FiltersShot, TitleOpen, TitleShot,
+    enum class Stage { Catalogue, FiltersOpen, FiltersShot, SearchGridOpen, SearchGridShot, TitleOpen, TitleShot,
         Playback, Pause, PlayerShot, PlayerHoverShot, PlayerSettingsMenuShot,
         PlayerProcessingMenuShot, PlayerPipShot, ClipOpen, ClipShot,
         CompareOpen, CompareReady, CompareClosed, InformationOpen, InformationRead,
@@ -387,8 +392,8 @@ private:
         if (handling_) return;
         QScopedValueRollback<bool> guard(handling_, true);
         if (stage_ != Stage::Close && stage_ != Stage::Drain && stage_ != Stage::Finished &&
-            totalClock_.elapsed() > 180000) {
-            stop(QStringLiteral("Capture deadline exceeded (180 seconds)."));
+            totalClock_.elapsed() > 240000) {
+            stop(QStringLiteral("Capture deadline exceeded (240 seconds)."));
         }
         if (stage_ != Stage::Close && stage_ != Stage::Drain &&
             !playbackError_.isEmpty()) {
@@ -448,15 +453,70 @@ private:
             }
             break;
         }
+        case Stage::SearchGridOpen: {
+            QWidget* bar = window_->findChild<QWidget*>(QStringLiteral("quickCategoriesBar"));
+            QAbstractButton* chip = nullptr;
+            if (bar != nullptr) {
+                for (auto* btn : bar->findChildren<QAbstractButton*>(QStringLiteral("categoryChip"))) {
+                    if (btn->text() == QLatin1String("Action")) {
+                        chip = btn;
+                        break;
+                    }
+                }
+                if (chip == nullptr) {
+                    chip = bar->findChild<QAbstractButton*>(QStringLiteral("categoryChip"));
+                }
+            }
+            if (chip != nullptr && chip->isVisible() && chip->isEnabled()) {
+                next(Stage::SearchGridShot);
+                QTimer::singleShot(0, chip, [chip] { chip->click(); });
+            } else {
+                next(Stage::SettingsOpen);
+            }
+            break;
+        }
+        case Stage::SearchGridShot: {
+            QWidget* grid = window_->findChild<QWidget*>(QStringLiteral("searchResultsGrid"));
+            int loadedCards = 0;
+            if (grid != nullptr && grid->isVisible()) {
+                for (auto* card : grid->findChildren<mikai::app::TitleCard*>()) {
+                    if (!card->isVisible()) continue;
+                    for (auto* label : card->findChildren<QLabel*>()) {
+                        if (!label->pixmap().isNull()) {
+                            ++loadedCards;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (loadedCards >= 3 && stageClock_.elapsed() >= 2500) {
+                capture(window_.get(), QStringLiteral("search-results-grid"), QJsonObject{
+                    {QStringLiteral("surface"), QStringLiteral("live filtered search results grid")},
+                    {QStringLiteral("loadedCards"), loadedCards}});
+                if (auto* home = window_->findChild<QAbstractButton*>(QStringLiteral("homeButton"))) {
+                    home->click();
+                }
+                next(Stage::SettingsOpen);
+            } else if (stageClock_.elapsed() > 75000) {
+                error(QStringLiteral("Live filtered search results grid did not load posters in 75 seconds."));
+                if (auto* home = window_->findChild<QAbstractButton*>(QStringLiteral("homeButton"))) {
+                    home->click();
+                }
+                next(Stage::SettingsOpen);
+            }
+            break;
+        }
         case Stage::TitleOpen: {
             mikai::app::TitleCard* firstCard = nullptr;
             for (auto* card : window_->findChildren<mikai::app::TitleCard*>()) {
                 if (!card->isVisible()) continue;
-                auto* poster = card->findChild<QLabel*>(QStringLiteral("carouselPoster"));
-                if (poster != nullptr && !poster->pixmap().isNull()) {
-                    firstCard = card;
-                    break;
+                for (auto* label : card->findChildren<QLabel*>()) {
+                    if (!label->pixmap().isNull()) {
+                        firstCard = card;
+                        break;
+                    }
                 }
+                if (firstCard != nullptr) break;
             }
             if (firstCard != nullptr) {
                 QTest::mouseClick(firstCard, Qt::LeftButton);
@@ -473,6 +533,9 @@ private:
                     {QStringLiteral("surface"), QStringLiteral("live title page")}});
                 if (auto* back = window_->findChild<QAbstractButton*>(QStringLiteral("titleBack"))) {
                     back->click();
+                }
+                if (auto* home = window_->findChild<QAbstractButton*>(QStringLiteral("homeButton"))) {
+                    home->click();
                 }
                 startPlayback();
             } else if (stageClock_.elapsed() > 10000) {
@@ -717,14 +780,15 @@ private:
                 window_->show();
                 window_->raise();
                 window_->activateWindow();
-                next(Stage::SettingsOpen);
+                next(arguments_.fullDocsGallery ? Stage::SearchGridOpen : Stage::SettingsOpen);
             }
             break;
         case Stage::SettingsOpen: {
             QAbstractButton* settingsButton = nullptr;
             for (auto* button : window_->findChildren<QAbstractButton*>()) {
                 if (button->isVisible() && button->isEnabled() &&
-                    button->accessibleName() == QLatin1String("API token settings")) {
+                    (button->accessibleName() == QLatin1String("Settings") ||
+                     button->accessibleName() == QLatin1String("API token settings"))) {
                     settingsButton = button;
                     break;
                 }
@@ -861,9 +925,6 @@ private:
                         {QStringLiteral("access"), QStringLiteral("settings-general")},
                         {QStringLiteral("shortcuts"), QStringLiteral("settings-shortcuts")},
                         {QStringLiteral("processing"), QStringLiteral("settings-processing")},
-                        {QStringLiteral("components"), QStringLiteral("settings-components")},
-                        {QStringLiteral("upscalers"), QStringLiteral("settings-upscalers")},
-                        {QStringLiteral("benchmark"), QStringLiteral("settings-benchmark")},
                     };
                     for (const auto& [pageId, shotName] : pages) {
                         if (!settings->showPage(pageId)) continue;
@@ -2658,9 +2719,19 @@ int main(int argc, char** argv) {
         return 2;
     }
     QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL);
+    {
+        QSurfaceFormat format = QSurfaceFormat::defaultFormat();
+        format.setRenderableType(QSurfaceFormat::OpenGL);
+        format.setProfile(QSurfaceFormat::CoreProfile);
+        format.setVersion(3, 3);
+        QSurfaceFormat::setDefaultFormat(format);
+    }
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+    QQuickStyle::setStyle(QStringLiteral("Basic"));
     int qtArgc = 1;
     char* qtArgv[] = {argv[0], nullptr};
     QApplication app(qtArgc, qtArgv);
+    mplayer::ensureMpvNumericLocale();
     app.setQuitOnLastWindowClosed(false);
     app.setOrganizationName(QStringLiteral("MikaiReleaseGallery"));
     app.setApplicationName(QStringLiteral("ReleaseGalleryProbe"));
