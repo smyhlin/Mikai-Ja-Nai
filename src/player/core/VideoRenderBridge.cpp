@@ -301,21 +301,29 @@ bool VideoRenderBridge::createRenderContext(std::shared_ptr<MpvHandle> core,
     // A new context owns a new target attachment whose format says nothing about
     // the one the previous context probed, so the probe starts fresh here as well
     // as at teardown.
+    const GlApi gl = loadGlApi();
+
     resetTargetFormat();
     core_ = std::move(core);
     updateOwner_ = std::move(owner);
     const quint64 generation = generation_.load() + 1;
     queuedUpdate_.store(0);
-    const GlApi gl = loadGlApi();
+    // Publish the new generation BEFORE MpvRenderContext installs mpv's update
+    // callback: mpv may invoke the callback immediately from inside
+    // mpv_render_context_set_update_callback, and capturing `owner` by value
+    // avoids racing on the non-atomic `updateOwner_` member from mpv's thread.
+    generation_.store(generation);
+    std::weak_ptr<const void> relayOwner = updateOwner_;
 
     // The hop is coalesced: every callback mpv raises before the rendering thread
     // answers it collapses into one, and a callback that arrives after the owner
     // died is dropped instead of reaching destroyed state.
-    std::function<void()> relay = [this, generation, onUpdate = std::move(onUpdate)] {
+    std::function<void()> relay = [this, generation, relayOwner = std::move(relayOwner),
+                                   onUpdate = std::move(onUpdate)] {
         // A callback raised by a render context that has since been released
         // would touch a view that no longer owns a renderer.
         if (generation != generation_.load()) return;
-        if (updateOwner_.expired()) return;
+        if (relayOwner.expired()) return;
         if (queuedUpdate_.exchange(generation) == generation) return;
         if (onUpdate) onUpdate();
     };
@@ -324,6 +332,8 @@ bool VideoRenderBridge::createRenderContext(std::shared_ptr<MpvHandle> core,
         render_ = std::make_unique<MpvRenderContext>(*core_, gl, std::move(relay),
                                                      /*advancedControl=*/true);
     } catch (...) {
+        ++generation_;
+        queuedUpdate_.store(0);
         render_.reset();
         core_.reset();
         updateOwner_.reset();
@@ -334,7 +344,6 @@ bool VideoRenderBridge::createRenderContext(std::shared_ptr<MpvHandle> core,
     // the flip stays on for every consumer and no consumer re-flips a frame.
     flipY_ = 1;
     render_->setFlipY(true);
-    generation_.store(generation);
     releasePending_.store(false);
     contextReady_.store(true);
     return true;
