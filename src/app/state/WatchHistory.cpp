@@ -121,6 +121,7 @@ public:
         items.swap(pending_);
 
         bool saved = true;
+        QList<Item> failedItems;
         QSettings settings;
         bool settingsTouched = false;
         for (const Item& item : items) {
@@ -131,9 +132,15 @@ public:
                     QFile::remove(path);
                     QFile::remove(path + QStringLiteral(".bak"));
                 } else {
-                    if (QFile::exists(path)) {
-                        QFile::remove(path + QStringLiteral(".bak"));
-                        QFile::copy(path, path + QStringLiteral(".bak"));
+                    QFile existing(path);
+                    if (existing.exists() && existing.open(QIODevice::ReadOnly)) {
+                        const QByteArray prev = existing.readAll();
+                        existing.close();
+                        QSaveFile bak(path + QStringLiteral(".bak"));
+                        if (bak.open(QIODevice::WriteOnly | QIODevice::Truncate) &&
+                            bak.write(prev) == prev.size()) {
+                            bak.commit();
+                        }
                     }
                     QSaveFile out(path);
                     const QByteArray encoded = item.payload.toUtf8();
@@ -145,6 +152,7 @@ public:
                         }
                     } else {
                         saved = false;
+                        failedItems.append(item);
                     }
                 }
             } else {
@@ -163,6 +171,9 @@ public:
         if (!saved) {
             qWarning() << "mikai: could not save episode history, settings status:"
                        << settings.status();
+            for (Item& failed : failedItems) {
+                pending_.append(std::move(failed));
+            }
             writeFailed_ = true;
         } else {
             writeFailed_ = false;
