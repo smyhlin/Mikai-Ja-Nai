@@ -551,14 +551,33 @@ StoredPack describeSharedAnimeJanaiRuntimePack(const QString& root, const Compon
 bool animeJanaiSharedRuntimeRefCurrent(const QString& root, Backend backend, QString* reason) {
     const auto packs = selectedPacks(backend, reason);
     if (root.isEmpty() || packs.isEmpty()) return false;
-    const QString file = QDir(root).filePath(QStringLiteral("refs/%1.json").arg(appId(backend)));
+    const QString baseId = appId(backend);
+    const QString appPath = applicationReferencePath();
+    QString refId = baseId;
+    QString file = QDir(root).filePath(QStringLiteral("refs/%1.json").arg(refId));
+    if (!QFileInfo::exists(file)) {
+        // v0.3.0 builds that passed --per-copy wrote refs/<appId>-<8-hex>.json.
+        const QString refsDir = QDir(root).filePath(QStringLiteral("refs"));
+        if (sharedPathIsSafe(root, refsDir)) {
+            const QString prefix = baseId + QLatin1Char('-');
+            for (const QFileInfo& entry :
+                 QDir(refsDir).entryInfoList({prefix + QStringLiteral("*.json")}, QDir::Files)) {
+                const QString candidateId = entry.completeBaseName();
+                if (candidateId.size() == prefix.size() + 8) {
+                    refId = candidateId;
+                    file = entry.absoluteFilePath();
+                    break;
+                }
+            }
+        }
+    }
     if (!sharedPathIsSafe(root, file)) {
         if (reason) *reason = StoreText::tr("The shared runtime has no live reference for this application.");
         return false;
     }
     const auto object = readObject(file, reason);
-    if (!object || object->value(QStringLiteral("app_id")).toString() != appId(backend) ||
-        !samePath(object->value(QStringLiteral("app_path")).toString(), applicationReferencePath()) ||
+    if (!object || object->value(QStringLiteral("app_id")).toString() != refId ||
+        !samePath(object->value(QStringLiteral("app_path")).toString(), appPath) ||
         !object->value(QStringLiteral("packs")).isArray()) {
         if (reason) *reason = StoreText::tr("The shared runtime reference is missing or out of date for this application.");
         return false;
@@ -676,7 +695,6 @@ ComponentProvisionResult provisionAnimeJanaiSharedRuntime(
     if (!ensureTool(progress, stopped, &error) || !ensureIndex(progress, stopped, &error))
         return failed(error.isEmpty() ? StoreText::tr("Runtime storage operation was cancelled.") : error, stopped());
     QStringList arguments{QStringLiteral("ensure"), QStringLiteral("--app-id"), appId(backend),
-        QStringLiteral("--per-copy"),
         QStringLiteral("--app-path"), applicationReferencePath(),
         QStringLiteral("--app-version"), QCoreApplication::applicationVersion(),
         QStringLiteral("--index"), indexPath(), QStringLiteral("--index-sha256"), QString::fromLatin1(kIndexSha),
