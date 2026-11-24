@@ -160,6 +160,7 @@ SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWi
 }
 
 SettingsDialog::~SettingsDialog() {
+    if (alive_) alive_->store(false, std::memory_order_release);
     // A dialog destroyed without done() - a parent going away, a stack frame
     // unwinding - still owes the user the language and the look they opened in.
     restoreOpeningLanguage();

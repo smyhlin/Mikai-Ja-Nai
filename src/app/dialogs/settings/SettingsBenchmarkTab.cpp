@@ -1246,7 +1246,8 @@ void SettingsDialog::runBenchmark() {
     benchmarkSelectAllModels_->setEnabled(false);
     updateBenchmarkSelectionSummary();
 
-    const auto dialog = std::make_shared<QPointer<SettingsDialog>>(this);
+    const std::shared_ptr<std::atomic<bool>> alive = alive_;
+    SettingsDialog* const owner = this;
     const Runner::GuiDispatch post = runner_.post();
     const QString reportDirectory = mikai::app::benchmarkReportBaseDirectory();
     const QString applicationVersion = QCoreApplication::applicationVersion();
@@ -1270,7 +1271,7 @@ void SettingsDialog::runBenchmark() {
     // X-M15: hour-scale work (engine builds alone can run 10 min each)
     // belongs on the transfer pool, not the shared API pool.
     runner_.runTransfer(
-        [dialog, cancellation, post, reportDirectory, applicationVersion, backend, clipPaths,
+        [alive, owner, cancellation, post, reportDirectory, applicationVersion, backend, clipPaths,
          clips, models, measureRaw, totalRuns, surface]() -> QVariant {
             const backend::WorkCancellationScope cancellationScope(cancellation.get());
             int completedRuns = 0;
@@ -1314,22 +1315,22 @@ void SettingsDialog::runBenchmark() {
                 report.results.append(entry);
             };
 
-            const auto publishActivity = [dialog, post, cancellation](const QString& text) {
-                post([dialog, cancellation, text] {
-                        if (cancellation->load() || dialog->isNull()) return;
-                        SettingsDialog* self = dialog->data();
+            const auto publishActivity = [alive, owner, post, cancellation](const QString& text) {
+                post([alive, owner, cancellation, text] {
+                        if (cancellation->load() || !alive->load(std::memory_order_acquire)) return;
+                        SettingsDialog* self = owner;
                         if (self->benchmarkActivity_ != nullptr) {
                             self->benchmarkActivity_->setText(text);
                         }
                     });
             };
 
-            const auto publishEngineBuild = [dialog, post, cancellation, backend](
+            const auto publishEngineBuild = [alive, owner, post, cancellation, backend](
                                                 BenchmarkEngineBuildUpdate update,
                                                 const QString& detail) {
-                post([dialog, cancellation, update, detail, backend] {
-                        if (cancellation->load() || dialog->isNull()) return;
-                        SettingsDialog* self = dialog->data();
+                post([alive, owner, cancellation, update, detail, backend] {
+                        if (cancellation->load() || !alive->load(std::memory_order_acquire)) return;
+                        SettingsDialog* self = owner;
                         if (self->benchmarkActivity_ == nullptr ||
                             self->benchmarkEngineProgress_ == nullptr ||
                             self->benchmarkEngineElapsedLabel_ == nullptr ||
@@ -1373,15 +1374,15 @@ void SettingsDialog::runBenchmark() {
                     });
             };
 
-            const auto append = [dialog, post, cancellation, totalRuns, &completedRuns, &failedRuns](
+            const auto append = [alive, owner, post, cancellation, totalRuns, &completedRuns, &failedRuns](
                                     const QString& model, const QString& clip,
                                     const QString& result, bool successful) {
                 const BenchmarkResultRow resultRow{model, clip, result, successful};
                 if (!successful) ++failedRuns;
                 const int completed = ++completedRuns;
-                post([dialog, cancellation, resultRow, completed, totalRuns] {
-                        if (dialog->isNull()) return;
-                        SettingsDialog* self = dialog->data();
+                post([alive, owner, cancellation, resultRow, completed, totalRuns] {
+                        if (!alive->load(std::memory_order_acquire)) return;
+                        SettingsDialog* self = owner;
                         // A sample that already finished still belongs in the table
                         // after Cancel. Only a newer run invalidates this token.
                         if (self->benchmarkCancellation_ != cancellation) return;
@@ -1455,7 +1456,7 @@ void SettingsDialog::runBenchmark() {
                 if (!error.isEmpty()) sourceErrors.insert(clip, error);
             }
             const auto measure = [&append, &publishActivity, &publishEngineBuild, &recordResult,
-                                  &sourceContexts, &sourceErrors, &clipPaths, &surface, dialog,
+                                  &sourceContexts, &sourceErrors, &clipPaths, &surface, alive, owner,
                                   cancellation, post](
                                      const QString& modelId, const QString& label,
                                      const QString& clipName,
@@ -1498,9 +1499,9 @@ void SettingsDialog::runBenchmark() {
                 const QString runLabel = QStringLiteral("%1 · %2").arg(label, clipLabel);
                 publishActivity(SettingsDialog::tr("Loading clip · %1").arg(runLabel));
                 const QDateTime runStartedAt = QDateTime::currentDateTimeUtc();
-                post([dialog, cancellation] {
-                        if (cancellation->load() || dialog->isNull()) return;
-                        dialog->data()->benchmarkEngineElapsedLabel_->hide();
+                post([alive, owner, cancellation] {
+                        if (cancellation->load() || !alive->load(std::memory_order_acquire)) return;
+                        owner->benchmarkEngineElapsedLabel_->hide();
                     });
                 const BenchmarkSampleResult result = runBenchmarkSample(
                     path, sourceSize * 2, options, engineBackend, slot, *surface,
@@ -1623,9 +1624,9 @@ void SettingsDialog::runBenchmark() {
             const QString reportPath = written.path;
             const QString reportError = written.error;
             const bool stopped = backend::WorkCancellationScope::cancellationRequested();
-            post([dialog, cancellation, stopped, resultCount, failedCount, reportPath, reportError] {
-                    if (dialog->isNull()) return;
-                    SettingsDialog* self = dialog->data();
+            post([alive, owner, cancellation, stopped, resultCount, failedCount, reportPath, reportError] {
+                    if (!alive->load(std::memory_order_acquire)) return;
+                    SettingsDialog* self = owner;
                     if (self->benchmarkCancellation_ != cancellation) return;
                     self->benchmarkResultStack_->setCurrentWidget(self->benchmarkResults_);
                     self->benchmarkProgress_->setValue(resultCount);
@@ -1662,9 +1663,9 @@ void SettingsDialog::runBenchmark() {
             return {};
         },
         {},
-        [dialog, cancellation](const backend::Failure& failure) {
-            if (dialog->isNull()) return;
-            SettingsDialog* self = dialog->data();
+        [alive, owner, cancellation](const backend::Failure& failure) {
+            if (!alive->load(std::memory_order_acquire)) return;
+            SettingsDialog* self = owner;
             if (self->benchmarkCancellation_ != cancellation) return;
             self->resetBenchmarkControls();
             self->benchmarkActivity_->setText(failure.message);

@@ -621,6 +621,9 @@ private:
     /// The feed selection as loaded, so `feedsChanged()` compares against what
     /// the user actually saw rather than the widget defaults.
     QSet<QString> initialFeeds_;
+    /// Thread-safe liveness flag flipped in ~SettingsDialog() so worker-thread
+    /// closures never hold or destroy a QPointer<SettingsDialog> off the GUI thread.
+    std::shared_ptr<std::atomic<bool>> alive_ = std::make_shared<std::atomic<bool>>(true);
 };
 
 }  // namespace mikai::app
