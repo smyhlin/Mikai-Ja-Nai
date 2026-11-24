@@ -326,23 +326,42 @@ bool saveComparisonGif(const QString& path, const QImage& a, const QImage& b,
 }
 
 CompareGifExport::CompareGifExport(QObject* parent)
-    : QObject(parent), cancelled_(std::make_shared<std::atomic_bool>(false)) {
-    connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, this,
-            &CompareGifExport::cancel);
+    : QObject(parent),
+      cancelled_(std::make_shared<std::atomic_bool>(false)),
+      alive_(std::make_shared<std::atomic_bool>(true)) {
+    if (auto* app = QCoreApplication::instance()) {
+        connect(app, &QCoreApplication::aboutToQuit, this, &CompareGifExport::cancel);
+    }
+}
+
+CompareGifExport::~CompareGifExport() {
+    alive_->store(false, std::memory_order_release);
+    cancelled_->store(true, std::memory_order_relaxed);
 }
 
 void CompareGifExport::start(const QString& path, const QImage& a, const QImage& b,
                              int frameDelayMs) {
     Q_ASSERT(!started_);
     Q_ASSERT(parent() == nullptr);
+    if (started_) return;
     started_ = true;
     connect(this, &CompareGifExport::finished, this, &QObject::deleteLater,
             Qt::QueuedConnection);
     const auto cancelled = cancelled_;
-    QThreadPool::globalInstance()->start([this, path, a, b, frameDelayMs, cancelled] {
+    const auto alive = alive_;
+    QObject* ownerTarget = QCoreApplication::instance();
+    CompareGifExport* self = this;
+    QThreadPool::globalInstance()->start([self, ownerTarget, path, a, b, frameDelayMs, cancelled, alive] {
         QString error;
         const bool succeeded = saveComparisonGif(path, a, b, frameDelayMs, *cancelled, &error);
-        emit finished(succeeded, error);
+        if (ownerTarget == nullptr) return;
+        QMetaObject::invokeMethod(
+            ownerTarget,
+            [self, alive, succeeded, error] {
+                if (!alive->load(std::memory_order_acquire)) return;
+                emit self->finished(succeeded, error);
+            },
+            Qt::QueuedConnection);
     });
 }
 

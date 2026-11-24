@@ -16,6 +16,7 @@ class CompareGifExport final : public QObject {
 
 public:
     explicit CompareGifExport(QObject* parent = nullptr);
+    ~CompareGifExport() override;
     void start(const QString& path, const QImage& a, const QImage& b, int frameDelayMs);
     void cancel();
 
@@ -24,6 +25,7 @@ signals:
 
 private:
     std::shared_ptr<std::atomic_bool> cancelled_;
+    std::shared_ptr<std::atomic_bool> alive_;
     bool started_ = false;
 };
 

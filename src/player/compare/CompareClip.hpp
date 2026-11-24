@@ -19,6 +19,7 @@ class CompareClipExport final : public QObject {
 
 public:
     explicit CompareClipExport(QObject* parent = nullptr);
+    ~CompareClipExport() override;
     void start(const QString& path, const QImage& a, const QImage& b, int frameDelayMs,
                CompareClipFormat format);
     void cancel();
@@ -28,6 +29,7 @@ signals:
 
 private:
     std::shared_ptr<std::atomic_bool> cancelled_;
+    std::shared_ptr<std::atomic_bool> alive_;
     bool started_ = false;
 };
 

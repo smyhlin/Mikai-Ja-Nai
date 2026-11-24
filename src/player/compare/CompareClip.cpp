@@ -347,17 +347,37 @@ bool saveComparisonClip(const QString& path, const QImage& a, const QImage& b, i
 }
 
 CompareClipExport::CompareClipExport(QObject* parent)
-    : QObject(parent), cancelled_(std::make_shared<std::atomic_bool>(false)) {
-    connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, this, &CompareClipExport::cancel);
+    : QObject(parent),
+      cancelled_(std::make_shared<std::atomic_bool>(false)),
+      alive_(std::make_shared<std::atomic_bool>(true)) {
+    if (auto* app = QCoreApplication::instance()) {
+        connect(app, &QCoreApplication::aboutToQuit, this, &CompareClipExport::cancel);
+    }
+}
+CompareClipExport::~CompareClipExport() {
+    alive_->store(false, std::memory_order_release);
+    cancelled_->store(true, std::memory_order_relaxed);
 }
 void CompareClipExport::start(const QString& path, const QImage& a, const QImage& b, int frameDelayMs, CompareClipFormat format) {
-    Q_ASSERT(!started_); Q_ASSERT(parent() == nullptr); started_ = true;
+    Q_ASSERT(!started_); Q_ASSERT(parent() == nullptr);
+    if (started_) return;
+    started_ = true;
     connect(this, &CompareClipExport::finished, this, &QObject::deleteLater, Qt::QueuedConnection);
     const auto cancelled = cancelled_;
-    QThreadPool::globalInstance()->start([this, path, a, b, frameDelayMs, format, cancelled] {
+    const auto alive = alive_;
+    QObject* ownerTarget = QCoreApplication::instance();
+    CompareClipExport* self = this;
+    QThreadPool::globalInstance()->start([self, ownerTarget, path, a, b, frameDelayMs, format, cancelled, alive] {
         QString error;
         const bool succeeded = saveComparisonClip(path, a, b, frameDelayMs, format, *cancelled, &error);
-        emit finished(succeeded, error);
+        if (ownerTarget == nullptr) return;
+        QMetaObject::invokeMethod(
+            ownerTarget,
+            [self, alive, succeeded, error] {
+                if (!alive->load(std::memory_order_acquire)) return;
+                emit self->finished(succeeded, error);
+            },
+            Qt::QueuedConnection);
     });
 }
 void CompareClipExport::cancel() { cancelled_->store(true, std::memory_order_relaxed); }
