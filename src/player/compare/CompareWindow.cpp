@@ -311,6 +311,8 @@ struct AjiPreparationTask {
     std::atomic_bool cancelled{false};
     std::atomic_bool finished{false};
     std::optional<native::AnimeJanaiPlan> plan;
+    std::mutex loopMutex;
+    QEventLoop* loop = nullptr;
 };
 
 struct PlaybackTimestampResult {
@@ -2077,8 +2079,18 @@ QImage CompareWindow::renderIsolated(const QString& id) {
         updateInfo();
         const native::AnimeJanaiSourceContext source = session_->animeJanaiSourceContext();
         QEventLoop prepLoop;
-        QPointer<QEventLoop> prepLoopGuard(&prepLoop);
-        QThreadPool::globalInstance()->start(QRunnable::create([task, id, backend, source, prepLoopGuard] {
+        {
+            std::lock_guard<std::mutex> lock(task->loopMutex);
+            task->loop = &prepLoop;
+        }
+        struct LoopDetach {
+            std::shared_ptr<AjiPreparationTask> task;
+            ~LoopDetach() {
+                std::lock_guard<std::mutex> lock(task->loopMutex);
+                task->loop = nullptr;
+            }
+        } detachLoop{task};
+        QThreadPool::globalInstance()->start(QRunnable::create([task, id, backend, source] {
             const native::Anime4KShaderProgramResolver shaderResolver =
                 [](const QString& presetId, QString* reason) {
                     return anime4k::filterShaderProgramForCandidate(
@@ -2089,8 +2101,9 @@ QImage CompareWindow::renderIsolated(const QString& id) {
                     return task->cancelled.load(std::memory_order_acquire);
                 }, source, shaderResolver);
             task->finished.store(true, std::memory_order_release);
-            if (prepLoopGuard != nullptr) {
-                QMetaObject::invokeMethod(prepLoopGuard.data(), &QEventLoop::quit,
+            std::lock_guard<std::mutex> lock(task->loopMutex);
+            if (task->loop != nullptr) {
+                QMetaObject::invokeMethod(task->loop, &QEventLoop::quit,
                                           Qt::QueuedConnection);
             }
         }));
@@ -2098,6 +2111,10 @@ QImage CompareWindow::renderIsolated(const QString& id) {
             if (cancelled()) task->cancelled.store(true, std::memory_order_release);
             QTimer::singleShot(kPollIntervalMs, &prepLoop, &QEventLoop::quit);
             prepLoop.exec(QEventLoop::ExcludeUserInputEvents);
+        }
+        {
+            std::lock_guard<std::mutex> lock(task->loopMutex);
+            task->loop = nullptr;
         }
         if (self == nullptr) {
             task->cancelled.store(true, std::memory_order_release);
