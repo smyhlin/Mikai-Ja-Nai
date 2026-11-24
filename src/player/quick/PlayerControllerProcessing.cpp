@@ -586,7 +586,7 @@ void PlayerController::applyAnimeJanaiRequest(const QString& id) {
     // The slot is created and assigned on the GUI thread; the worker captures
     // only the shared slot, never a raw controller address.
     if (!workerSlot_) workerSlot_ = std::make_shared<WorkerSlot>();
-    workerSlot_->controller = this;
+    workerSlot_->controller.store(this, std::memory_order_release);
     animeJanaiStatus_ = id.isEmpty() ? tr("Turning off…") : tr("Preparing…");
     animeJanaiNote_.clear();
     publishAnimeJanai();
@@ -614,7 +614,7 @@ void PlayerController::applyAnimeJanaiRequest(const QString& id) {
                 [slot, cancelled, sequence, sourceEpoch, source, plan = std::move(plan)]() mutable {
                     if (cancelled->load()) return;
                     PlayerController* controller =
-                        slot != nullptr ? slot->controller.data() : nullptr;
+                        slot != nullptr ? slot->controller.load(std::memory_order_acquire) : nullptr;
                     if (controller == nullptr || controller->closed_ ||
                         controller->animeJanaiSequence_ != sequence) {
                         return;

@@ -918,7 +918,7 @@ private:
     int animeJanaiBuildStageCount_ = 0;
 
     struct WorkerSlot {
-        QPointer<PlayerController> controller;
+        std::atomic<PlayerController*> controller{nullptr};
     };
     std::shared_ptr<WorkerSlot> workerSlot_;
 

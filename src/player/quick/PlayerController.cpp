@@ -205,7 +205,7 @@ PlayerController::~PlayerController() {
     }
     ++animeJanaiSequence_;
     if (animeJanaiCancellation_) animeJanaiCancellation_->store(true);
-    if (workerSlot_) workerSlot_->controller = nullptr;
+    if (workerSlot_) workerSlot_->controller.store(nullptr, std::memory_order_release);
     enginePreparationActive_ = false;
     enginePreparationVisible_ = false;
     if (session_ != nullptr) {
@@ -233,7 +233,7 @@ void PlayerController::buildModels() {
     skipOffers_ = new PlayerMenuModel(this);
 
     workerSlot_ = std::make_shared<WorkerSlot>();
-    workerSlot_->controller = this;
+    workerSlot_->controller.store(this, std::memory_order_release);
 
     rebuildPictureMenu();
     rebuildSubtitleMenus();
@@ -535,7 +535,7 @@ bool PlayerController::requestClose() {
     enginePreparationActive_ = false;
     ++animeJanaiSequence_;
     if (animeJanaiCancellation_) animeJanaiCancellation_->store(true);
-    if (workerSlot_) workerSlot_->controller = nullptr;
+    if (workerSlot_) workerSlot_->controller.store(nullptr, std::memory_order_release);
     if (previewService_ != nullptr) previewService_->cancel();
 
     session_->setPaused(true);
@@ -545,7 +545,7 @@ bool PlayerController::requestClose() {
             << "mikai: native stop unsettled (native.playback.teardownUnsettled); close refused";
         closed_ = false;
         shuttingDown_ = false;
-        if (workerSlot_) workerSlot_->controller = this;
+        if (workerSlot_) workerSlot_->controller.store(this, std::memory_order_release);
         if (enginePreparationWasActive) enginePreparationActive_ = true;
         if (session_->pauseRequestGeneration() == pauseGenerationAtClose) {
             session_->setPaused(pauseIntentAtClose);

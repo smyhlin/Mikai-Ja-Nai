@@ -1231,8 +1231,9 @@ void PlayerController::searchSubtitles() {
         QMetaObject::invokeMethod(
             app,
             [slot, token, sourceEpoch, reply, apiKey] {
-                if (!slot || slot->controller == nullptr) return;
-                PlayerController* controller = slot->controller.data();
+                PlayerController* controller =
+                    slot ? slot->controller.load(std::memory_order_acquire) : nullptr;
+                if (controller == nullptr) return;
                 if (controller->closed_ || token != controller->subtitleSearchToken_ ||
                     controller->session_ == nullptr ||
                     controller->session_->sourceEpoch() != sourceEpoch) {
@@ -1302,8 +1303,9 @@ void PlayerController::downloadSubtitle(int row) {
         QMetaObject::invokeMethod(
             app,
             [slot, token, sourceEpoch, bytes, error] {
-                if (!slot || slot->controller == nullptr) return;
-                PlayerController* controller = slot->controller.data();
+                PlayerController* controller =
+                    slot ? slot->controller.load(std::memory_order_acquire) : nullptr;
+                if (controller == nullptr) return;
                 if (controller->closed_ || token != controller->subtitleSearchToken_ ||
                     controller->session_ == nullptr ||
                     controller->session_->sourceEpoch() != sourceEpoch) {
