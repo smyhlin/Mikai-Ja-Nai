@@ -66,7 +66,7 @@ VideoSurface::VideoSurface(QWidget* parent) : QOpenGLWidget(parent) {
     // rendering thread here IS the GUI thread, but a completion raised inside a
     // render pass may run nested GUI work, so it is posted like any other event.
     guiSlot_ = std::make_shared<GuiSlot>();
-    guiSlot_->self = this;
+    guiSlot_->self.store(this, std::memory_order_release);
     presenterToken_ = std::make_shared<const int>(0);
     const std::shared_ptr<GuiSlot> slot = guiSlot_;
     bridge_ = std::make_unique<VideoRenderBridge>([slot](std::function<void()> task) {
@@ -74,7 +74,7 @@ VideoSurface::VideoSurface(QWidget* parent) : QOpenGLWidget(parent) {
             QMetaObject::invokeMethod(
                 app,
                 [slot, t = std::move(task)]() mutable {
-                    if (slot && slot->self && t) t();
+                    if (slot && slot->self.load(std::memory_order_acquire) != nullptr && t) t();
                 },
                 Qt::QueuedConnection);
         }
@@ -109,7 +109,7 @@ VideoSurface::VideoSurface(QWidget* parent) : QOpenGLWidget(parent) {
 
 VideoSurface::~VideoSurface() {
     destroying_ = true;
-    if (guiSlot_) guiSlot_->self.clear();
+    if (guiSlot_) guiSlot_->self.store(nullptr, std::memory_order_release);
     pacingTimer_.stop();
     placeholderTimer_.stop();
     // The hooks belong to the session; clearing them first means no notification
@@ -577,7 +577,10 @@ bool VideoSurface::ensureRenderContext(std::shared_ptr<MpvHandle> core, QString*
                     QMetaObject::invokeMethod(
                         app,
                         [slot] {
-                            if (slot && slot->self) slot->self->onRenderUpdate();
+                            if (!slot) return;
+                            if (VideoSurface* self = slot->self.load(std::memory_order_acquire)) {
+                                self->onRenderUpdate();
+                            }
                         },
                         Qt::QueuedConnection);
                 }

@@ -23,6 +23,7 @@
 #include <QString>
 #include <QTimer>
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -169,7 +170,7 @@ private:
     static bool clientFramePacingEnabled();
 
     struct GuiSlot {
-        QPointer<VideoSurface> self;
+        std::atomic<VideoSurface*> self{nullptr};
     };
     std::shared_ptr<GuiSlot> guiSlot_;
     VideoSession* session_ = nullptr;
