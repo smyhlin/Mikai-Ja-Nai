@@ -74,24 +74,20 @@ QString sanitizedError(QString message, const ClipExportRequest& request) {
     return message;
 }
 
-/// X-M22 (X-C1 pattern): the publish slot is created on the GUI thread in
-/// start() and captured into the pool thread by shared_ptr — copying a
-/// shared_ptr is thread-safe, copying a QPointer is not. The QPointer
-/// inside is only ever read in the queued callback, which runs on the GUI
-/// thread. The dispatcher is captured the same way: QCoreApplication is
-/// the object invokeMethod queues onto.
-struct PublishSlot {
-    QPointer<ClipExport> target;
+struct PublishTarget {
+    std::atomic<ClipExport*> target{nullptr};
 };
 
-void publish(const std::shared_ptr<PublishSlot>& slot, double progress, bool final,
+void publish(const std::shared_ptr<PublishTarget>& slot, double progress, bool final,
              bool succeeded, const QString& path, const QString& error) {
     QCoreApplication* dispatcher = QCoreApplication::instance();
     if (dispatcher == nullptr) return;
     QMetaObject::invokeMethod(dispatcher, [slot, progress, final, succeeded, path, error] {
-        if (slot == nullptr || !slot->target) return;
-        if (final) emit slot->target->finished(succeeded, path, error);
-        else emit slot->target->progressChanged(progress);
+        if (slot == nullptr) return;
+        ClipExport* target = slot->target.load(std::memory_order_acquire);
+        if (target == nullptr) return;
+        if (final) emit target->finished(succeeded, path, error);
+        else emit target->progressChanged(progress);
     }, Qt::QueuedConnection);
 }
 
@@ -172,11 +168,14 @@ bool mp4ContainsStreams(const QString& path, const std::string& codec, bool requ
     return video && mediaData && (!requireAudio || audio);
 }
 
-void publishCodec(const std::shared_ptr<PublishSlot>& slot, const QString& codec) {
+void publishCodec(const std::shared_ptr<PublishTarget>& slot, const QString& codec) {
     QCoreApplication* dispatcher = QCoreApplication::instance();
     if (dispatcher == nullptr) return;
     QMetaObject::invokeMethod(dispatcher, [slot, codec] {
-        if (slot != nullptr && slot->target) emit slot->target->encodingStarted(codec);
+        if (slot == nullptr) return;
+        if (ClipExport* target = slot->target.load(std::memory_order_acquire)) {
+            emit target->encodingStarted(codec);
+        }
     }, Qt::QueuedConnection);
 }
 
@@ -210,11 +209,17 @@ bool hasSelectedAudioTrack(mpv_handle* handle, mplayer::MpvApi& api,
 struct ClipExport::State {
     std::atomic_bool cancelled{false};
     std::atomic_bool running{false};
+    std::shared_ptr<PublishTarget> target = std::make_shared<PublishTarget>();
 };
 
-ClipExport::ClipExport(QObject* parent) : QObject(parent), state_(std::make_shared<State>()) {}
+ClipExport::ClipExport(QObject* parent) : QObject(parent), state_(std::make_shared<State>()) {
+    state_->target->target.store(this, std::memory_order_release);
+}
 
-ClipExport::~ClipExport() { cancel(); }
+ClipExport::~ClipExport() {
+    state_->target->target.store(nullptr, std::memory_order_release);
+    cancel();
+}
 
 void ClipExport::cancel() {
     state_->cancelled.store(true, std::memory_order_relaxed);
@@ -227,8 +232,7 @@ void ClipExport::start(const ClipExportRequest& request) {
     }
     state_->cancelled.store(false, std::memory_order_relaxed);
     const auto state = state_;
-    const auto slot = std::make_shared<PublishSlot>();
-    slot->target = this;
+    const auto slot = state_->target;
     QThreadPool::globalInstance()->start(QRunnable::create([state, slot, request] {
         QString failure;
         QString outputPath = request.outputPath;
