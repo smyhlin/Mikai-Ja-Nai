@@ -1,0 +1,799 @@
+{
+    "applicationCloseAccepted": true,
+    "applicationVersion": "0.2.4.1",
+    "catalogue": {
+        "authentication": "anonymous; environment key cleared and .env lookup redirected",
+        "content": "live service metadata and artwork; no fixtures or fabricated entries",
+        "source": "https://api.mikai.me/public/v1"
+    },
+    "compareCloseReleasedHold": true,
+    "elapsedMs": 31531,
+    "errors": [
+    ],
+    "finishedUtc": "2026-11-24T19:44:51Z",
+    "interfaceLanguage": "en",
+    "isolation": "verified executable copy; fresh INI settings, home, cache, working directory and native store",
+    "logicalSize": [
+        1280,
+        800
+    ],
+    "platform": "xcb",
+    "playbackSmoke": {
+        "clockAdvanced": true,
+        "fromSeconds": 1,
+        "pictureLitFraction": 1,
+        "toSeconds": 1.4583333333333333
+    },
+    "processing": "Original playback; compare may use bundled Anime4K shaders only. No model/engine acquisition or AI inference requested.",
+    "qtVersion": "6.12.0",
+    "schema": 1,
+    "screenshots": [
+        {
+            "capturedUtc": "2026-11-24T19:44:25Z",
+            "cards": [
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/01a1a905-62d8-70a1-b3fe-e8ba343af4ed.webp",
+                    "ref": "7612",
+                    "title": "Крісло-танк"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/01a1a905-7c65-7cb1-a1e5-f80051f7fc94.webp",
+                    "ref": "7707",
+                    "title": "DARK MACHINE THE ANIMATION"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/01a1a904-d2d3-7318-9044-f65ed4422a01.webp",
+                    "ref": "7710",
+                    "title": "Весілля світлячків: замальовки"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/01a1a905-0547-75d5-ae12-885f62329e29.webp",
+                    "ref": "7708",
+                    "title": "Chitose Is in the Ramune Bottle 2nd Cour"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/01a1a904-a5a9-7a2a-b16d-12fa819e97f0.webp",
+                    "ref": "7731",
+                    "title": "Ace of the Diamond act II -Second Season-"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/01a1a904-9fde-703d-ba38-00fa77e75582.webp",
+                    "ref": "7608",
+                    "title": "Nia Liston: The Merciless Maiden"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/01a1a904-ba2b-7e41-a73f-60f5f78d087f.webp",
+                    "ref": "7639",
+                    "title": "The Laid-Off Cheat-Granting Mage Enjoys a Second Lease on Life"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/01a1a904-f010-7e3b-8432-38aba0597a87.webp",
+                    "ref": "7622",
+                    "title": "Ілюзорне прибережжя"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/01a1a905-8009-7599-bc2c-5c63c0595911.webp",
+                    "ref": "7638",
+                    "title": "Super Psychic Policeman Chojo"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/01a1a905-8a81-7901-8329-50baa8d739e0.webp",
+                    "ref": "7637",
+                    "title": "The Cold Sato-san is Only Sweet to Me"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/01a1a904-c7c2-76c9-872e-53f0cb70b249.webp",
+                    "ref": "7605",
+                    "title": "Firefly Wedding"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/01a1a905-255a-7cff-9488-a92f15550366.webp",
+                    "ref": "7630",
+                    "title": "Hello, I am a Witch and my Crush Wants me to Make a Love Potion!"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/01a1a905-3274-7148-945a-fad110cb6493.webp",
+                    "ref": "7613",
+                    "title": "HOTEL INHUMANS Season 2"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/01a1a904-b34d-72b9-8d06-77631807f08a.webp",
+                    "ref": "7589",
+                    "title": "As a Reincarnated Aristocrat, I'll Use My Appraisal Skill to Rise in the World Season 3"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/01a1a905-5f81-79fb-a7ea-db7568cfdb1b.webp",
+                    "ref": "7614",
+                    "title": "Uncle's Obsession with Cute Things"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/01a1a904-bfce-77c5-8b6d-ae7748f47b7b.webp",
+                    "ref": "7606",
+                    "title": "Ranma1/2 (2024) Season 3"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/01a1a904-ddf2-7a1c-8142-26a0ac9b8d62.webp",
+                    "ref": "7593",
+                    "title": "Overgeared"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/01a1a905-2c07-73e3-8743-2927fa841559.webp",
+                    "ref": "7641",
+                    "title": "Монолог Маомао 3"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/01a1a904-af6d-72ad-8cf8-a840ff249ee4.webp",
+                    "ref": "2662",
+                    "title": "ONE PIECE"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/93b5ad89-ecd8-11f0-b32d-46e833ca3405.webp",
+                    "ref": "7071",
+                    "title": "JUJUTSU KAISEN Season 3: The Culling Game Part 1"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/4f00e03c-77c3-11f1-9870-3a3323a6877a.webp",
+                    "ref": "7423",
+                    "title": "Mushoku Tensei: Jobless Reincarnation Season 3"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/d13d036f-3be5-11f1-86f8-961cccca53e7.webp",
+                    "ref": "6985",
+                    "title": "Коли я переродився слизом Cезон 4"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/dd59672b-3352-11f1-a11a-d67a57654ee4.webp",
+                    "ref": "7283",
+                    "title": "Re:ZERO -Starting Life in Another World- Season 4"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/01a1a904-ab38-7b77-b7d2-b0f84ed12e3b.webp",
+                    "ref": "7412",
+                    "title": "The Exiled Heavy Knight Knows How to Game the System"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/77d45a77-2097-11f0-b8b6-0242ac120005.webp",
+                    "ref": "82",
+                    "title": "JUJUTSU KAISEN"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/a0a3ce65-5a8e-11f0-baf9-e627ce426d82.webp",
+                    "ref": "3055",
+                    "title": "Gachiakuta"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/f8c5de06-31d6-11f1-bbfe-12c3fcebece1.webp",
+                    "ref": "7272",
+                    "title": "Witch Hat Atelier"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/31f3c7a7-20a3-11f0-a350-0242ac120005.webp",
+                    "ref": "603",
+                    "title": "Bleach"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/6d897bf3-584c-11f0-bbc3-5e855efb9d4d.webp",
+                    "ref": "3028",
+                    "title": "DAN DA DAN Season 2"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/dbed0f87-f2fd-11f0-85a2-ee729032c03a.webp",
+                    "ref": "7110",
+                    "title": "Frieren: Beyond Journey’s End Season 2"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/ddf9059a-2096-11f0-b8b6-0242ac120005.webp",
+                    "ref": "38",
+                    "title": "Naruto: Shippuden"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/8f7ae762-61a5-11f1-b920-b607335cc112.webp",
+                    "ref": "7385",
+                    "title": "Кішка-куряга"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/593bfcc2-5f7c-11f1-b920-b607335cc112.webp",
+                    "ref": "7382",
+                    "title": "Smoking Behind the Supermarket with You"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/df163b18-ef14-11f0-937b-52343f095ca9.webp",
+                    "ref": "7095",
+                    "title": "Hell’s Paradise Season 2"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/584e58a7-2098-11f0-b8b6-0242ac120005.webp",
+                    "ref": "146",
+                    "title": "Naruto"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/4c623461-e8c8-11f0-bfec-3a0a37aa5ca9.webp",
+                    "ref": "7044",
+                    "title": "Sentenced to Be a Hero"
+                }
+            ],
+            "devicePixelRatio": 1,
+            "file": "catalogue.png",
+            "logicalSize": [
+                1280,
+                800
+            ],
+            "pixelSize": [
+                1280,
+                800
+            ],
+            "sha256": "42498bc41d7f7a3f9b4a08e5d9903abf80ae513dd77f54cb0dfaefb462dfb60a",
+            "surface": "live anonymous home catalogue",
+            "widgetClass": "mikai::app::MainWindow",
+            "widgetObjectName": "mainWindow",
+            "windowTitle": "Mikai Ja Nai"
+        },
+        {
+            "capturedUtc": "2026-11-24T19:44:26Z",
+            "devicePixelRatio": 1,
+            "file": "filters.png",
+            "logicalSize": [
+                760,
+                780
+            ],
+            "pixelSize": [
+                760,
+                780
+            ],
+            "sha256": "bc91594c48aa3caa440b5e48b361480b8cff3c2428641bce40826157e188161b",
+            "surface": "catalogue filters dialog",
+            "widgetClass": "QDialog",
+            "widgetObjectName": "catalogueFiltersDialog",
+            "windowTitle": "Catalogue filters"
+        },
+        {
+            "capturedUtc": "2026-11-24T19:44:29Z",
+            "devicePixelRatio": 1,
+            "file": "title-page.png",
+            "logicalSize": [
+                1280,
+                800
+            ],
+            "pixelSize": [
+                1280,
+                800
+            ],
+            "sha256": "fccec10ff315425345a22ef647182233f5a28ffce35fadb48e05104b2afa3c35",
+            "surface": "live title page",
+            "widgetClass": "mikai::app::MainWindow",
+            "widgetObjectName": "mainWindow",
+            "windowTitle": "Mikai Ja Nai"
+        },
+        {
+            "capturedUtc": "2026-11-24T19:44:32Z",
+            "contextReady": true,
+            "devicePixelRatio": 1,
+            "durationSeconds": 15,
+            "file": "player.png",
+            "logicalSize": [
+                1280,
+                800
+            ],
+            "mediaTracksReady": true,
+            "pauseObserved": true,
+            "pixelSize": [
+                1280,
+                800
+            ],
+            "playing": false,
+            "positionSeconds": 1.5,
+            "runtimeDescriptor": "6c01745de3579fe325ba10d6a3549f1efa35799578a21d5a2310fa91d88ce8bc",
+            "runtimeKind": "standard",
+            "runtimeLoaded": true,
+            "runtimeModule": "libmpv.so.2",
+            "runtimeVersion": "stock-6c01745de357",
+            "sha256": "fa8748dab414d103e5a95c6bb0e12f6ecd19e21126f73f8f3ff7f84ec60ca5e3",
+            "shaderChain": "off",
+            "source": "Mikai original demo.mp4",
+            "sourceEpoch": 3,
+            "videoSize": [
+                1920,
+                1080
+            ],
+            "visibleOutputFrame": true,
+            "windowClass": "mplayer::quick::PlayerWindow",
+            "windowTitle": "Player — Mikai original demo.mp4"
+        },
+        {
+            "capturedUtc": "2026-11-24T19:44:32Z",
+            "contextReady": true,
+            "devicePixelRatio": 1,
+            "durationSeconds": 15,
+            "file": "player-hover-preview.png",
+            "logicalSize": [
+                1280,
+                800
+            ],
+            "mediaTracksReady": true,
+            "pauseObserved": true,
+            "pixelSize": [
+                1280,
+                800
+            ],
+            "playing": false,
+            "positionSeconds": 1.5,
+            "runtimeDescriptor": "6c01745de3579fe325ba10d6a3549f1efa35799578a21d5a2310fa91d88ce8bc",
+            "runtimeKind": "standard",
+            "runtimeLoaded": true,
+            "runtimeModule": "libmpv.so.2",
+            "runtimeVersion": "stock-6c01745de357",
+            "sha256": "6216985e2d203f3c822b9879767adafa0ca13fcf6105ed9e7e0bca4306a0e9ea",
+            "shaderChain": "off",
+            "source": "Mikai original demo.mp4",
+            "sourceEpoch": 3,
+            "videoSize": [
+                1920,
+                1080
+            ],
+            "visibleOutputFrame": true,
+            "windowClass": "mplayer::quick::PlayerWindow",
+            "windowTitle": "Player — Mikai original demo.mp4"
+        },
+        {
+            "capturedUtc": "2026-11-24T19:44:33Z",
+            "contextReady": true,
+            "devicePixelRatio": 1,
+            "durationSeconds": 15,
+            "file": "player-settings-menu.png",
+            "logicalSize": [
+                1280,
+                800
+            ],
+            "mediaTracksReady": true,
+            "pauseObserved": true,
+            "pixelSize": [
+                1280,
+                800
+            ],
+            "playing": false,
+            "positionSeconds": 1.5,
+            "runtimeDescriptor": "6c01745de3579fe325ba10d6a3549f1efa35799578a21d5a2310fa91d88ce8bc",
+            "runtimeKind": "standard",
+            "runtimeLoaded": true,
+            "runtimeModule": "libmpv.so.2",
+            "runtimeVersion": "stock-6c01745de357",
+            "sha256": "16bf1df6baedf4773aa94b14c0448ef4704891de077424f7f45983f1e984c8b8",
+            "shaderChain": "off",
+            "source": "Mikai original demo.mp4",
+            "sourceEpoch": 3,
+            "videoSize": [
+                1920,
+                1080
+            ],
+            "visibleOutputFrame": true,
+            "windowClass": "mplayer::quick::PlayerWindow",
+            "windowTitle": "Player — Mikai original demo.mp4"
+        },
+        {
+            "capturedUtc": "2026-11-24T19:44:33Z",
+            "contextReady": true,
+            "devicePixelRatio": 1,
+            "durationSeconds": 15,
+            "file": "player-processing-menu.png",
+            "logicalSize": [
+                1280,
+                800
+            ],
+            "mediaTracksReady": true,
+            "pauseObserved": true,
+            "pixelSize": [
+                1280,
+                800
+            ],
+            "playing": false,
+            "positionSeconds": 1.5,
+            "runtimeDescriptor": "6c01745de3579fe325ba10d6a3549f1efa35799578a21d5a2310fa91d88ce8bc",
+            "runtimeKind": "standard",
+            "runtimeLoaded": true,
+            "runtimeModule": "libmpv.so.2",
+            "runtimeVersion": "stock-6c01745de357",
+            "sha256": "cdd319be1f0287283b6ab95deaa5cc0a9c9fb7fab0d4ca3352762e8b9e5de497",
+            "shaderChain": "off",
+            "source": "Mikai original demo.mp4",
+            "sourceEpoch": 3,
+            "videoSize": [
+                1920,
+                1080
+            ],
+            "visibleOutputFrame": true,
+            "windowClass": "mplayer::quick::PlayerWindow",
+            "windowTitle": "Player — Mikai original demo.mp4"
+        },
+        {
+            "capturedUtc": "2026-11-24T19:44:34Z",
+            "contextReady": true,
+            "devicePixelRatio": 1,
+            "durationSeconds": 15,
+            "file": "player-pip.png",
+            "logicalSize": [
+                480,
+                270
+            ],
+            "mediaTracksReady": true,
+            "pauseObserved": true,
+            "pixelSize": [
+                480,
+                270
+            ],
+            "playing": false,
+            "positionSeconds": 1.5,
+            "runtimeDescriptor": "6c01745de3579fe325ba10d6a3549f1efa35799578a21d5a2310fa91d88ce8bc",
+            "runtimeKind": "standard",
+            "runtimeLoaded": true,
+            "runtimeModule": "libmpv.so.2",
+            "runtimeVersion": "stock-6c01745de357",
+            "sha256": "194647b4382b4ec4da7c818442c04e82ab336ae50316bdfe2952c5651080ec1b",
+            "shaderChain": "off",
+            "source": "Mikai original demo.mp4",
+            "sourceEpoch": 3,
+            "videoSize": [
+                1920,
+                1080
+            ],
+            "visibleOutputFrame": true,
+            "windowClass": "mplayer::quick::PlayerWindow",
+            "windowTitle": "Player — Mikai original demo.mp4"
+        },
+        {
+            "capturedUtc": "2026-11-24T19:44:37Z",
+            "contextReady": true,
+            "devicePixelRatio": 1,
+            "durationSeconds": 15,
+            "file": "clip.png",
+            "logicalSize": [
+                1060,
+                820
+            ],
+            "mediaTracksReady": true,
+            "pauseObserved": true,
+            "pixelSize": [
+                1060,
+                820
+            ],
+            "playing": false,
+            "positionSeconds": 1.5,
+            "runtimeDescriptor": "6c01745de3579fe325ba10d6a3549f1efa35799578a21d5a2310fa91d88ce8bc",
+            "runtimeKind": "standard",
+            "runtimeLoaded": true,
+            "runtimeModule": "libmpv.so.2",
+            "runtimeVersion": "stock-6c01745de357",
+            "sha256": "bc672c668702eee12ae78b90dd5665bed01eb8cfa6157752bb2b5c1574e752f6",
+            "shaderChain": "off",
+            "source": "Mikai original demo.mp4",
+            "sourceEpoch": 3,
+            "videoSize": [
+                1920,
+                1080
+            ],
+            "visibleOutputFrame": true,
+            "windowClass": "mplayer::quick::ClipWindow",
+            "windowTitle": "Cut moment — Mikai original demo.mp4"
+        },
+        {
+            "candidateA": "off",
+            "candidateB": "fast_a",
+            "capturedUtc": "2026-11-24T19:44:43Z",
+            "contextReady": true,
+            "devicePixelRatio": 1,
+            "durationSeconds": 15,
+            "file": "compare.png",
+            "frozenSize": [
+                1120,
+                700
+            ],
+            "logicalSize": [
+                1280,
+                800
+            ],
+            "mediaTracksReady": true,
+            "pauseObserved": true,
+            "pixelSize": [
+                1280,
+                800
+            ],
+            "playbackHeld": true,
+            "playing": false,
+            "positionSeconds": 1.5,
+            "runtimeDescriptor": "6c01745de3579fe325ba10d6a3549f1efa35799578a21d5a2310fa91d88ce8bc",
+            "runtimeKind": "standard",
+            "runtimeLoaded": true,
+            "runtimeModule": "libmpv.so.2",
+            "runtimeVersion": "stock-6c01745de357",
+            "sha256": "9f0833dccc989d5181fb52d29a1d4c8d408af80caa87daa5a59f789accbb0b90",
+            "shaderChain": "off",
+            "source": "Mikai original demo.mp4",
+            "sourceEpoch": 3,
+            "videoSize": [
+                1920,
+                1080
+            ],
+            "visibleOutputFrame": true,
+            "widgetClass": "mplayer::shell::CompareWindow",
+            "widgetObjectName": "",
+            "windowTitle": "Quality Comparison"
+        },
+        {
+            "capturedUtc": "2026-11-24T19:44:45Z",
+            "contextReady": true,
+            "devicePixelRatio": 1,
+            "durationSeconds": 15,
+            "file": "media-info.png",
+            "logicalSize": [
+                1280,
+                800
+            ],
+            "mediaTracksReady": true,
+            "observedPlainText": "File\n  Filename: Mikai original demo.mp4\n  Path: <owned scratch>/Mikai original demo.mp4\n  Container: mov,mp4,m4a,3gp,3g2,mj2\n  Duration: 00:00:15\n  Size: 14.57 MiB (15,272,892 bytes)\n\nVideo\n  Codec: H.265 / HEVC (High Efficiency Video Coding)\n  Dimensions: 1,920 × 1,080\n  Frame rate: 24.000 fps\n  Video bitrate: Unavailable\n  Audio bitrate: 127.70 kbit/s (127,696 bit/s)\n\nAudio tracks: Tracks: 1\n  Track 1: aac · Selected: Yes\n    ID: 1\n    Title: Unavailable\n    Language: Unavailable\n    Codec: aac\n    Channels: 1\n    Default: Yes\n    Forced: No\n    External: No\n    External file: Unavailable\n    Selected: Yes\n\nSubtitle tracks: None\n\nUnavailable properties\n  Unavailable properties: video-bitrate: property unavailable\n",
+            "pauseObserved": true,
+            "pixelSize": [
+                1280,
+                800
+            ],
+            "playing": false,
+            "positionSeconds": 1.5,
+            "runtimeDescriptor": "6c01745de3579fe325ba10d6a3549f1efa35799578a21d5a2310fa91d88ce8bc",
+            "runtimeKind": "standard",
+            "runtimeLoaded": true,
+            "runtimeModule": "libmpv.so.2",
+            "runtimeVersion": "stock-6c01745de357",
+            "sha256": "e1c44878f1985621f7bde6d2c8750d01080d1ac41fef5e0e6db17b0d8335b0f2",
+            "shaderChain": "off",
+            "source": "Mikai original demo.mp4",
+            "sourceEpoch": 3,
+            "videoSize": [
+                1920,
+                1080
+            ],
+            "view": "Overview",
+            "visibleOutputFrame": true,
+            "widgetClass": "mplayer::shell::MediaInformationDialog",
+            "widgetObjectName": "playerMediaInformation",
+            "windowTitle": "Media information"
+        },
+        {
+            "capturedUtc": "2026-11-24T19:44:47Z",
+            "devicePixelRatio": 1,
+            "file": "search-results-grid.png",
+            "loadedCards": 50,
+            "logicalSize": [
+                1280,
+                800
+            ],
+            "pixelSize": [
+                1280,
+                800
+            ],
+            "sha256": "422cf6dd5be975d2d3e0cb0e728a4c11d4f43ebc9533ef4800255bd1157c88ab",
+            "surface": "live filtered search results grid",
+            "widgetClass": "mikai::app::MainWindow",
+            "widgetObjectName": "mainWindow",
+            "windowTitle": "Mikai Ja Nai"
+        },
+        {
+            "appearancePreview": "before control changes",
+            "capturedUtc": "2026-11-24T19:44:49Z",
+            "devicePixelRatio": 1,
+            "file": "appearance-before.png",
+            "logicalSize": [
+                1280,
+                800
+            ],
+            "pixelSize": [
+                1280,
+                800
+            ],
+            "saved": false,
+            "sha256": "72d70d8f6a5c4237c539ee6f3fbda1038a1601e24331d94242e31129740b5f29",
+            "widgetClass": "mikai::app::MainWindow",
+            "widgetObjectName": "mainWindow",
+            "windowTitle": "Mikai Ja Nai"
+        },
+        {
+            "appearancePreview": "after control changes",
+            "capturedUtc": "2026-11-24T19:44:49Z",
+            "devicePixelRatio": 1,
+            "file": "appearance-preview.png",
+            "logicalSize": [
+                1280,
+                800
+            ],
+            "pixelSize": [
+                1280,
+                800
+            ],
+            "saved": false,
+            "sha256": "020978f1d085a98e37acb1cf4b0ac496ddea8abb8275d3a33a50500d5b2a0168",
+            "widgetClass": "mikai::app::MainWindow",
+            "widgetObjectName": "mainWindow",
+            "windowTitle": "Mikai Ja Nai"
+        },
+        {
+            "appearancePreview": "after Reset and repaint",
+            "capturedUtc": "2026-11-24T19:44:49Z",
+            "devicePixelRatio": 1,
+            "file": "appearance-reset.png",
+            "logicalSize": [
+                1280,
+                800
+            ],
+            "pixelSize": [
+                1280,
+                800
+            ],
+            "saved": false,
+            "sha256": "72d70d8f6a5c4237c539ee6f3fbda1038a1601e24331d94242e31129740b5f29",
+            "widgetClass": "mikai::app::MainWindow",
+            "widgetObjectName": "mainWindow",
+            "windowTitle": "Mikai Ja Nai"
+        },
+        {
+            "appearanceInteractions": {
+                "accentLabelUpdated": true,
+                "backgroundGradientToggled": true,
+                "cataloguePreviewCaptured": true,
+                "changedSliderValues": 6,
+                "gradientLabelUpdated": true,
+                "interactionRounds": 3,
+                "maximumControlDispatchAndEventsMs": 4,
+                "resetToDefaults": true,
+                "sliderLabelUpdated": true
+            },
+            "availablePages": [
+                "customization/general",
+                "customization/appearance",
+                "access",
+                "shortcuts",
+                "processing",
+                "components",
+                "upscalers",
+                "benchmark"
+            ],
+            "capturedUtc": "2026-11-24T19:44:49Z",
+            "devicePixelRatio": 1,
+            "file": "settings.png",
+            "logicalSize": [
+                1280,
+                800
+            ],
+            "page": "customization/appearance",
+            "pixelSize": [
+                1280,
+                800
+            ],
+            "saved": false,
+            "sha256": "7f8abb686699b229bdafd6b707261c626fd20bb2970d8404efbbb38f7a49802e",
+            "widgetClass": "mikai::app::SettingsDialog",
+            "widgetObjectName": "",
+            "windowTitle": "Settings"
+        },
+        {
+            "capturedUtc": "2026-11-24T19:44:50Z",
+            "devicePixelRatio": 1,
+            "file": "settings-customization.png",
+            "logicalSize": [
+                1280,
+                800
+            ],
+            "page": "customization/general",
+            "pixelSize": [
+                1280,
+                800
+            ],
+            "saved": false,
+            "sha256": "0ef12da1a2510ee3f9bec7849ddd33edb37e528f34c8293f10ac143ced8de9a2",
+            "widgetClass": "mikai::app::SettingsDialog",
+            "widgetObjectName": "",
+            "windowTitle": "Settings"
+        },
+        {
+            "capturedUtc": "2026-11-24T19:44:50Z",
+            "devicePixelRatio": 1,
+            "file": "settings-general.png",
+            "logicalSize": [
+                1280,
+                800
+            ],
+            "page": "access",
+            "pixelSize": [
+                1280,
+                800
+            ],
+            "saved": false,
+            "sha256": "f4c6fe8a1efbc2c06a03a5c2be2c3fbc21d47df2a13c78f706b8c312eed05dbd",
+            "widgetClass": "mikai::app::SettingsDialog",
+            "widgetObjectName": "",
+            "windowTitle": "Settings"
+        },
+        {
+            "capturedUtc": "2026-11-24T19:44:50Z",
+            "devicePixelRatio": 1,
+            "file": "settings-shortcuts.png",
+            "logicalSize": [
+                1280,
+                800
+            ],
+            "page": "shortcuts",
+            "pixelSize": [
+                1280,
+                800
+            ],
+            "saved": false,
+            "sha256": "5564a9cdd706392b58ab2688da61649ccaaf4ebc4d7091cca3797572d7c39b76",
+            "widgetClass": "mikai::app::SettingsDialog",
+            "widgetObjectName": "",
+            "windowTitle": "Settings"
+        },
+        {
+            "capturedUtc": "2026-11-24T19:44:51Z",
+            "devicePixelRatio": 1,
+            "file": "settings-processing.png",
+            "logicalSize": [
+                1280,
+                800
+            ],
+            "page": "processing",
+            "pixelSize": [
+                1280,
+                800
+            ],
+            "saved": false,
+            "sha256": "a88edb0f28bbbc32d8e234bd4e7a7175589f096734c70d183ae514961f288015",
+            "widgetClass": "mikai::app::SettingsDialog",
+            "widgetObjectName": "",
+            "windowTitle": "Settings"
+        }
+    ],
+    "startedUtc": "2026-11-24T19:44:19Z",
+    "success": true,
+    "video": {
+        "bytes": 15272892,
+        "creditDeclaration": "Project-generated FFmpeg testsrc2 1080p24 HEVC/AAC fixture; CC0 1.0",
+        "declarationVerified": false,
+        "filename": "Mikai original demo.mp4",
+        "note": "Original/demo authorship is the operator's declaration, not inferred from the file. The input was copied read-only into owned scratch before playback.",
+        "sha256": "6ef4d3e6a325ecd847d4c5ab909044504e27181ece4c8291a22e6a8980a1fe1d",
+        "sourceDeclaration": "ffmpeg lavfi testsrc2=s=1920x1080:r=24:d=15 + sine=440Hz"
+    },
+    "workersDrained": true
+}

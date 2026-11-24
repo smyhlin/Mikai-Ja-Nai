@@ -43,56 +43,56 @@ Application captures and their provenance are documented in [Screenshot provenan
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/gallery-2026-11-22/catalogue-home.png" alt="Catalogue home (0.2.4) with sidebar, Ctrl+K search bar, Quick Categories chips and request quota badge"></td>
-    <td width="50%"><img src="docs/images/gallery-2026-11-22/search-results-grid.png" alt="Filtered Search Results Grid (0.2.4) with active filter chips, full-width format pills, 360x140 TitleCards and RangePager"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-24/catalogue.png" alt="Catalogue home (0.2.4.1) with live Mikai titles and posters, sidebar, Ctrl+K search bar, Quick Categories chips and request quota badge"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-24/search-results-grid.png" alt="Filtered Search Results Grid (0.2.4.1) with live Mikai Action titles, active filter chip, format pills, TitleCards and RangePager"></td>
   </tr>
   <tr>
     <td align="center"><em><strong>Catalogue Home (0.2.4).</strong> Sidebar, Ctrl+K search, Quick Categories and quota badge.</em></td>
     <td align="center"><em><strong>Search Grid (0.2.4).</strong> Active filter chips, format pills, TitleCards and compact RangePager.</em></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/images/gallery-2026-11-22/title-page.png" alt="Title Page (0.2.4) with poster, synopsis, Dubbed chips, 32px Provider tabs, clickable Teams pills and episode grid"></td>
-    <td width="50%"><img src="docs/images/gallery-2026-11-21/filters.png" alt="Catalogue filters dialog (genres, tags, years, format, status, season, studio, sort)"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-24/title-page.png" alt="Live Title Page (0.2.4.1) with poster, synopsis, Dubbed chips, Provider tabs, clickable Teams pills and episode grid"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-24/filters.png" alt="Catalogue filters dialog (genres, tags, years, format, status, season, studio, sort)"></td>
   </tr>
   <tr>
     <td align="center"><em><strong>Title page (0.2.4).</strong> Release chips, Provider tabs, clickable Teams pills and episode grid.</em></td>
     <td align="center"><em><strong>Filters.</strong> Genres, tags, years, format, status, season, studio and sort.</em></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/images/gallery-2026-11-21/player.png" alt="Qt Quick/QML player paused on a 1080p fixture with timeline, transport controls and codec badges"></td>
-    <td width="50%"><img src="docs/images/gallery-2026-11-21/player-hover-preview.png" alt="Timeline hover thumbnail preview card with a decoded frame"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-24/player.png" alt="Qt Quick/QML player paused on a 1080p fixture with timeline, transport controls and codec badges"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-24/player-hover-preview.png" alt="Timeline hover thumbnail preview card with a decoded frame"></td>
   </tr>
   <tr>
     <td align="center"><em><strong>Player.</strong> Paused on a 1080p fixture with timeline, transport controls and codec badges.</em></td>
     <td align="center"><em><strong>Hover preview.</strong> Timeline hover thumbnail preview card with a decoded frame.</em></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/images/gallery-2026-11-21/player-pip.png" alt="Redesigned compact Picture-in-Picture window"></td>
-    <td width="50%"><img src="docs/images/gallery-2026-11-21/media-info.png" alt="Media Information dialog showing container and stream properties"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-24/player-pip.png" alt="Redesigned compact Picture-in-Picture window"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-24/media-info.png" alt="Media Information dialog showing container and stream properties"></td>
   </tr>
   <tr>
     <td align="center"><em><strong>PiP.</strong> Redesigned compact window with auto-hide and full-surface drag.</em></td>
     <td align="center"><em><strong>Media info.</strong> Container, video, audio and subtitle stream properties.</em></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/images/gallery-2026-11-21/clip.png" alt="Cut Moment / Clip editor window with sequential filmstrip, trim handles, quality selector and size estimate"></td>
-    <td width="50%"><img src="docs/images/gallery-2026-11-21/compare.png" alt="Side-by-side Compare window (Original vs Anime4K A Fast)"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-24/clip.png" alt="Cut Moment / Clip editor window with sequential filmstrip, trim handles, quality selector and size estimate"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-24/compare.png" alt="Side-by-side Compare window (Original vs Anime4K A Fast)"></td>
   </tr>
   <tr>
     <td align="center"><em><strong>Clip.</strong> Cut Moment editor with filmstrip, trim handles, quality selector and size estimate.</em></td>
     <td align="center"><em><strong>Compare.</strong> Original vs Anime4K A Fast, side by side.</em></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/images/gallery-2026-11-21/player-settings-menu.png" alt="Player Settings popover menu (quality, speed, audio, subtitles, scaling)"></td>
-    <td width="50%"><img src="docs/images/gallery-2026-11-21/player-processing-menu.png" alt="Player Enhancements/Processing popover menu (Original, Anime4K presets, AnimeJaNai, Native)"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-24/player-settings-menu.png" alt="Player Settings popover menu (quality, speed, audio, subtitles, scaling)"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-24/player-processing-menu.png" alt="Player Enhancements/Processing popover menu (Original, Anime4K presets, AnimeJaNai, Native)"></td>
   </tr>
   <tr>
     <td align="center"><em><strong>Settings menu.</strong> Quality, speed, audio, subtitles and scaling.</em></td>
     <td align="center"><em><strong>Processing menu.</strong> Original, Anime4K presets, AnimeJaNai and Native.</em></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/images/gallery-2026-11-21/settings-general.png" alt="Settings Application Access and General (interface language, HDR policy, Stable/Nightly channel, auto-update, scaling, API key)"></td>
-    <td width="50%"><img src="docs/images/gallery-2026-11-21/settings.png" alt="Settings Customization Appearance (accent, corner radius, background gradient)"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-24/settings-general.png" alt="Settings Application Access and General (interface language, HDR policy, Stable/Nightly channel, auto-update, scaling, API key)"></td>
+    <td width="50%"><img src="docs/images/gallery-2026-11-24/settings.png" alt="Settings Customization Appearance (accent, corner radius, background gradient)"></td>
   </tr>
   <tr>
     <td align="center"><em><strong>Settings general.</strong> Interface language, HDR policy, Stable/Nightly channel, auto-update, scaling and API key.</em></td>

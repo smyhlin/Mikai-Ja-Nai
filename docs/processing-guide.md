@@ -36,13 +36,13 @@ The recommended setup omits optional RIFE interpolation models by default. Selec
 4. Click **Verify** to re-check installed components and model files against their recorded digests. Treat a missing or failed verification result as unavailable until repaired; “installed” and “verified” are distinct states.
 5. Changing the backend dropdown persists the choice globally to `player/animejanai/backend` immediately, re-checks the store, and updates the inventory. Use **Cancel** in the action bar to cancel an active acquisition or verification; it is visible only while a run is in progress. Closing Settings does not cancel an active acquisition.
 
-![Processing settings page](images/gallery-2026-11-21/settings-processing.png)
+![Processing settings page](images/gallery-2026-11-24/settings-processing.png)
 
-*Processing settings and player processing menu captures from the 2026-11-21 gallery.*
+*Processing settings and player processing menu captures from the 2026-11-24 gallery.*
 
-![Player processing menu](images/gallery-2026-11-21/player-processing-menu.png)
+![Player processing menu](images/gallery-2026-11-24/player-processing-menu.png)
 
-![Compare window](images/gallery-2026-11-21/compare.png)
+![Compare window](images/gallery-2026-11-24/compare.png)
 
 *The Components page with **TensorRT for RTX** selected and its runtime not installed. The capture was taken before any download: **Apply changes** was not used, nothing was installed and no inference was run.*
 

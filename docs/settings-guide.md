@@ -45,7 +45,7 @@ In **Customization → Appearance**:
 - A profile created by an older version, which stored a gradient colour separately and had no source setting, keeps that colour as a **Custom** choice. The app cannot tell a deliberately chosen colour from the old default, so it never discards one; pick **Auto (follow accent)** once to join the accent.
 - **Reset** resets the appearance-page choices (accent, radius and background-gradient settings, including the gradient source) to the shipped values. It does not reset the separate General-page choices.
 
-![Appearance settings page](images/gallery-2026-11-21/settings.png)
+![Appearance settings page](images/gallery-2026-11-24/settings.png)
 
 *The Appearance page with a custom pink accent and custom gradient — an example choice, not the shipped defaults. The capture was taken with no edit saved.*
 
@@ -147,7 +147,7 @@ While an acquisition runs, the window-level bar names the bytes received (`Downl
 
 The graphs land in the app-owned custom-model directory (`…/animejanai/models/custom/`) and are then selectable as spatial **Upscale** steps executed through AnimeJaNai in the player and as spatial comparison candidates. The publisher's model card is the licence record for those bytes; this project does not redistribute them. See [Optional upscalers](processing-guide.md#optional-upscalers-downloaded-onnx-graphs).
 
-![Processing settings page](images/gallery-2026-11-21/settings-processing.png)
+![Processing settings page](images/gallery-2026-11-24/settings-processing.png)
 
 *The Components page during the Windows capture: TensorRT for RTX selected, its runtime reported as not installed, and no download started. The capture does not show a working RTX runtime or any inference result.*
 

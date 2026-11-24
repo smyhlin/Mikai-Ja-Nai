@@ -34,9 +34,9 @@ The app can check for updates automatically and verifies downloaded release arti
 
 The Home/Search header’s **RPM** pill reads **RPM: used / limit** from the last response that carried quota headers; its tooltip adds the remaining requests, the reset countdown and any queued requests. Its dot is neutral until quota data arrives, and the other tones mark healthy, low or exhausted remaining quota rather than a general connection-health check. The title page shows the same usage inline in its header. Both are shortcuts: pressing the pill (or the title page's inline line) opens **Settings → Access**, the page that owns the key the quota belongs to.
 
-![Catalogue home (0.2.4) showing the sidebar, Ctrl+K search toolbar, Quick Categories chips, and request quota badge](images/gallery-2026-11-22/catalogue-home.png)
+![Catalogue home (0.2.4.1) showing live Mikai titles and posters, sidebar, Ctrl+K search toolbar, Quick Categories chips, and request quota badge](images/gallery-2026-11-24/catalogue.png)
 
-*Catalogue home (0.2.4, Linux x86_64 offscreen capture with default dark theme).*
+*Catalogue home (0.2.4.1, live Linux x86_64 capture with fetched Mikai titles and posters).*
 
 ## Find titles and filter the catalogue
 
@@ -45,9 +45,9 @@ The Home/Search header’s **RPM** pill reads **RPM: used / limit** from the las
 3. For selected genres or tags, choose **Match all** or **Match any**. Include and exclude selections let you shape a result set—for example, include a genre and exclude a tag you do not want.
 4. The **Apply** button shows a debounced live result-count preview as you edit filters. Choose **Apply** (or press **Ctrl+Enter**) to run the query, **Clear draft** to reset controls inside the dialog without closing it, **Reset** to clear and apply, or **Cancel** to discard edits.
 
-![Filtered Search Results Grid (0.2.4) with active filter chips, full-width format pills, 360x140 TitleCards and compact RangePager](images/gallery-2026-11-22/search-results-grid.png)
+![Filtered Search Results Grid (0.2.4.1) with live Mikai Action titles, active filter chip, format pills, 360x140 TitleCards and compact RangePager](images/gallery-2026-11-24/search-results-grid.png)
 
-*Filtered Search Results Grid (0.2.4). Active filter chips, full-width format pill tabs, Grid/List toggle, and compact RangePager.*
+*Filtered Search Results Grid (0.2.4.1, live Action query). Active filter chips, full-width format pill tabs, Grid/List toggle, and compact RangePager.*
 
 Examples: to look for recent television releases, pick a year preset pill and choose the relevant format. Use the sort controls to order by name, year, recently updated, views or MAL rating, ascending or descending; text searches use relevance ranking, so the selected sort may be retained but overridden. When results mix formats, a full-width row of format pill tabs with counts appears below the toolbar (**All (1,341)**, **TV (920)**, **MOVIE (245)**); choosing one filters the whole result set, and **All** removes that filter. Right-click a card or row for **Open**, **Copy link**, **Copy ID** and **Open in browser**.
 
@@ -61,9 +61,9 @@ Highlight a row (or double-click / press **Enter**) and choose **Browse anime** 
 
 ## Choose a title, release and episode
 
-![Title Page (0.2.4) with poster, synopsis, Dubbed chips, 32px Provider tabs, clickable Teams pills and episode grid](images/gallery-2026-11-22/title-page.png)
+![Live Title Page (0.2.4.1) with poster, synopsis, Dubbed chips, 32px Provider tabs, clickable Teams pills and episode grid](images/gallery-2026-11-24/title-page.png)
 
-*Title Page (0.2.4, Linux x86_64 offscreen capture showing Dubbed chips, 32 px Provider tabs, clickable Teams pills, right-aligned episode jump input, and 15-episode grid).*
+*Title Page (0.2.4.1, live Linux x86_64 capture showing poster, synopsis, Dubbed chips, Provider tabs, clickable Teams pills, and episode list).*
 
 Open a catalogue result to view its title page. The header has **Back** (returns to the previous title page or the catalogue view you came from), **Home**, the inline API-usage line and the API-token gear.
 

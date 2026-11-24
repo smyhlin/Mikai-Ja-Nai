@@ -1,14 +1,44 @@
 # Screenshot provenance
 
-**Current galleries:**
-- `gallery-2026-11-22/` holds three updated 0.2.4 widget captures (`catalogue-home.png`, `search-results-grid.png`, `title-page.png`) rendered on 2026-11-22 from the compiled Linux x86_64 `mikai 0.2.4` `libmikai_app` widgets (Qt 6.12.0, offscreen) reflecting the 60-issue Categories/Search/Teams overhaul and TitlePage episode-grid fixes.
-- `gallery-2026-11-21/` holds eighteen PNGs captured by `release_gallery_probe --full-docs-gallery` on 2026-11-21 from the running Linux x86_64 application (`mikai 0.2.3.2`, Qt 6.12.0, xcb/Xvfb) and continues to supply the player, hover-preview, PiP, clip, compare, media-info, and settings illustrations.
+**Current gallery:**
+- `gallery-2026-11-24/` holds nineteen non-duplicate PNGs plus `gallery-evidence.json` captured by `release_gallery_probe --full-docs-gallery` on 2026-11-24 from the running Linux x86_64 application (`mikai 0.2.4.1`, Qt 6.12.0, xcb/Xvfb) against the live anonymous Mikai public API (`https://api.mikai.me/public/v1`). Both `catalogue.png` (36/36 loaded live posters) and `search-results-grid.png` (50 loaded live Action posters) show actual fetched titles rather than loading placeholders. The omitted `appearance-reset.png` matches `appearance-before.png` bit-for-bit (`72d70d8f6a5c...`).
 
-**Historical records:** `gallery-2026-11-05/` (manual Windows captures, 2026-11-05), `gallery-2026-11-01/`, `screenshots/` (2026-10-30) and `gallery-release-0.1.0/` (2026-10-24) are retained as run evidence, not as pictures of the current interface; their player, Compare and media-information images must not be read as a description of what the application does today.
+**Historical records:** `gallery-2026-11-22/` (offscreen 0.2.4 widget renders), `gallery-2026-11-21/` (0.2.3.2 probe run), `gallery-2026-11-05/` (manual Windows captures, 2026-11-05), `gallery-2026-11-01/`, `screenshots/` (2026-10-30) and `gallery-release-0.1.0/` (2026-10-24) are retained as run evidence, not as pictures of the current interface; their player, Compare and media-information images must not be read as a description of what the application does today.
 
 Neither the current gallery nor the historical records are release QA, rights clearance or approval for further distribution; see [release status](../release-status.md).
 
-## Updated 0.2.4 captures (2026-11-22, offscreen widget render)
+## Current gallery (2026-11-24, live probe)
+
+| File | Size | SHA-256 | Shows |
+|---|---|---|---|
+| `catalogue.png` | 1280×800 | `42498bc41d7f7a3f9b4a08e5d9903abf80ae513dd77f54cb0dfaefb462dfb60a` | Catalogue home (0.2.4.1): sidebar, `Ctrl+K` search toolbar, Quick Categories chips, request-quota badge, 36 live Mikai feeds & posters |
+| `search-results-grid.png` | 1280×800 | `422cf6dd5be975d2d3e0cb0e728a4c11d4f43ebc9533ef4800255bd1157c88ab` | Filtered Search Results Grid (0.2.4.1): live `Action` genre query with active filter chip, format pills, 50 loaded `TitleCard` posters, `RangePager` |
+| `filters.png` | 760×780 | `bc91594c48aa3caa440b5e48b361480b8cff3c2428641bce40826157e188161b` | Catalogue filters dialog (genres, tags, years, format, status, season, studio, sort) |
+| `title-page.png` | 1280×800 | `fccec10ff315425345a22ef647182233f5a28ffce35fadb48e05104b2afa3c35` | Live Title Page with poster, synopsis, metadata, provider tabs, clickable teams pills, episode list |
+| `player.png` | 1280×800 | `fa8748dab414d103e5a95c6bb0e12f6ecd19e21126f73f8f3ff7f84ec60ca5e3` | Qt Quick/QML player paused on 1080p fixture with timeline, transport controls, codec badges |
+| `player-hover-preview.png` | 1280×800 | `6216985e2d203f3c822b9879767adafa0ca13fcf6105ed9e7e0bca4306a0e9ea` | Timeline hover thumbnail preview card with decoded frame |
+| `player-settings-menu.png` | 1280×800 | `16bf1df6baedf4773aa94b14c0448ef4704891de077424f7f45983f1e984c8b8` | Player Settings popover menu (quality, speed, audio, subtitles, scaling) |
+| `player-processing-menu.png` | 1280×800 | `cdd319be1f0287283b6ab95deaa5cc0a9c9fb7fab0d4ca3352762e8b9e5de497` | Player Enhancements/Processing popover menu (Original, Anime4K presets, AnimeJaNai, Native) |
+| `player-pip.png` | 480×270 | `194647b4382b4ec4da7c818442c04e82ab336ae50316bdfe2952c5651080ec1b` | Compact Picture-in-Picture window with minimal overlay |
+| `clip.png` | 1060×820 | `bc672c668702eee12ae78b90dd5665bed01eb8cfa6157752bb2b5c1574e752f6` | Cut Moment / Clip editor window with sequential filmstrip, trim handles, quality selector, and size estimate |
+| `compare.png` | 1280×800 | `9f0833dccc989d5181fb52d29a1d4c8d408af80caa87daa5a59f789accbb0b90` | Side-by-side Compare window (Original vs Anime4K A Fast) |
+| `media-info.png` | 1280×800 | `e1c44878f1985621f7bde6d2c8750d01080d1ac41fef5e0e6db17b0d8335b0f2` | Media Information overview dialog |
+| `settings.png` | 1280×800 | `7f8abb686699b229bdafd6b707261c626fd20bb2970d8404efbbb38f7a49802e` | Settings → Customization → Appearance (accent, corner radius, background gradient) |
+| `settings-customization.png` | 1280×800 | `0ef12da1a2510ee3f9bec7849ddd33edb37e528f34c8293f10ac143ced8de9a2` | Settings → Customization → General (Dark/Light theme, title & name language) |
+| `settings-general.png` | 1280×800 | `f4c6fe8a1efbc2c06a03a5c2be2c3fbc21d47df2a13c78f706b8c312eed05dbd` | Settings → Application → Access & General (interface language, HDR policy, Stable/Nightly update channel, auto-update, scaling, API key) |
+| `settings-shortcuts.png` | 1280×800 | `5564a9cdd706392b58ab2688da61649ccaaf4ebc4d7091cca3797572d7c39b76` | Settings → Application → Shortcuts (Anime4K preset hotkeys) |
+| `settings-processing.png` | 1280×800 | `a88edb0f28bbbc32d8e234bd4e7a7175589f096734c70d183ae514961f288015` | Settings → Playback → Processing (Standard vs Native runtime, backend, recipe) |
+| `appearance-before.png` | 1280×800 | `72d70d8f6a5c4237c539ee6f3fbda1038a1601e24331d94242e31129740b5f29` | Catalogue baseline before live appearance preview |
+| `appearance-preview.png` | 1280×800 | `020978f1d085a98e37acb1cf4b0ac496ddea8abb8275d3a33a50500d5b2a0168` | Catalogue live preview after accent/gradient/radius changes |
+
+Capture conditions:
+
+- Platform: Linux x86_64, Qt 6.12.0, xcb/Xvfb (`mikai 0.2.4.1`, `QT_ENABLE_HIGHDPI_SCALING=0`).
+- Method: `release_gallery_probe --full-docs-gallery` captured real widgets at 1280×800 logical size and wrote `gallery-evidence.json` (`success: true`, `errors: []`, `workersDrained: true`).
+- Fixture: 15s 1080p24 HEVC/AAC `testsrc2` synthetic fixture plus live anonymous Mikai catalogue (`https://api.mikai.me/public/v1`).
+- Privacy: no API key or user credentials were used or exposed.
+
+## Historical 0.2.4 captures (2026-11-22, offscreen widget render)
 
 | File | Size | SHA-256 | Shows |
 |---|---|---|---|
