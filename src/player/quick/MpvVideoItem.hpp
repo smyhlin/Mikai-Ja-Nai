@@ -44,6 +44,7 @@
 
 #include <QtQml/qqmlregistration.h>
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -186,7 +187,7 @@ private:
     void drainHiddenFrames();
 
     struct GuiSlot {
-        QPointer<MpvVideoItem> self;
+        std::atomic<MpvVideoItem*> self{nullptr};
     };
     static void invokeOnGui(const std::shared_ptr<GuiSlot>& slot,
                             std::function<void(MpvVideoItem&)> fn);

@@ -892,10 +892,11 @@ MpvVideoItem::MpvVideoItem(QQuickItem* parent)
     hiddenDrainTimer_.setSingleShot(false);
     connect(&hiddenDrainTimer_, &QTimer::timeout, this, &MpvVideoItem::drainHiddenFrames);
     guiSlot_ = std::make_shared<GuiSlot>();
-    guiSlot_->self = this;
+    guiSlot_->self.store(this, std::memory_order_release);
     bridge_ = std::make_shared<VideoRenderBridge>();
     // Called from the rendering thread; dispatch via QCoreApplication so
-    // QPointer is only read on the GUI thread (never cross-thread).
+    // the item pointer is only dereferenced on the GUI thread and ~GuiSlot()
+    // never destroys a QPointer off the GUI thread.
     const std::shared_ptr<GuiSlot> slot = guiSlot_;
     bridge_->setGuiInvoker([slot](std::function<void()> task) {
         invokeOnGui(slot, [t = std::move(task)](MpvVideoItem&) mutable {
@@ -911,14 +912,17 @@ void MpvVideoItem::invokeOnGui(const std::shared_ptr<GuiSlot>& slot,
         QMetaObject::invokeMethod(
             app,
             [slot, fn = std::move(fn)]() mutable {
-                if (slot && slot->self) fn(*slot->self);
+                if (!slot) return;
+                if (MpvVideoItem* self = slot->self.load(std::memory_order_acquire)) {
+                    fn(*self);
+                }
             },
             Qt::QueuedConnection);
     }
 }
 
 MpvVideoItem::~MpvVideoItem() {
-    if (guiSlot_) guiSlot_->self.clear();
+    if (guiSlot_) guiSlot_->self.store(nullptr, std::memory_order_release);
     hiddenDrainTimer_.stop();
     pacingTimer_.stop();
     detachSession();
