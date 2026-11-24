@@ -87,9 +87,8 @@ void SearchPage::openTeamPicker() {
     teamSortBox->setObjectName(QStringLiteral("teamSortCombo"));
     teamSortBox->setToolTip(tr("Sort teams"));
     teamSortBox->addItem(tr("Default order"), QString());
-    teamSortBox->addItem(tr("Most anime"), QStringLiteral("anime_count"));
-    teamSortBox->addItem(tr("Total views"), QStringLiteral("views_total"));
-    teamSortBox->addItem(tr("Monthly views"), QStringLiteral("views_last_30_days"));
+    teamSortBox->addItem(tr("Most anime"), QStringLiteral("count"));
+    teamSortBox->addItem(tr("Recently updated"), QStringLiteral("updated"));
     teamSortBox->addItem(tr("Name"), QStringLiteral("name"));
     teamControlsRow->addWidget(teamSortBox);
 
