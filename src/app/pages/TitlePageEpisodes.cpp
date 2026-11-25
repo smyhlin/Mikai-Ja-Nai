@@ -759,6 +759,10 @@ void TitlePage::fillEpisodes(int index) {
         tabs_->removeTab(0);
         page->deleteLater();
     }
+    const QString priorWatchNumber = watchEntry_ != nullptr ? watchEntry_->number : QString();
+    if (resolvedOpeningEpisode_.isEmpty() && !priorWatchNumber.isEmpty()) {
+        resolvedOpeningEpisode_ = priorWatchNumber;
+    }
     tabStates_.clear();
     watchEntry_ = nullptr;
     // The tabs are new widgets at the default height, so the last fit's answer
@@ -1008,6 +1012,7 @@ void TitlePage::fillEpisodes(int index) {
     setStatusKind(tabs_->count() > 0 ? BaseStatus::Empty : BaseStatus::NoSources);
     updateEpisodeSummary();
     selectWatchEntry(preferredEntry(tabs_->currentIndex()));
+    resolvedOpeningEpisode_.clear();
     updateEpisodeLegend();
     fitEpisodeSection();
 }
@@ -1710,7 +1715,7 @@ void TitlePage::episodeContextMenu(EpisodeEntry* entry, const QPoint& globalPos)
         link.episode = entry->number;
         if (activeRelease_ >= 0 && activeRelease_ < releases_.size() &&
             !releases_.at(activeRelease_).teams.isEmpty()) {
-            link.teamSlug = releases_.at(activeRelease_).teams.first().slug;
+            link.teamSlug = releases_.at(activeRelease_).teams.first().slug.trimmed();
         }
         const QString formatted = formatPlaybackLink(link);
         if (!formatted.isEmpty() && mikai::gui::copyText(formatted)) {
@@ -1721,20 +1726,31 @@ void TitlePage::episodeContextMenu(EpisodeEntry* entry, const QPoint& globalPos)
     });
     if (activeRelease_ >= 0 && activeRelease_ < releases_.size() &&
         !releases_.at(activeRelease_).teams.isEmpty()) {
-        const QString teamSlug = releases_.at(activeRelease_).teams.first().slug;
+        const QString teamSlug = releases_.at(activeRelease_).teams.first().slug.trimmed();
         const QString releaseId = releases_.at(activeRelease_).id;
-        const bool isFav = favouriteTeams_.isFavourite(ref_, entryProvider, teamSlug);
-        QAction* favAction = menu.addAction(
-            isFav ? tr("Remove favourite team") : tr("Set as favourite team"));
-        connect(favAction, &QAction::triggered, this,
-                [this, isFav, prov = entryProvider, teamSlug, releaseId] {
-                    if (isFav) {
-                        favouriteTeams_.clearFavourite(ref_);
-                    } else {
-                        favouriteTeams_.setFavourite(ref_, prov, teamSlug, releaseId);
-                    }
-                    applyResponsiveLayout();
-                });
+        if (!teamSlug.isEmpty()) {
+            const auto fav = favouriteTeams_.favourite(ref_);
+            const bool isFav =
+                fav.has_value() && fav->teamSlug.compare(teamSlug, Qt::CaseInsensitive) == 0;
+            QAction* favAction = menu.addAction(
+                isFav ? tr("Remove favourite team") : tr("Set as favourite team"));
+            connect(favAction, &QAction::triggered, this,
+                    [this, isFav, prov = entryProvider, teamSlug, releaseId] {
+                        if (isFav) {
+                            favouriteTeams_.clearFavourite(ref_);
+                        } else {
+                            favouriteTeams_.setFavourite(ref_, prov, teamSlug, releaseId);
+                        }
+                        const int savedActive = activeRelease_;
+                        rebuildReleaseChips();
+                        if (savedActive >= 0 && savedActive < releaseChips_.size() &&
+                            releaseChips_.at(savedActive) != nullptr) {
+                            const QSignalBlocker blocker(releaseGroup_);
+                            releaseChips_.at(savedActive)->setChecked(true);
+                            activeRelease_ = savedActive;
+                        }
+                    });
+        }
     }
     copyMenu->addSeparator();
     const bool noSource = qualityCache_.isNoSource(entry->embedUrl);
