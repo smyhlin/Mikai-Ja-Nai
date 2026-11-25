@@ -4,6 +4,7 @@
 #include "WindowRaisePolicy.hpp"
 #include "pages/MainWindow.hpp"
 #include "state/AppearanceStore.hpp"
+#include "support/PlaybackLink.hpp"
 #include "state/WatchHistory.hpp"
 #include "theme/AntialiasedStyle.hpp"
 #include "theme/Theme.hpp"
@@ -145,12 +146,20 @@ LaunchRequest parseLaunchRequest(const QStringList& arguments) {
         const bool isDriveLetter =
             scheme.size() == 1 && path.size() > 1 && path.at(1) == QLatin1Char(':');
         if (!scheme.isEmpty() && !isDriveLetter && scheme != QLatin1String("http") &&
-            scheme != QLatin1String("https") && scheme != QLatin1String("file")) {
+            scheme != QLatin1String("https") && scheme != QLatin1String("file") &&
+            scheme != QLatin1String("mikai-janai")) {
             request.error = QCoreApplication::translate(
                 "CommandLine", "The video URL scheme is not allowed: %1").arg(scheme);
             return request;
         }
-        if (scheme == QLatin1String("file")) {
+        if (scheme == QLatin1String("mikai-janai")) {
+            QString linkErr;
+            if (!mikai::app::parsePlaybackLink(path, &linkErr).has_value()) {
+                request.error = linkErr;
+                return request;
+            }
+            request.video = path.trimmed();
+        } else if (scheme == QLatin1String("file")) {
             const QString localPath = url.toLocalFile();
             if (localPath.isEmpty()) {
                 request.error = QCoreApplication::translate(
