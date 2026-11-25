@@ -181,6 +181,8 @@ signals:
     void componentsTabOpened(SettingsDialog* dialog);
     /// The viewer changed the release channel (stable <-> nightly) and confirmed.
     void updateChannelChanged(const QString& channel);
+    /// The viewer clicked Save and all settings were committed to QSettings.
+    void settingsSaved();
 
     /// The engine build the Processing tab started, forwarded so a surface that
     /// outlives this dialog - the player's preparation window - can follow it.

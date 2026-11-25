@@ -712,6 +712,7 @@ void SettingsDialog::save() {
 
     // From here the choice is the committed one: closing must not undo it.
     languageCommitted_ = true;
+    emit settingsSaved();
     // Save commits, it does not leave: the window stays where the viewer put it,
     // so one pass through several pages ends with the same button. The footer
     // says so for a moment, because an action with no visible result reads as

@@ -1840,14 +1840,36 @@ void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettin
             dialog.windowHandle()->setTransientParent(settingsOwner->window());
         }
     }
+    const auto refreshCommittedSettings = [this, &owningCore] {
+        if (search_ != nullptr) {
+            search_->refreshFeedSettings();
+        }
+        QSet<mplayer::quick::PlayerController*> controllers;
+        if (mplayer::quick::PlayerController* core = owningCore(); core != nullptr) {
+            controllers.insert(core);
+        }
+        if (!mediaPlayer_.isNull()) {
+            controllers.insert(mediaPlayer_.data());
+        }
+        if (stack_ != nullptr) {
+            const auto children = stack_->findChildren<mplayer::quick::PlayerController*>();
+            for (mplayer::quick::PlayerController* child : children) {
+                if (child != nullptr) controllers.insert(child);
+            }
+        }
+        for (mplayer::quick::PlayerController* controller : controllers) {
+            controller->refreshStoredSettings();
+        }
+    };
+    connect(&dialog, &SettingsDialog::settingsSaved, this, refreshCommittedSettings);
+
     // Since 25bc266 Save commits without closing, exec() never returns
-    // Accepted, so there is no post-accept refresh left to do here.
+    // Accepted, so refreshCommittedSettings runs both live on settingsSaved and
+    // once more when the dialog closes.
     dialog.exec();
     settingsDialog_.clear();
     resumePlaybackAfterComponentAsk();
-    if (mplayer::quick::PlayerController* core = owningCore(); core != nullptr) {
-        core->refreshStoredSettings();
-    }
+    refreshCommittedSettings();
 }
 
 bool MainWindow::openTitle(const QString& ref, const QString& poster, bool preserveHistory,
