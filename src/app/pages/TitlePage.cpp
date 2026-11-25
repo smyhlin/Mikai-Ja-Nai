@@ -10,9 +10,10 @@ void TitlePage::setPendingPlaybackLink(const PlaybackLink& link) {
 
 TitlePage::TitlePage(Runner& runner, backend::MikaiClient& client, QualityCache& qualityCache,
                      const QString& ref, const QString& posterHint,
-                     const backend::AnimeDetail& detailHint, QWidget* parent)
+                     const backend::AnimeDetail& detailHint, QWidget* parent,
+                     std::optional<PlaybackLink> pendingLink)
     : QWidget(parent), runner_(runner), client_(client), qualityCache_(qualityCache),
-      ref_(ref), posterHint_(posterHint) {
+      ref_(ref), posterHint_(posterHint), pendingPlaybackLink_(std::move(pendingLink)) {
     // Only a hint for this exact title is worth anything: a stale detail for a
     // different ref would paint the wrong header, and an empty one is no hint.
     if (!detailHint.ref.isEmpty() && detailHint.ref == ref) {
@@ -1150,6 +1151,8 @@ void TitlePage::onLoaded(const backend::AnimeDetail& detail, const backend::Play
     if (resolved.valid && !resolved.provider.isEmpty()) {
         chosenProvider_ = resolved.provider;
     }
+    resolvedOpeningEpisode_ = resolved.valid ? resolved.episodeNumber : QString();
+    resolvedOpeningTimeSec_ = resolved.valid ? resolved.startTimeSec : std::nullopt;
     releaseChips_.at(openingRelease)->setChecked(true);
     fillEpisodes(openingRelease);
 }

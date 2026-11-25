@@ -583,11 +583,7 @@ bool MainWindow::openMedia(const QString& source) {
             qWarning().noquote() << "mikai: playback link refused:" << linkErr;
             return false;
         }
-        const bool opened = openTitle(parsed->ref, QString());
-        if (opened && title_ != nullptr) {
-            title_->setPendingPlaybackLink(*parsed);
-        }
-        return opened;
+        return openTitle(parsed->ref, QString(), false, *parsed);
     }
     const auto refuse = [this](const QString& detail) {
         qWarning().noquote() << "mikai: media open refused:" << detail;
@@ -1846,7 +1842,8 @@ void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettin
     }
 }
 
-bool MainWindow::openTitle(const QString& ref, const QString& poster, bool preserveHistory) {
+bool MainWindow::openTitle(const QString& ref, const QString& poster, bool preserveHistory,
+                           std::optional<PlaybackLink> pendingLink) {
     if (ref.isEmpty()) {
         return false;
     }
@@ -1867,7 +1864,8 @@ bool MainWindow::openTitle(const QString& ref, const QString& poster, bool prese
     // over and skip the redundant getAnime inside the title page.
     const backend::AnimeDetail* hint = search_->cachedDetail(ref);
     title_ = new TitlePage(*runner_, client_, *qualityCache_, ref, poster,
-                           hint != nullptr ? *hint : backend::AnimeDetail(), stack_);
+                           hint != nullptr ? *hint : backend::AnimeDetail(), stack_,
+                           pendingLink);
     connect(title_, &TitlePage::backRequested, this, &MainWindow::goSearch);
     connect(title_, &TitlePage::homeRequested, this, &MainWindow::goHome);
     connect(title_, &TitlePage::settingsRequested, this, &MainWindow::openSettings);

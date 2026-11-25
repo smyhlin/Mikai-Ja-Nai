@@ -71,6 +71,12 @@ TitlePage::EpisodeEntry* TitlePage::firstUsableEntry(int stateIndex) const {
 }
 
 TitlePage::EpisodeEntry* TitlePage::preferredEntry(int stateIndex) const {
+    if (!resolvedOpeningEpisode_.isEmpty()) {
+        if (EpisodeEntry* entry = entryForNumber(stateIndex, resolvedOpeningEpisode_);
+            entryIsPlayable(entry)) {
+            return entry;
+        }
+    }
     if (EpisodeEntry* entry = entryForNumber(
             stateIndex, watchEntry_ != nullptr ? watchEntry_->number : QString());
         entryIsPlayable(entry)) {

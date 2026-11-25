@@ -12,6 +12,7 @@
 #include <player/shell/ProcessingSettingsIntent.hpp>
 
 #include <native/bundle/NativeRuntimeSelection.hpp>
+#include <support/PlaybackLink.hpp>
 
 class QDialog;
 class QLabel;
@@ -165,7 +166,8 @@ private:
     void requestMediaRuntime();
     /// False only when the previous page's own shutdown was refused, in which
     /// case the page is kept and the navigation does not happen.
-    bool openTitle(const QString& ref, const QString& poster, bool preserveHistory = false);
+    bool openTitle(const QString& ref, const QString& poster, bool preserveHistory = false,
+                   std::optional<PlaybackLink> pendingLink = std::nullopt);
     void openRelated(const QString& ref, const QString& poster);
     void goSearch();
     void goHome();

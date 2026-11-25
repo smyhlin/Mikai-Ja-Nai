@@ -94,7 +94,8 @@ public:
     /// getAnime call is skipped and the player payload is fetched alone.
     TitlePage(Runner& runner, backend::MikaiClient& client, QualityCache& qualityCache,
               const QString& ref, const QString& posterHint = {},
-              const backend::AnimeDetail& detailHint = {}, QWidget* parent = nullptr);
+              const backend::AnimeDetail& detailHint = {}, QWidget* parent = nullptr,
+              std::optional<PlaybackLink> pendingLink = std::nullopt);
     ~TitlePage() override;
 
     void setPendingPlaybackLink(const PlaybackLink& link);
@@ -468,6 +469,8 @@ protected:
     WatchHistory watchHistory_;
     FavouriteTeams favouriteTeams_;
     std::optional<PlaybackLink> pendingPlaybackLink_;
+    QString resolvedOpeningEpisode_;
+    std::optional<int> resolvedOpeningTimeSec_;
     QVector<TabState> tabStates_;
     /// Owns every episode record ever built for this page; freed on shutdown.
     QVector<EpisodeEntry*> ownedEntries_;
