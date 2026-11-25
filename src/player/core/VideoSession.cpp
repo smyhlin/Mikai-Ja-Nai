@@ -4,8 +4,11 @@
 #include <QDebug>
 #include <QDir>
 #include <QEventLoop>
+#include <QFile>
 #include <QFileInfo>
 #include <QMetaObject>
+#include <QSaveFile>
+#include <QStandardPaths>
 #include <QSettings>
 #include <QThread>
 #include <QTimer>
@@ -76,33 +79,55 @@ int animeJanaiHdrOverrideRevision() { return g_animeJanaiHdrOverrideRevision; }
 QString ensureNonLinearStretchShaderPath(bool vertical) {
     const QString fileName = vertical ? QStringLiteral("mikai-nls-scope.glsl")
                                       : QStringLiteral("mikai-nls-superview.glsl");
-    const QString path = QDir::temp().filePath(fileName);
-    if (QFileInfo::exists(path)) return path;
-    const char* source = vertical
-        ? "//!PARAM strength\n//!TYPE float\n//!MINIMUM 1.0\n//!MAXIMUM 1.49\n1.15\n"
-          "//!PARAM falloff\n//!TYPE float\n//!MINIMUM 1.0\n//!MAXIMUM 8.0\n2.5\n"
-          "//!HOOK OUTPUT\n//!BIND HOOKED\n//!DESC NLS vertical (scope -> 16:9)\n"
-          "vec4 hook() {\n"
-          "  vec2 uv = HOOKED_pos;\n"
-          "  float t = uv.y * 2.0 - 1.0;\n"
-          "  float ts = t * (strength + (1.0 - strength) * pow(abs(t), falloff));\n"
-          "  uv.y = ts * 0.5 + 0.5;\n"
-          "  return HOOKED_tex(uv);\n"
-          "}\n"
-        : "//!PARAM strength\n//!TYPE float\n//!MINIMUM 1.0\n//!MAXIMUM 1.49\n1.15\n"
-          "//!PARAM falloff\n//!TYPE float\n//!MINIMUM 1.0\n//!MAXIMUM 8.0\n2.5\n"
-          "//!HOOK OUTPUT\n//!BIND HOOKED\n//!DESC NLS horizontal (4:3 -> 16:9)\n"
-          "vec4 hook() {\n"
-          "  vec2 uv = HOOKED_pos;\n"
-          "  float t = uv.x * 2.0 - 1.0;\n"
-          "  float ts = t * (strength + (1.0 - strength) * pow(abs(t), falloff));\n"
-          "  uv.x = ts * 0.5 + 0.5;\n"
-          "  return HOOKED_tex(uv);\n"
-          "}\n";
-    QFile file(path);
+    QString baseDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    if (baseDir.isEmpty()) {
+        baseDir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+    }
+    if (baseDir.isEmpty()) {
+        baseDir = QDir::tempPath();
+    }
+    const QString shaderDir = QDir(baseDir).filePath(QStringLiteral("shaders"));
+    QDir().mkpath(shaderDir);
+    const QString path = QDir(shaderDir).filePath(fileName);
+    const QByteArray expected = vertical
+        ? QByteArrayLiteral(
+              "//!PARAM strength\n//!TYPE float\n//!MINIMUM 1.0\n//!MAXIMUM 1.49\n1.15\n"
+              "//!PARAM falloff\n//!TYPE float\n//!MINIMUM 1.0\n//!MAXIMUM 8.0\n2.5\n"
+              "//!HOOK OUTPUT\n//!BIND HOOKED\n//!DESC NLS vertical (scope -> 16:9)\n"
+              "vec4 hook() {\n"
+              "  vec2 uv = HOOKED_pos;\n"
+              "  float t = uv.y * 2.0 - 1.0;\n"
+              "  float ts = t * (strength + (1.0 - strength) * pow(abs(t), falloff));\n"
+              "  uv.y = ts * 0.5 + 0.5;\n"
+              "  return HOOKED_tex(uv);\n"
+              "}\n")
+        : QByteArrayLiteral(
+              "//!PARAM strength\n//!TYPE float\n//!MINIMUM 1.0\n//!MAXIMUM 1.49\n1.15\n"
+              "//!PARAM falloff\n//!TYPE float\n//!MINIMUM 1.0\n//!MAXIMUM 8.0\n2.5\n"
+              "//!HOOK OUTPUT\n//!BIND HOOKED\n//!DESC NLS horizontal (4:3 -> 16:9)\n"
+              "vec4 hook() {\n"
+              "  vec2 uv = HOOKED_pos;\n"
+              "  float t = uv.x * 2.0 - 1.0;\n"
+              "  float ts = t * (strength + (1.0 - strength) * pow(abs(t), falloff));\n"
+              "  uv.x = ts * 0.5 + 0.5;\n"
+              "  return HOOKED_tex(uv);\n"
+              "}\n");
+
+    const QFileInfo info(path);
+    if (info.isSymLink()) {
+        QFile::remove(path);
+    } else if (info.exists() && info.isFile()) {
+        QFile existing(path);
+        if (existing.open(QIODevice::ReadOnly) && existing.readAll() == expected) {
+            return path;
+        }
+    }
+
+    QSaveFile file(path);
     if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        file.write(source);
-        file.close();
+        file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+        file.write(expected);
+        file.commit();
     }
     return path;
 }
