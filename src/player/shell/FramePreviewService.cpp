@@ -625,26 +625,60 @@ void FramePreviewWorker::confirmLoad() {
                 retryAfterMs_ = nowMs() + 60000;
                 return;
             }
-            loadedUrl_ = url_;
-            // Adopt any newer hover request that arrived while the stream was
-            // opening (e.g. a user hover superseding an in-flight prewarm).
-            if (requestedToken_ != 0 && requestedToken_ != activeToken_) {
-                activeToken_ = requestedToken_;
-                activeSeconds_ = requestedSeconds_;
-                activeSeekMode_ = requestedSeekMode_;
-                activeTargetSize_ = requestedTargetSize_;
-                seekRetried_ = false;
-                startSeek();
-                return;
-            }
-            // Cold load already passed `start=<activeSeconds_>`: check if we
-            // landed close enough to capture immediately without a second seek.
-            if (activeSeekMode_ == FramePreviewService::SeekMode::FastKeyframe) {
-                phase_ = Phase::Seek;
-                confirmSeek();
-                return;
-            }
-            startSeek();
+            // Guard against audio-only files with embedded album-art / still image tracks.
+            core_->getPropertyAsync(
+                "current-tracks/video/image", MPV_FORMAT_FLAG, [this](const AsyncReply& imgReply) {
+                    if (phase_ != Phase::Load) return;
+                    if (activeToken_ == 0) {
+                        abandon();
+                        return;
+                    }
+                    if (imgReply.ok() && imgReply.flag) {
+                        fail(tr("This source has no moving video track to preview."));
+                        retryAfterMs_ = nowMs() + 60000;
+                        return;
+                    }
+                    // Detect HDR (bt.2020) sources and prepend software tone-mapping so
+                    // hover and Clip thumbnails are not washed out.
+                    core_->getPropertyAsync(
+                        "video-params/primaries", MPV_FORMAT_STRING,
+                        [this](const AsyncReply& primReply) {
+                            if (phase_ != Phase::Load) return;
+                            if (activeToken_ == 0) {
+                                abandon();
+                                return;
+                            }
+                            if (primReply.ok() && primReply.text == "bt.2020") {
+                                core_->commandAsync(
+                                    {"set", "vf",
+                                     "zscale=transfer=linear,format=gbrpf32le,tonemap=hable,"
+                                     "zscale=transfer=bt709,"
+                                     "scale=w=360:h=360:force_original_aspect_ratio=decrease:"
+                                     "flags=fast_bilinear"},
+                                    [](const AsyncReply&) {});
+                            }
+                            loadedUrl_ = url_;
+                            // Adopt any newer hover request that arrived while the stream was
+                            // opening (e.g. a user hover superseding an in-flight prewarm).
+                            if (requestedToken_ != 0 && requestedToken_ != activeToken_) {
+                                activeToken_ = requestedToken_;
+                                activeSeconds_ = requestedSeconds_;
+                                activeSeekMode_ = requestedSeekMode_;
+                                activeTargetSize_ = requestedTargetSize_;
+                                seekRetried_ = false;
+                                startSeek();
+                                return;
+                            }
+                            // Cold load already passed `start=<activeSeconds_>`: check if we
+                            // landed close enough to capture immediately without a second seek.
+                            if (activeSeekMode_ == FramePreviewService::SeekMode::FastKeyframe) {
+                                phase_ = Phase::Seek;
+                                confirmSeek();
+                                return;
+                            }
+                            startSeek();
+                        });
+                });
         });
     if (!request.valid()) {
         fail(tr("The player would not report whether this source can be seeked."));
@@ -834,6 +868,13 @@ void FramePreviewWorker::startLoad() {
     endBaseline_ = endCount_;
     deadlineMs_ = nowMs() + kLoadTimeoutMs;
     try {
+        // Tighter demuxer readahead for local files cuts per-seek latency on large MKVs
+        // while keeping 4 MiB headroom for remote HLS streams.
+        const bool isRemote = url_.startsWith(QLatin1String("http://"), Qt::CaseInsensitive) ||
+                              url_.startsWith(QLatin1String("https://"), Qt::CaseInsensitive);
+        core_->setString("demuxer-max-bytes", isRemote ? "4194304" : "524288");
+        core_->setString(
+            "vf", "scale=w=360:h=360:force_original_aspect_ratio=decrease:flags=fast_bilinear");
         // Jump directly to the requested timestamp on cold open so network/HLS
         // streams do not download segment 0 before seeking to the hovered time.
         core_->setString("start", activeSeconds_ > 0.0 ? mpvNumber(activeSeconds_) : "none");

@@ -1121,7 +1121,11 @@
 </context>
 <context>
     <name>AnimeJanaiRuntime</name>
-    <message>
+        <message>
+        <source>RIFE interpolation bypassed because the configured frame-rate gain is below 1.15x.</source>
+        <translation>Інтерполяцію RIFE пропущено, оскільки налаштований приріст частоти кадрів менший за 1.15x.</translation>
+    </message>
+<message>
         <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="218"/>
         <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="232"/>
         <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="238"/>
@@ -14063,7 +14067,11 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 </context>
 <context>
     <name>mplayer::shell::FramePreviewWorker</name>
-    <message>
+        <message>
+        <source>This source has no moving video track to preview.</source>
+        <translation>У цьому джерелі немає рухомої відеодоріжки для попереднього перегляду.</translation>
+    </message>
+<message>
         <location filename="../src/player/shell/FramePreviewService.cpp" line="500"/>
         <source>No media is loaded, so there is no frame to preview.</source>
         <translation>Медіа не завантажено, тому кадр для перегляду відсутній.</translation>
