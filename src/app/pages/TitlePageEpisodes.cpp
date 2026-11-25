@@ -701,7 +701,14 @@ void TitlePage::releaseContextMenu(QPushButton* chip, const QPoint& globalPos) {
                         } else {
                             favouriteTeams_.setFavourite(ref_, prov, teamSlug, releaseId);
                         }
-                        applyResponsiveLayout();
+                        const int savedActive = activeRelease_;
+                        rebuildReleaseChips();
+                        if (savedActive >= 0 && savedActive < releaseChips_.size() &&
+                            releaseChips_.at(savedActive) != nullptr) {
+                            const QSignalBlocker blocker(releaseGroup_);
+                            releaseChips_.at(savedActive)->setChecked(true);
+                            activeRelease_ = savedActive;
+                        }
                     });
             menu.addSeparator();
         }

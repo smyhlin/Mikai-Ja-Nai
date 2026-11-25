@@ -1943,6 +1943,22 @@ void TitlePage::refreshReleaseTexts() {
         setReleaseChipText(chip, label);
         chip->setToolTip(tooltip);
     }
+    if (releaseChipsHost_ != nullptr) {
+        if (auto* teamRow =
+                releaseChipsHost_->findChild<QWidget*>(QStringLiteral("titleTeamsRow"))) {
+            if (auto* teamLbl = teamRow->findChild<QLabel*>(QStringLiteral("muted"))) {
+                teamLbl->setText(tr("Teams:"));
+            }
+            const auto teamButtons =
+                teamRow->findChildren<QPushButton*>(QStringLiteral("categoryChip"));
+            for (QPushButton* btn : teamButtons) {
+                if (btn == nullptr) continue;
+                const QString teamName = btn->text();
+                btn->setToolTip(tr("Open %1 team profile and releases").arg(teamName));
+                btn->setAccessibleName(tr("Browse team %1").arg(teamName));
+            }
+        }
+    }
     refreshReleaseChipSizing();
 }
 
