@@ -304,6 +304,12 @@ void PlayerController::connectSession() {
         }
     });
     connect(session_, &VideoSession::sourceEpochChanged, this, [this](uint64_t epoch) {
+        cumulativeSeekTimer_.stop();
+        cumulativeSeekDelta_ = 0.0;
+        cumulativeSeekAnchor_ = -1.0;
+        seekGateTimer_.invalidate();
+        seekGateTarget_ = -1.0;
+        endHoldSpeed();
         cancelPendingReferenceCapture(
             QStringLiteral("native.reference.sourceChanged"),
             tr("The media source changed before the reference frame could be captured."));
@@ -617,6 +623,9 @@ void PlayerController::togglePlayPause() {
 
 void PlayerController::seekTo(double seconds) {
     if (closed_ || session_ == nullptr || !session_->hasVideo()) return;
+    cumulativeSeekTimer_.stop();
+    cumulativeSeekDelta_ = 0.0;
+    cumulativeSeekAnchor_ = -1.0;
     const double limit = duration_ > 0.0 ? duration_ : session_->duration();
     const double target = std::clamp(std::isfinite(seconds) ? seconds : 0.0, 0.0, std::max(0.0, limit));
     seekGateTarget_ = target;
@@ -713,6 +722,7 @@ void PlayerController::toggleMute() {
 void PlayerController::setRate(double rate) {
     if (!std::isfinite(rate)) return;
     const double value = std::clamp(rate, kShellRateMin, kShellRateMax);
+    preHoldSpeed_.reset();
     if (qFuzzyCompare(value + 1.0, speed_ + 1.0)) return;
     speed_ = value;
     if (session_ != nullptr) session_->setSpeed(speed_);
