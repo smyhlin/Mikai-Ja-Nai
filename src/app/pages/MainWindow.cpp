@@ -560,11 +560,20 @@ void MainWindow::chooseMediaUrl() {
         return;
     }
     if (openMedia(source)) {
-        // Strip userinfo and query tokens before persisting URL history.
-        QUrl sanitized = QUrl::fromUserInput(source);
-        sanitized.setUserInfo(QString());
-        sanitized.setQuery(QString());
-        const QString storedUrl = sanitized.isValid() ? sanitized.toString() : source;
+        QString storedUrl;
+        if (isPlaybackLinkUrl(source)) {
+            if (const auto parsed = parsePlaybackLink(source); parsed.has_value()) {
+                storedUrl = formatPlaybackLink(*parsed);
+            } else {
+                storedUrl = source;
+            }
+        } else {
+            // Strip userinfo and query tokens before persisting stream URL history.
+            QUrl sanitized = QUrl::fromUserInput(source);
+            sanitized.setUserInfo(QString());
+            sanitized.setQuery(QString());
+            storedUrl = sanitized.isValid() ? sanitized.toString() : source;
+        }
         history.removeAll(storedUrl);
         history.prepend(storedUrl);
         while (history.size() > kMaxUrlHistory) {
@@ -576,15 +585,6 @@ void MainWindow::chooseMediaUrl() {
 }
 
 bool MainWindow::openMedia(const QString& source) {
-    if (isPlaybackLinkUrl(source)) {
-        QString linkErr;
-        const auto parsed = parsePlaybackLink(source, &linkErr);
-        if (!parsed.has_value()) {
-            qWarning().noquote() << "mikai: playback link refused:" << linkErr;
-            return false;
-        }
-        return openTitle(parsed->ref, QString(), false, *parsed);
-    }
     const auto refuse = [this](const QString& detail) {
         qWarning().noquote() << "mikai: media open refused:" << detail;
         if (automaticSetupAllowed_) {
@@ -600,6 +600,14 @@ bool MainWindow::openMedia(const QString& source) {
     };
     if (source.isEmpty()) {
         return refuse(tr("Choose a video file or enter a stream URL."));
+    }
+    if (isPlaybackLinkUrl(source)) {
+        QString linkErr;
+        const auto parsed = parsePlaybackLink(source, &linkErr);
+        if (!parsed.has_value()) {
+            return refuse(linkErr);
+        }
+        return openTitle(parsed->ref, QString(), false, *parsed);
     }
 
     // add-by-URL treats bare input as web input, which is what a typed
