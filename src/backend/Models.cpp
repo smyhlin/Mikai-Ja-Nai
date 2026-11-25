@@ -212,6 +212,49 @@ QVector<std::pair<QString, QString>> externalLinks(const AnimeDetail& detail) {
                id(QStringLiteral("hikka")), false);
     appendLink(QStringLiteral("IMDb"), QStringLiteral("https://www.imdb.com/title"),
                id(QStringLiteral("imdb")), true);
+
+    // Search fallback title prefers English -> original -> Ukrainian for
+    // English-indexed reference databases when no canonical ID is present.
+    QString searchTitle = detail.titles.english.trimmed();
+    if (searchTitle.isEmpty()) searchTitle = detail.titles.original.trimmed();
+    if (searchTitle.isEmpty()) searchTitle = detail.titles.ua.trimmed();
+    const QString encodedQuery = QString::fromUtf8(QUrl::toPercentEncoding(searchTitle));
+
+    const auto appendIdOrSearch = [&](const QString& name, const QString& idKey,
+                                      const QString& idBase, bool trailingSlash,
+                                      const QString& searchPrefix) {
+        const QString linkId = id(idKey);
+        if (!linkId.isEmpty()) {
+            appendLink(name, idBase, linkId, trailingSlash);
+        } else if (!encodedQuery.isEmpty()) {
+            links.append({name, searchPrefix + encodedQuery});
+        }
+    };
+    appendIdOrSearch(QStringLiteral("AniDB"), QStringLiteral("anidb"),
+                     QStringLiteral("https://anidb.net/anime"), false,
+                     QStringLiteral("https://anidb.net/anime/?adb.search="));
+    {
+        const QString annId = id(QStringLiteral("ann"));
+        if (!annId.isEmpty()) {
+            if (externalLinkIdIsSafe(annId)) {
+                QUrl url(QStringLiteral("https://www.animenewsnetwork.com/encyclopedia/anime.php"));
+                url.setQuery(QStringLiteral("id=") + QString::fromUtf8(QUrl::toPercentEncoding(annId)));
+                links.append({QStringLiteral("ANN"), url.toString()});
+            } else {
+                qWarning("Models: externalLinks: rejecting unsafe id for 'ANN'");
+            }
+        } else if (!encodedQuery.isEmpty()) {
+            links.append({QStringLiteral("ANN"),
+                          QStringLiteral("https://www.animenewsnetwork.com/encyclopedia/search/name?q=") +
+                              encodedQuery});
+        }
+    }
+    appendIdOrSearch(QStringLiteral("Wikipedia"), QStringLiteral("wikipedia"),
+                     QStringLiteral("https://en.wikipedia.org/wiki"), false,
+                     QStringLiteral("https://en.wikipedia.org/w/index.php?search="));
+    appendIdOrSearch(QStringLiteral("MangaUpdates"), QStringLiteral("mangaupdates"),
+                     QStringLiteral("https://www.mangaupdates.com/series"), false,
+                     QStringLiteral("https://www.mangaupdates.com/site/search/result?search="));
     return links;
 }
 

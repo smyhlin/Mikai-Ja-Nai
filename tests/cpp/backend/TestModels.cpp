@@ -651,6 +651,51 @@ void TestModels::externalLinksFollowTheFixedOrder() {
                                QStringLiteral("Shikimori"), QStringLiteral("IMDb")}));
 }
 
+void TestModels::externalLinksSupportExtendedSitesAndSearchFallback() {
+  // With canonical IDs present: link directly to each service page.
+  {
+    QJsonObject ids;
+    ids.insert(QStringLiteral("anidb"), 1234);
+    ids.insert(QStringLiteral("ann"), 5678);
+    ids.insert(QStringLiteral("wikipedia"), QStringLiteral("Frieren"));
+    ids.insert(QStringLiteral("mangaupdates"), QStringLiteral("abcd123"));
+    QJsonObject payload;
+    payload.insert(QStringLiteral("ids"), ids);
+    QMap<QString, QString> byName;
+    for (const auto& link : externalLinks(parseDetail(payload))) {
+      byName.insert(link.first, link.second);
+    }
+    QCOMPARE(byName.value(QStringLiteral("AniDB")), QStringLiteral("https://anidb.net/anime/1234"));
+    QCOMPARE(byName.value(QStringLiteral("ANN")),
+             QStringLiteral("https://www.animenewsnetwork.com/encyclopedia/anime.php?id=5678"));
+    QCOMPARE(byName.value(QStringLiteral("Wikipedia")),
+             QStringLiteral("https://en.wikipedia.org/wiki/Frieren"));
+    QCOMPARE(byName.value(QStringLiteral("MangaUpdates")),
+             QStringLiteral("https://www.mangaupdates.com/series/abcd123"));
+  }
+  // Without IDs but with titles: fall back to honest URL-encoded search links.
+  {
+    QJsonObject titles;
+    titles.insert(QStringLiteral("english"), QStringLiteral("Frieren: Beyond Journey's End"));
+    QJsonObject payload;
+    payload.insert(QStringLiteral("titles"), titles);
+    QMap<QString, QString> byName;
+    for (const auto& link : externalLinks(parseDetail(payload))) {
+      byName.insert(link.first, link.second);
+    }
+    QVERIFY(byName.value(QStringLiteral("AniDB"))
+                .startsWith(QStringLiteral("https://anidb.net/anime/?adb.search=")));
+    QVERIFY(byName.value(QStringLiteral("ANN"))
+                .startsWith(QStringLiteral(
+                    "https://www.animenewsnetwork.com/encyclopedia/search/name?q=")));
+    QVERIFY(byName.value(QStringLiteral("Wikipedia"))
+                .startsWith(QStringLiteral("https://en.wikipedia.org/w/index.php?search=")));
+    QVERIFY(byName.value(QStringLiteral("MangaUpdates"))
+                .startsWith(QStringLiteral(
+                    "https://www.mangaupdates.com/site/search/result?search=")));
+  }
+}
+
 void TestModels::updateReadsTeamsAndEpisode() {
   QJsonObject team;
   team.insert(QStringLiteral("id"), 4);

@@ -60,6 +60,7 @@ class TestModels : public QObject {
   void externalLinksCoverEveryKnownSite();
   void externalLinksSkipAbsentIds();
   void externalLinksFollowTheFixedOrder();
+  void externalLinksSupportExtendedSitesAndSearchFallback();
 
   // Updates.
   void updateReadsTeamsAndEpisode();
