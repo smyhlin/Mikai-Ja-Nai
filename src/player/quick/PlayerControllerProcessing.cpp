@@ -121,10 +121,13 @@ void PlayerController::refreshStoredSettings() {
     const int storedDeband = std::clamp(
         settings.value(QString::fromLatin1(VideoSession::kDebandPresetSettingKey), 0).toInt(), 0,
         static_cast<int>(VideoSession::DebandPreset::Strong));
+    const bool debandChanged = (debandPreset_ != storedDeband);
+    debandPreset_ = storedDeband;
     VideoSession::setDebandPreset(static_cast<VideoSession::DebandPreset>(storedDeband));
     if (scaleMenu_ != nullptr) scaleMenu_->setRows(videoScaleModeRows());
     rebuildSettingsMenu();
     if (scaleModeChanged) emit videoScaleModeChanged();
+    if (debandChanged) emit debandPresetChanged();
 
     const QString anime4kId = settings.value(kAnime4KSettingKey, QStringLiteral("off")).toString();
     bool anime4kKnown = false;

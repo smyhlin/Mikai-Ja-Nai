@@ -104,6 +104,7 @@ public:
     Q_PROPERTY(double rate READ rate NOTIFY rateChanged)
     Q_PROPERTY(QVariantList speedPresets READ speedPresets CONSTANT)
     Q_PROPERTY(int videoScaleMode READ videoScaleMode NOTIFY videoScaleModeChanged)
+    Q_PROPERTY(int debandPreset READ debandPreset NOTIFY debandPresetChanged)
     Q_PROPERTY(QVariantList timelineMarks READ timelineMarks NOTIFY skipSegmentsChanged)
     Q_PROPERTY(mplayer::quick::PlayerMenuModel* skipOffers READ skipOffers NOTIFY skipSegmentsChanged)
     Q_PROPERTY(double networkBytesPerSecond READ networkBytesPerSecond NOTIFY streamStatsChanged)
@@ -412,6 +413,7 @@ public:
     double rate() const { return speed_; }
     QVariantList speedPresets() const;
     int videoScaleMode() const { return videoScaleMode_; }
+    int debandPreset() const { return debandPreset_; }
     QVariantList timelineMarks() const { return timelineMarks_; }
     PlayerMenuModel* skipOffers() const { return skipOffers_; }
     double networkBytesPerSecond() const { return networkBytesPerSecond_; }
@@ -553,6 +555,7 @@ signals:
     void mutedChanged();
     void rateChanged();
     void videoScaleModeChanged();
+    void debandPresetChanged();
     void qualityChanged();
     void variantsChanged();
     void trackAvailabilityChanged();
@@ -905,6 +908,7 @@ private:
     double subtitleDelay_ = 0.0;
     std::unique_ptr<QTemporaryDir> subtitleTempDir_;
     int videoScaleMode_ = 0;
+    int debandPreset_ = 0;
 
     anime4k::Mode anime4kMode_ = anime4k::Mode::Off;
     QString anime4kChainId_ = QStringLiteral("off");

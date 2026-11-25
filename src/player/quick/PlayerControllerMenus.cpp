@@ -259,7 +259,6 @@ QVector<PlayerMenuModel::Row> PlayerController::debandPresetRows() const {
         const int ordinal = static_cast<int>(entry.preset);
         row.id = QStringLiteral("deband.") + QString::number(ordinal);
         row.label = entry.label;
-        row.icon = QStringLiteral("sliders");
         row.selected = active == ordinal;
         row.action = Action::SetDebandPreset;
         row.value = QString::number(ordinal);

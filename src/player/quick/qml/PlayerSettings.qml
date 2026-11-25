@@ -91,7 +91,8 @@ PlayerPanel {
         controller.activateMenuRow(menuId, row);
         if (action === PlayerMenuModel.SetVolume || action === PlayerMenuModel.ToggleMute
                 || action === PlayerMenuModel.SetSpeed
-                || action === PlayerMenuModel.SetVideoScaleMode) return;
+                || action === PlayerMenuModel.SetVideoScaleMode
+                || action === PlayerMenuModel.SetDebandPreset) return;
         panel.closeRequested();
     }
 
@@ -332,7 +333,9 @@ PlayerPanel {
             readonly property bool isSelected: !rowItem.headingRole
                                                && (rowItem.rowAction === PlayerMenuModel.SetVideoScaleMode
                                                    ? Number(rowItem.model.value) === panel.controller.videoScaleMode
-                                                   : rowItem.model.selected)
+                                                   : (rowItem.rowAction === PlayerMenuModel.SetDebandPreset
+                                                      ? Number(rowItem.model.value) === panel.controller.debandPreset
+                                                      : rowItem.model.selected))
 
             Rectangle {
                 anchors.fill: parent
