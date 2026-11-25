@@ -46,7 +46,13 @@ bool FavouriteTeams::isFavourite(const QString& ref, const QString& provider,
                                  const QString& teamSlug) const {
     const auto fav = favourite(ref);
     if (!fav.has_value()) return false;
-    return fav->provider == labels::providerKey(provider) &&
+    const QString wantedProv = labels::providerKey(provider);
+    const auto isMoon = [](const QString& k) {
+        return k == QLatin1String("moon") || k == QLatin1String("moonanime");
+    };
+    const bool provMatch =
+        fav->provider == wantedProv || (isMoon(fav->provider) && isMoon(wantedProv));
+    return provMatch &&
            fav->teamSlug.compare(teamSlug.trimmed(), Qt::CaseInsensitive) == 0;
 }
 

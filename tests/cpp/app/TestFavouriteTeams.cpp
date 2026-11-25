@@ -18,6 +18,8 @@ void TestFavouriteTeams::saveLoadCheckAndClearFavouriteTeam() {
                      QStringLiteral("fanvoxua"), QStringLiteral("rel-1"));
   QVERIFY(store.isFavourite(QStringLiteral("7428"), QStringLiteral("moonanime"),
                             QStringLiteral("fanvoxua")));
+  QVERIFY(store.isFavourite(QStringLiteral("7428"), QStringLiteral("moon"),
+                            QStringLiteral("FanVoxUA")));
 
   const auto loaded = store.favourite(QStringLiteral("7428"));
   QVERIFY(loaded.has_value());
