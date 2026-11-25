@@ -477,13 +477,14 @@ QWidget* SettingsDialog::buildGeneralTab() {
     polishInteractiveControl(scalingZoom_, theme::kSettingsControlSize);
     scalingLayout->addWidget(scalingZoom_);
 
-    // Stretch ignores the percentage by definition, so the control says so by
-    // being unusable rather than by quietly doing nothing.
+    // Stretch and Non-Linear Stretch ignore the percentage by definition, so
+    // the control says so by being unusable rather than by quietly doing nothing.
     const auto syncZoomEnabled = [this] {
-        const bool stretch =
-            scalingMode_->currentData().toInt() ==
-            static_cast<int>(mplayer::VideoScaleMode::Stretch);
-        scalingZoom_->setEnabled(!stretch);
+        const int mode = scalingMode_->currentData().toInt();
+        const bool ignoresZoom =
+            mode == static_cast<int>(mplayer::VideoScaleMode::Stretch) ||
+            mode == static_cast<int>(mplayer::VideoScaleMode::NonLinearStretch);
+        scalingZoom_->setEnabled(!ignoresZoom);
     };
     connect(scalingMode_, &QComboBox::currentIndexChanged, this, syncZoomEnabled);
     syncZoomEnabled();
@@ -545,11 +546,13 @@ QWidget* SettingsDialog::buildGeneralTab() {
     QFrame* diagCard = makeSettingsCard(page, &diagLayout);
     diagLayout->setSpacing(theme::kSpacingSmall);
     auto* diagHeading = new QLabel(tr("Diagnostics & logs"), diagCard);
+    diagHeading->setObjectName(QStringLiteral("diagHeadingLabel"));
     styleSectionHeading(diagHeading);
     diagLayout->addWidget(diagHeading);
     auto* diagHint = new QLabel(
         tr("Open the folder containing redacted session logs and crash reports, or copy basic system info for bug reports."),
         diagCard);
+    diagHint->setObjectName(QStringLiteral("diagHintLabel"));
     styleMutedCaption(diagHint);
     diagLayout->addWidget(diagHint);
     auto* diagButtons = new QHBoxLayout();
@@ -856,7 +859,15 @@ void SettingsDialog::retranslateGeneralTab() {
     testButton_->setAccessibleName(tr("Test API token"));
     openSubtitlesTitle_->setText(tr("OpenSubtitles"));
     openSubtitlesHint_->setText(
-        tr("Enter your OpenSubtitles API key to search for subtitles in the player."));
+#ifdef Q_OS_WIN
+        tr("Enter your OpenSubtitles API key to search for subtitles in the player. "
+           "The key is protected with Windows DPAPI and stored in the app data folder.")
+#else
+        tr("Enter your OpenSubtitles API key to search for subtitles in the player. "
+           "The key is stored in a file only your user account can read, not in a "
+           "keyring.")
+#endif
+    );
     openSubtitlesLink_->setText(
         tr("<a style=\"color: %1; text-decoration: none; font-weight: 500;\" "
            "href=\"https://www.opensubtitles.com/en/consumers\">"
@@ -972,6 +983,25 @@ void SettingsDialog::retranslateGeneralTab() {
     for (int i = 0; i < scalingMode_->count(); ++i) {
         const auto mode = static_cast<mplayer::VideoScaleMode>(scalingMode_->itemData(i).toInt());
         scalingMode_->setItemText(i, mplayer::videoScaleModeLabel(mode));
+    }
+    if (generalScroll_ != nullptr) {
+        if (auto* diagHeading =
+                generalScroll_->findChild<QLabel*>(QStringLiteral("diagHeadingLabel"))) {
+            diagHeading->setText(tr("Diagnostics & logs"));
+        }
+        if (auto* diagHint =
+                generalScroll_->findChild<QLabel*>(QStringLiteral("diagHintLabel"))) {
+            diagHint->setText(tr(
+                "Open the folder containing redacted session logs and crash reports, or copy basic system info for bug reports."));
+        }
+        if (auto* openLogsBtn =
+                generalScroll_->findChild<QPushButton*>(QStringLiteral("openLogsFolderButton"))) {
+            openLogsBtn->setText(tr("Open logs folder"));
+        }
+        if (auto* copyDiagBtn =
+                generalScroll_->findChild<QPushButton*>(QStringLiteral("copyDiagnosticsButton"))) {
+            copyDiagBtn->setText(tr("Copy system diagnostics"));
+        }
     }
 
     refreshQuota();
