@@ -254,8 +254,12 @@ void PlayerController::applyEpisodeInternal(const QString& label, const QString&
 void PlayerController::applyEpisode(const QString& label, const QString& embed, int index,
                                     const QList<shell::QualityEntry>& qualities,
                                     const QVector<QVariantMap>& variants) {
+    episodeSeekPending_ = episodeResumeSeconds_;
     episodeResumeSeconds_ = 0.0;
-    if (closed_ || directMedia_ || qualities.isEmpty()) return;
+    if (closed_ || directMedia_ || qualities.isEmpty()) {
+        episodeSeekPending_ = 0.0;
+        return;
+    }
     setSkipSegments({});
     applyEpisodeInternal(label, embed, index, qualities, variants, /*preservePosition=*/false);
     if (errorActive_) return;
@@ -518,7 +522,8 @@ void PlayerController::onEnginePosition(double seconds) {
     if (seekGateTarget_.has_value()) {
         constexpr double kSeekGateToleranceSec = 0.5;
         constexpr qint64 kSeekGateTimeoutMs = 1500;
-        if (std::abs(seconds - *seekGateTarget_) <= kSeekGateToleranceSec ||
+        if (!seekGateTimer_.isValid() ||
+            std::abs(seconds - *seekGateTarget_) <= kSeekGateToleranceSec ||
             seekGateTimer_.elapsed() >= kSeekGateTimeoutMs) {
             seekGateTarget_.reset();
         } else {
