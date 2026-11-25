@@ -218,7 +218,8 @@ def import_table_symbols(output):
             imports.setdefault(current_dll, set())
             continue
         if current_dll:
-            match = re.search(r"\s([^\s]+)$", line)
+            match = re.match(
+                r"^\s*[0-9a-fA-F]+\s+(?:<none>|\d+)\s+[0-9a-fA-F]+\s+([^\s]+)$", line)
             if match:
                 imports[current_dll].add(match.group(1))
     if not found_import_table:
@@ -247,26 +248,59 @@ def export_table_symbols(output):
 
 
 def validate_qt_mingw_runtime(payload):
+    payload = pathlib.Path(payload)
     for name in ("libgcc_s_seh-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll"):
-        if not (pathlib.Path(payload) / name).is_file():
-            sys.exit(f"deployed Qt compiler runtime is missing: {pathlib.Path(payload) / name}")
+        if not (payload / name).is_file():
+            sys.exit(f"deployed Qt compiler runtime is missing: {payload / name}")
 
-    qt_core = pathlib.Path(payload) / "Qt6Core.dll"
+    qt_core = payload / "Qt6Core.dll"
     if not qt_core.is_file():
         sys.exit(f"deployed Qt core library is missing: {qt_core}")
     core_output = subprocess.run(
         ["objdump", "-p", str(qt_core)], capture_output=True, text=True, check=True).stdout
-    if "__cxa_call_terminate" not in import_table_symbols(core_output).get(
+    if "__cxa_call_terminate" in import_table_symbols(core_output).get(
             "libstdc++-6.dll".casefold(), set()):
-        return
+        runtime = payload / "libstdc++-6.dll"
+        runtime_output = subprocess.run(
+            ["objdump", "-p", str(runtime)], capture_output=True, text=True, check=True).stdout
+        if "__cxa_call_terminate" not in export_table_symbols(runtime_output):
+            sys.exit(
+                "Qt6Core.dll imports __cxa_call_terminate from libstdc++-6.dll, "
+                "but the deployed runtime does not export it")
 
-    runtime = pathlib.Path(payload) / "libstdc++-6.dll"
-    runtime_output = subprocess.run(
-        ["objdump", "-p", str(runtime)], capture_output=True, text=True, check=True).stdout
-    if "__cxa_call_terminate" not in export_table_symbols(runtime_output):
+    # Verify every imported symbol of every deployed PE binary against the
+    # export table of its corresponding deployed DLL so an older runtime DLL
+    # can never cause an "Entry Point Not Found" crash on Windows.
+    dll_map = {p.name.casefold(): p for p in payload.rglob("*.dll")}
+    export_cache = {}
+    pe_files = sorted(list(payload.rglob("*.exe")) + list(payload.rglob("*.dll")))
+    missing_entries = []
+    for pe in pe_files:
+        out = subprocess.run(
+            ["objdump", "-p", str(pe)], capture_output=True, text=True, check=True).stdout
+        try:
+            pe_imports = import_table_symbols(out)
+        except ValueError:
+            continue
+        for dll_name, symbols in pe_imports.items():
+            if dll_name not in dll_map:
+                continue
+            if dll_name not in export_cache:
+                dll_out = subprocess.run(
+                    ["objdump", "-p", str(dll_map[dll_name])],
+                    capture_output=True, text=True, check=True).stdout
+                try:
+                    export_cache[dll_name] = export_table_symbols(dll_out)
+                except ValueError:
+                    export_cache[dll_name] = set()
+            missing = sorted(sym for sym in symbols if sym not in export_cache[dll_name])
+            if missing:
+                missing_entries.append(
+                    f"{pe.relative_to(payload)} -> {dll_name}: {', '.join(missing[:8])}")
+    if missing_entries:
         sys.exit(
-            "Qt6Core.dll imports __cxa_call_terminate from libstdc++-6.dll, "
-            "but the deployed runtime does not export it")
+            "Deployed PE import/export mismatch (would fail with Entry Point Not Found):\n  "
+            + "\n  ".join(missing_entries))
 
 
 def copy_benchmarks(source, out):
@@ -305,7 +339,10 @@ def main():
         shutil.rmtree(args.out)
     args.out.mkdir(parents=True)
 
-    search = [str(args.qt / "bin"), str(args.qt), str(args.runtime_dlls)]
+    # Prefer the compiler toolchain's runtime DLLs (--runtime-dlls) over the
+    # Qt SDK's bundled MinGW runtime so symbols from newer GCC / mingw-w64
+    # (e.g. pthread_cond_timedwait64, _ZSt15__get_once_callv) are always present.
+    search = [str(args.runtime_dlls), str(args.qt / "bin"), str(args.qt)]
 
     app = args.out / "mikai.exe"
     shutil.copy2(executable, app)
