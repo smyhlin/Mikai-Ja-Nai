@@ -145,3 +145,25 @@ void TestPlaybackSelection::teamlessSharedLinkResolvesAcrossTeamBackedReleases()
   QCOMPARE(res.episodeNumber, QStringLiteral("3"));
   QCOMPARE(res.startTimeSec, std::optional<int>(95));
 }
+
+void TestPlaybackSelection::moonAnimeAliasMatchesMoonSources() {
+  SelectionInput in;
+  in.releases = {
+      makeRelease(QStringLiteral("r1"), QStringLiteral("fanvoxua"), QStringLiteral("FanVoxUA"),
+                  QStringLiteral("moon"), {QStringLiteral("1"), QStringLiteral("12.5")}),
+  };
+  in.defaultProvider = QStringLiteral("ashdi");
+  in.sharedProvider = QStringLiteral("MoonAnime");
+  in.sharedTeamSlug = QStringLiteral("fanvoxua");
+  in.sharedEpisode = QStringLiteral("12.5");
+  in.sharedTimeSec = 754;
+
+  const SelectionResult res = resolve(in);
+  QVERIFY(res.valid);
+  QCOMPARE(res.reason, SelectionReason::SharedLink);
+  QCOMPARE(res.releaseIndex, 0);
+  QCOMPARE(res.provider, QStringLiteral("moon"));
+  QCOMPARE(res.teamSlug, QStringLiteral("fanvoxua"));
+  QCOMPARE(res.episodeNumber, QStringLiteral("12.5"));
+  QCOMPARE(res.startTimeSec, std::optional<int>(754));
+}

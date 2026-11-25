@@ -68,11 +68,20 @@ QString primaryTeamName(const backend::Release& release, const QString& preferre
     return {};
 }
 
+bool providersEquivalent(const QString& a, const QString& b) {
+    if (a == b) return true;
+    const auto isMoon = [](const QString& k) {
+        return k == QLatin1String("moon") || k == QLatin1String("moonanime");
+    };
+    return isMoon(a) && isMoon(b);
+}
+
 int findSourceForProvider(const backend::Episode& ep, const QString& normalizedProvider) {
     for (int i = 0; i < ep.sources.size(); ++i) {
         if (ep.sources[i].embed_url.trimmed().isEmpty()) continue;
         if (normalizedProvider.isEmpty() ||
-            labels::providerKey(labels::providerFor(ep.sources[i])) == normalizedProvider) {
+            providersEquivalent(labels::providerKey(labels::providerFor(ep.sources[i])),
+                                normalizedProvider)) {
             return i;
         }
     }

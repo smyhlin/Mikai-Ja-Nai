@@ -13,4 +13,5 @@ class TestPlaybackSelection : public QObject {
   void watchesAdvanceToNextNumericOrSpecialEpisode();
   void episodeOrderingHandlesDecimalsAndOva();
   void teamlessSharedLinkResolvesAcrossTeamBackedReleases();
+  void moonAnimeAliasMatchesMoonSources();
 };
