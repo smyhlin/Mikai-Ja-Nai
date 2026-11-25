@@ -1065,6 +1065,11 @@ bool CompareRenderer::capture(const QString& source, double timestamp, const QSi
             }
             if (settledSource.isNull()) return false;
             state.sourceFrame = settledSource;
+            // Anchor 1x/Off renders to the native coded video geometry rather
+            // than the player window size so non-16:9 sources (e.g. 4:3) never
+            // bake pillarbox/letterbox black bars into Side A while upscaled
+            // Side B renders pure active video.
+            state.targetOutputSize = settledSource.size();
         } else if (state.sourceOpenFailed) {
             // Only an explicit loadfile / END_FILE source-open failure allows
             // reuse of the player's untouched frame. A settle timeout or any
@@ -1076,6 +1081,7 @@ bool CompareRenderer::capture(const QString& source, double timestamp, const QSi
             state.error.clear();
             state.diagnosticTail.clear();
             state.sourceFrame = fallback;
+            state.targetOutputSize = fallback.size();
         } else {
             return false;
         }

@@ -2368,12 +2368,23 @@ void CompareWindow::renderOnce() {
     renderedBId_ = renderBId;
     renderedBackend_ = ajiBackend_;
     QImage difference;
-    if (mode_ == CompareMode::Difference && !a.isNull() && !b.isNull() &&
-        a.size() == b.size()) {
+    if (mode_ == CompareMode::Difference && !a.isNull() && !b.isNull()) {
+        QImage diffA = a;
+        QImage diffB = b;
+        if (diffA.size() != diffB.size()) {
+            const Qt::TransformationMode xform =
+                (filterBox_ != nullptr && filterBox_->currentData().toBool())
+                    ? Qt::SmoothTransformation
+                    : Qt::FastTransformation;
+            const QSize target(std::max(diffA.width(), diffB.width()),
+                               std::max(diffA.height(), diffB.height()));
+            if (diffA.size() != target) diffA = diffA.scaled(target, Qt::IgnoreAspectRatio, xform);
+            if (diffB.size() != target) diffB = diffB.scaled(target, Qt::IgnoreAspectRatio, xform);
+        }
         // Gain 1 is the honest picture, so it is the colour-mapped one;
         // anything above it is an explicitly amplified grey.
-        difference = gain_->value() > 1 ? differenceGrayscale(a, b, gain_->value())
-                                        : differenceJet(a, b);
+        difference = gain_->value() > 1 ? differenceGrayscale(diffA, diffB, gain_->value())
+                                        : differenceJet(diffA, diffB);
     }
     canvas_->setSideNames(labelFor(sideA()), labelFor(sideB()));
     canvas_->setChoices(choices_, sideA(), sideB());
