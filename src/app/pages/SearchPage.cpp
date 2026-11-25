@@ -1648,39 +1648,27 @@ void SearchPage::smoothScrollCarousel(CarouselSection& section, int direction) {
 }
 
 bool SearchPage::eventFilter(QObject* watched, QEvent* event) {
-    const auto scrollVerticalCrisply = [](QScrollArea* area, QWheelEvent* wheel) -> bool {
+    // Forward unconsumed vertical wheel gestures from nested horizontal strips
+    // directly to the parent vertical scrollbar so Homepage and Search Grid use
+    // the exact same native Qt QScrollBar wheel speed (singleStep * wheelScrollLines)
+    // as TitlePage::overviewScroll_.
+    const auto forwardVerticalWheel = [](QScrollArea* area, QWheelEvent* wheel) -> bool {
         if (area == nullptr || wheel == nullptr) return false;
         QScrollBar* bar = area->verticalScrollBar();
         if (bar == nullptr || bar->maximum() <= bar->minimum()) return false;
-        const QPoint pixel = wheel->pixelDelta();
-        const QPoint angle = wheel->angleDelta();
-        int delta = 0;
-        if (pixel.y() != 0) {
-            delta = qRound(-pixel.y() * 1.4);
-        } else {
-            const int steps = angle.y() != 0
-                                  ? angle.y()
-                                  : (wheel->modifiers().testFlag(Qt::AltModifier) ? angle.x() : 0);
-            if (steps != 0) {
-                delta = qRound(-steps / 120.0 * 120.0);
-            }
+        const QPointF local = bar->mapFromGlobal(wheel->globalPosition());
+        QWheelEvent forwarded(local, wheel->globalPosition(), wheel->pixelDelta(),
+                              wheel->angleDelta(), wheel->buttons(), wheel->modifiers(),
+                              wheel->phase(), wheel->inverted(), wheel->source(),
+                              wheel->pointingDevice());
+        forwarded.ignore();
+        QCoreApplication::sendEvent(bar, &forwarded);
+        if (forwarded.isAccepted()) {
+            wheel->accept();
+            return true;
         }
-        if (delta == 0) return false;
-        const int before = bar->value();
-        bar->setValue(qBound(bar->minimum(), before + delta, bar->maximum()));
-        wheel->accept();
-        return true;
+        return false;
     };
-
-    if (event->type() == QEvent::Wheel) {
-        auto* wheel = static_cast<QWheelEvent*>(event);
-        if (discoveryScroll_ != nullptr && watched == discoveryScroll_->viewport()) {
-            if (scrollVerticalCrisply(discoveryScroll_, wheel)) return true;
-        }
-        if (resultsGridScroll_ != nullptr && watched == resultsGridScroll_->viewport()) {
-            if (scrollVerticalCrisply(resultsGridScroll_, wheel)) return true;
-        }
-    }
     if ((watched == headerLogo_ || watched == sidebarBrandName_) &&
         event->type() == QEvent::MouseButtonPress) {
         const auto* mouseEvent = static_cast<QMouseEvent*>(event);
@@ -1759,9 +1747,9 @@ bool SearchPage::eventFilter(QObject* watched, QEvent* event) {
                 if (handleCarouselWheel(*section, wheel)) {
                     return true;
                 }
-                // Forward vertical wheel directly to the discovery page at full crisp speed
-                // instead of letting the child horizontal QScrollArea stall or swallow it.
-                if (scrollVerticalCrisply(discoveryScroll_, wheel)) {
+                // Forward unconsumed vertical wheel directly to the discovery page's
+                // native vertical scrollbar instead of letting the horizontal strip swallow it.
+                if (forwardVerticalWheel(discoveryScroll_, wheel)) {
                     return true;
                 }
                 event->ignore();
@@ -1772,7 +1760,7 @@ bool SearchPage::eventFilter(QObject* watched, QEvent* event) {
             rowScroll != nullptr &&
             rowScroll->objectName() == QLatin1String("homeFeedRowScroll")) {
             if (handleFeedRowWheel(rowScroll, wheel)) return true;
-            if (scrollVerticalCrisply(discoveryScroll_, wheel)) return true;
+            if (forwardVerticalWheel(discoveryScroll_, wheel)) return true;
             event->ignore();
             return false;
         }
