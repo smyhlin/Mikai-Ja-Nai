@@ -30,22 +30,26 @@ QString formatPlaybackLink(const PlaybackLink& link) {
     const QString ref = link.ref.trimmed();
     if (!isSafeToken(ref)) return {};
 
+    const auto encodeValue = [](const QString& value) {
+        return QString::fromLatin1(QUrl::toPercentEncoding(value));
+    };
+
     QUrl url;
     url.setScheme(QStringLiteral("mikai-janai"));
     url.setHost(QStringLiteral("play"));
 
     QUrlQuery query;
-    query.addQueryItem(QStringLiteral("ref"), ref);
+    query.addQueryItem(QStringLiteral("ref"), encodeValue(ref));
 
     const QString provider = labels::providerKey(link.provider);
     const QString team = link.teamSlug.trimmed();
     const QString episode = link.episode.trimmed();
-    if (!provider.isEmpty() && !episode.isEmpty()) {
-        query.addQueryItem(QStringLiteral("provider"), provider);
+    if (!provider.isEmpty() && isSafeToken(episode) && (team.isEmpty() || isSafeToken(team))) {
+        query.addQueryItem(QStringLiteral("provider"), encodeValue(provider));
         if (!team.isEmpty()) {
-            query.addQueryItem(QStringLiteral("team"), team);
+            query.addQueryItem(QStringLiteral("team"), encodeValue(team));
         }
-        query.addQueryItem(QStringLiteral("episode"), episode);
+        query.addQueryItem(QStringLiteral("episode"), encodeValue(episode));
         if (link.timeSec.has_value() && *link.timeSec >= 0 && *link.timeSec <= kMaxTimeSeconds) {
             query.addQueryItem(QStringLiteral("t"), QString::number(*link.timeSec));
         }
@@ -73,6 +77,11 @@ std::optional<PlaybackLink> parsePlaybackLink(const QString& raw, QString* error
     }
 
     const QUrlQuery query(url);
+    const QString rawVersion =
+        query.queryItemValue(QStringLiteral("v"), QUrl::FullyDecoded).trimmed();
+    if (!rawVersion.isEmpty() && rawVersion != QStringLiteral("1")) {
+        return fail(QStringLiteral("Unsupported playback link schema version."));
+    }
     const QString ref = query.queryItemValue(QStringLiteral("ref"), QUrl::FullyDecoded).trimmed();
     if (!isSafeToken(ref)) {
         return fail(QStringLiteral("Playback link is missing a valid title reference (ref)."));
@@ -81,12 +90,18 @@ std::optional<PlaybackLink> parsePlaybackLink(const QString& raw, QString* error
     PlaybackLink parsed;
     parsed.ref = ref;
 
-    const QString rawProv =
+    QString rawProv =
         query.queryItemValue(QStringLiteral("provider"), QUrl::FullyDecoded).trimmed();
+    if (rawProv.isEmpty()) {
+        rawProv = query.queryItemValue(QStringLiteral("p"), QUrl::FullyDecoded).trimmed();
+    }
     const QString rawTeam =
         query.queryItemValue(QStringLiteral("team"), QUrl::FullyDecoded).trimmed();
-    const QString rawEp =
+    QString rawEp =
         query.queryItemValue(QStringLiteral("episode"), QUrl::FullyDecoded).trimmed();
+    if (rawEp.isEmpty()) {
+        rawEp = query.queryItemValue(QStringLiteral("ep"), QUrl::FullyDecoded).trimmed();
+    }
     const QString rawTime =
         query.queryItemValue(QStringLiteral("t"), QUrl::FullyDecoded).trimmed();
 

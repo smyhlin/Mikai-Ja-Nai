@@ -9,4 +9,5 @@ class TestPlaybackLink : public QObject {
   void roundTripFullLinkWithSpecialEpisodeAndTime();
   void partialPlaybackParamsDegradeToTitleOnly();
   void rejectsInvalidSchemesAndBadTimecodes();
+  void roundTripReservedDelimitersAndCompactKeys();
 };

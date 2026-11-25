@@ -43,4 +43,32 @@ void TestPlaybackLink::rejectsInvalidSchemesAndBadTimecodes() {
   QVERIFY(!parsePlaybackLink(QStringLiteral("mikai-janai://play?provider=moon"), &err).has_value());
   QVERIFY(!parsePlaybackLink(QStringLiteral("mikai-janai://play?ref=7428&provider=moon&episode=1&t=-5"), &err).has_value());
   QVERIFY(!parsePlaybackLink(QStringLiteral("mikai-janai://play?ref=7428&provider=moon&episode=1&t=NaN"), &err).has_value());
+  QVERIFY(!parsePlaybackLink(QStringLiteral("mikai-janai://play?v=2&ref=7428"), &err).has_value());
+}
+
+void TestPlaybackLink::roundTripReservedDelimitersAndCompactKeys() {
+  PlaybackLink orig;
+  orig.ref = QStringLiteral("frieren-100%");
+  orig.provider = QStringLiteral("ashdi");
+  orig.teamSlug = QStringLiteral("team&co+1");
+  orig.episode = QStringLiteral("OVA#1");
+  orig.timeSec = 0;
+
+  const QString encoded = formatPlaybackLink(orig);
+  QString err;
+  const auto parsed = parsePlaybackLink(encoded, &err);
+  QVERIFY2(parsed.has_value(), qPrintable(err));
+  QCOMPARE(parsed->ref, QStringLiteral("frieren-100%"));
+  QCOMPARE(parsed->provider, QStringLiteral("ashdi"));
+  QCOMPARE(parsed->teamSlug, QStringLiteral("team&co+1"));
+  QCOMPARE(parsed->episode, QStringLiteral("OVA#1"));
+  QCOMPARE(parsed->timeSec, std::optional<int>(0));
+
+  const auto compact = parsePlaybackLink(
+      QStringLiteral("mikai-janai://play?v=1&ref=7428&p=ashdi&ep=5&t=312"), &err);
+  QVERIFY2(compact.has_value(), qPrintable(err));
+  QVERIFY(compact->hasPlaybackTarget());
+  QCOMPARE(compact->provider, QStringLiteral("ashdi"));
+  QCOMPARE(compact->episode, QStringLiteral("5"));
+  QCOMPARE(compact->timeSec, std::optional<int>(312));
 }
