@@ -1696,18 +1696,29 @@ void TestFeedRender::settingsClosingDuringAcquisitionRestoresMainWindowInput() {
       window.findChild<QWidget*>(QStringLiteral("playerKeyHints")) != nullptr, 5000);
   QPointer<SettingsDialog> settings;
   bool acquisitionStarted = false;
-  QTimer::singleShot(100, &window, [&window, &settings, &acquisitionStarted] {
-    settings = window.findChild<SettingsDialog*>();
-    auto* components = window.findChild<ComponentStoreTab*>();
-    acquisitionStarted = !settings.isNull() && components != nullptr;
-    if (acquisitionStarted) {
-      QMetaObject::invokeMethod(components, "acquisitionProgress", Qt::DirectConnection,
-                                Q_ARG(QString, QStringLiteral("Downloading test pack")),
-                                Q_ARG(bool, true), Q_ARG(int, 42));
-    }
-  });
+  bool settingsStayedOpen = false;
+  QTimer::singleShot(100, &window,
+                     [&window, &settings, &acquisitionStarted, &settingsStayedOpen] {
+                       settings = window.findChild<SettingsDialog*>();
+                       auto* components = window.findChild<ComponentStoreTab*>();
+                       acquisitionStarted = !settings.isNull() && components != nullptr;
+                       if (acquisitionStarted) {
+                         QMetaObject::invokeMethod(
+                             components, "acquisitionProgress", Qt::DirectConnection,
+                             Q_ARG(QString, QStringLiteral("Downloading test pack")),
+                             Q_ARG(bool, true), Q_ARG(int, 42));
+                         // Starting a component download must keep Settings open so the user can
+                         // monitor progress or queue additional items without the dialog vanishing.
+                         QTimer::singleShot(50, &window, [&settings, &settingsStayedOpen] {
+                           settingsStayedOpen = !settings.isNull() && settings->isVisible();
+                           if (!settings.isNull()) settings->reject();
+                         });
+                       }
+                     });
   QTest::mouseClick(settingsButton, Qt::LeftButton);
   QTRY_VERIFY_WITH_TIMEOUT(acquisitionStarted, 5000);
+  QVERIFY2(settingsStayedOpen,
+           "starting a component download must not auto-close the Settings dialog");
   QTRY_VERIFY_WITH_TIMEOUT(settings.isNull(), 5000);
   dismissSetupPrompt.stop();
   auto* acquisitionBar = window.findChild<QWidget*>(QStringLiteral("componentAcquisitionBar"));

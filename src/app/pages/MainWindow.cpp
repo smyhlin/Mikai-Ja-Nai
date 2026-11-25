@@ -1267,13 +1267,13 @@ void MainWindow::openGenreSearch(const QString& genre) {
 }
 
 void MainWindow::openAccessSettings() {
-    openSettings();
-    if (settingsDialog_ != nullptr) settingsDialog_->showPage(QStringLiteral("access"));
+    openSettingsImpl(std::nullopt, QPointer<mplayer::quick::PlayerController>(), false, false,
+                     QStringLiteral("access"));
 }
 
 void MainWindow::openUpscalerSettings() {
-    openSettings();
-    if (settingsDialog_ != nullptr) settingsDialog_->showPage(QStringLiteral("upscalers"));
+    openSettingsImpl(std::nullopt, QPointer<mplayer::quick::PlayerController>(), false, false,
+                     QStringLiteral("upscalers"));
 }
 
 void MainWindow::openSettingsForIntent(
@@ -1436,7 +1436,7 @@ void MainWindow::resumePlaybackAfterComponentAsk() {
 }
 
 void MainWindow::noteComponentAcquisition(const QString& status, bool started, int percent) {
-    if (started) releaseSettingsForAcquisition();
+    Q_UNUSED(started);
     if (acquisitionBar_ == nullptr) return;
     acquisitionStatus_->setText(status);
     if (acquisitionProgress_ != nullptr) {
@@ -1491,11 +1491,13 @@ void MainWindow::noteComponentAcquisitionIdle() {
 void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettingsIntent> intent,
                                   QPointer<mplayer::quick::PlayerController> preferredCore,
                                   bool showComponentsFirst,
-                                  bool installAnimeJanaiRecommended) {
+                                  bool installAnimeJanaiRecommended,
+                                  const QString& initialPage) {
     if (!settingsDialog_.isNull()) {
         settingsDialog_->raise();
         settingsDialog_->activateWindow();
         if (showComponentsFirst) settingsDialog_->showComponentsTab();
+        else if (!initialPage.isEmpty()) settingsDialog_->showPage(initialPage);
         if (installAnimeJanaiRecommended) settingsDialog_->installRecommended();
         // A remedy pressed while Settings is already open must not vanish: the
         // live dialog has its preparation providers installed, so the intent is
@@ -1531,6 +1533,8 @@ void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettin
             });
     if (showComponentsFirst) {
         dialog.showComponentsTab();
+    } else if (!initialPage.isEmpty()) {
+        dialog.showPage(initialPage);
     }
     if (installAnimeJanaiRecommended) {
         dialog.installRecommended();

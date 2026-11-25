@@ -153,7 +153,8 @@ private:
     void openSettingsImpl(std::optional<mplayer::shell::ProcessingSettingsIntent> intent,
                           QPointer<mplayer::quick::PlayerController> preferredCore,
                           bool showComponentsFirst = false,
-                          bool installAnimeJanaiRecommended = false);
+                          bool installAnimeJanaiRecommended = false,
+                          const QString& initialPage = QString());
     void chooseMediaFile();
     void chooseMediaUrl();
     /// Closes the media player, honouring its own close barrier. False when the
