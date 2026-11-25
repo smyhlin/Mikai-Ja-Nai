@@ -746,30 +746,37 @@ void SettingsDialog::retranslateCustomizationTabs() {
         customizationDescription_->setText(tr("Adjust how content and more are displayed"));
     }
     if (siteThemeLabel_ != nullptr) siteThemeLabel_->setText(tr("Site theme"));
-    if (siteTheme_ != nullptr) {
-        siteTheme_->setItemText(siteTheme_->findData(QStringLiteral("dark")),
-                                tr("Dark theme"));
-        siteTheme_->setItemText(siteTheme_->findData(QStringLiteral("light")),
-                                tr("Light theme"));
-    }
+    const auto setComboItemTextIfFound = [](QComboBox* combo, const QString& data,
+                                            const QString& text) {
+        if (combo == nullptr) return;
+        const int idx = combo->findData(data);
+        if (idx >= 0) combo->setItemText(idx, text);
+    };
+    setComboItemTextIfFound(siteTheme_, QStringLiteral("dark"), tr("Dark theme"));
+    setComboItemTextIfFound(siteTheme_, QStringLiteral("light"), tr("Light theme"));
     if (titleLanguageLabel_ != nullptr) {
         titleLanguageLabel_->setText(tr("Content titles language"));
     }
     if (nameLanguageLabel_ != nullptr) nameLanguageLabel_->setText(tr("Names language"));
-    const auto retranslateChoices = [this](QComboBox* combo) {
-        if (combo == nullptr) return;
-        combo->setItemText(combo->findData(QStringLiteral("interface")), tr("As the interface"));
-        combo->setItemText(combo->findData(QStringLiteral("uk")), tr("Ukrainian"));
-        combo->setItemText(combo->findData(QStringLiteral("en")), tr("English"));
-        combo->setItemText(combo->findData(QStringLiteral("original")), tr("Original"));
+    const auto retranslateChoices = [this, &setComboItemTextIfFound](QComboBox* combo) {
+        setComboItemTextIfFound(combo, QStringLiteral("interface"), tr("As the interface"));
+        setComboItemTextIfFound(combo, QStringLiteral("uk"), tr("Ukrainian"));
+        setComboItemTextIfFound(combo, QStringLiteral("en"), tr("English"));
+        setComboItemTextIfFound(combo, QStringLiteral("original"), tr("Original"));
     };
     retranslateChoices(titleLanguage_);
     retranslateChoices(nameLanguage_);
     if (coverGradientLabel_ != nullptr) coverGradientLabel_->setText(tr("Gradient overlay"));
+    if (coverGradientSwitch_ != nullptr) {
+        coverGradientSwitch_->setAccessibleName(tr("Gradient overlay"));
+    }
     if (coverGradientHint_ != nullptr) {
         coverGradientHint_->setText(tr("Overlay a gradient on the cover image"));
     }
     if (adultContentLabel_ != nullptr) adultContentLabel_->setText(tr("18+ content"));
+    if (adultContentSwitch_ != nullptr) {
+        adultContentSwitch_->setAccessibleName(tr("18+ content"));
+    }
     if (adultContentHint_ != nullptr) {
         adultContentHint_->setText(tr("Show explicit content without a warning"));
     }
@@ -783,16 +790,29 @@ void SettingsDialog::retranslateCustomizationTabs() {
     if (accentSectionHint_ != nullptr) {
         accentSectionHint_->setText(tr("Pick a preset or a custom accent color"));
     }
+    for (const auto& swatch : accentSwatches_) {
+        if (swatch.second == nullptr) continue;
+        const QString readable = theme::presetName(swatch.first);
+        swatch.second->setAccessibleName(readable.isEmpty() ? swatch.first
+                                                            : tr("%1 accent").arg(readable));
+    }
     if (radiusSectionLabel_ != nullptr) radiusSectionLabel_->setText(tr("Corner radius"));
     if (radiusSectionHint_ != nullptr) {
         radiusSectionHint_->setText(tr("Rounding of buttons, cards and fields"));
     }
     const QStringList radiusLabels = theme::radiusNames();
     for (int step = 0; step < radiusButtons_.size() && step < radiusLabels.size(); ++step) {
-        radiusButtons_.at(step)->setText(radiusLabels.at(step));
+        if (QPushButton* chip = radiusButtons_.at(step); chip != nullptr) {
+            chip->setText(radiusLabels.at(step));
+            chip->setAccessibleName(radiusLabels.at(step));
+            chip->setToolTip(tr("%1 px").arg(theme::radiusSteps().value(step)));
+        }
     }
     if (backgroundGradientLabel_ != nullptr) {
         backgroundGradientLabel_->setText(tr("Background gradient"));
+    }
+    if (backgroundGradientSwitch_ != nullptr) {
+        backgroundGradientSwitch_->setAccessibleName(tr("Background gradient"));
     }
     if (backgroundGradientHint_ != nullptr) {
         backgroundGradientHint_->setText(tr("Accent glow at the top of the page"));
@@ -800,13 +820,15 @@ void SettingsDialog::retranslateCustomizationTabs() {
     if (intensityLabel_ != nullptr) intensityLabel_->setText(tr("Intensity"));
     if (heightLabel_ != nullptr) heightLabel_->setText(tr("Height"));
     if (gradientModeLabel_ != nullptr) gradientModeLabel_->setText(tr("Gradient source"));
-    if (gradientMode_ != nullptr) {
-        gradientMode_->setItemText(gradientMode_->findData(
-                                       theme::gradientModeId(theme::GradientMode::Auto)),
-                                   tr("Auto (follow accent)"));
-        gradientMode_->setItemText(gradientMode_->findData(
-                                       theme::gradientModeId(theme::GradientMode::Custom)),
-                                   tr("Custom color"));
+    setComboItemTextIfFound(gradientMode_, theme::gradientModeId(theme::GradientMode::Auto),
+                            tr("Auto (follow accent)"));
+    setComboItemTextIfFound(gradientMode_, theme::gradientModeId(theme::GradientMode::Custom),
+                            tr("Custom color"));
+    for (const auto& swatch : gradientSwatches_) {
+        if (swatch.second == nullptr) continue;
+        const QString readable = theme::presetName(swatch.first);
+        swatch.second->setAccessibleName(readable.isEmpty() ? swatch.first
+                                                            : tr("%1 gradient").arg(readable));
     }
     if (gradientColorLabel_ != nullptr) gradientColorLabel_->setText(tr("Gradient color"));
     if (customAccentButton_ != nullptr) {
