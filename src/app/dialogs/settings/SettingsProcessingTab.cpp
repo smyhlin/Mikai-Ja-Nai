@@ -507,15 +507,17 @@ void SettingsDialog::retranslateProcessingTab() {
     runtimeModuleRowLabel_->setText(tr("Runtime module"));
 
     nativeBackend_->setAccessibleName(tr("Native backend"));
-    if (nativeBackend_ != nullptr &&
-        !mplayer::native::privateNativeCarries(nativePreferences_.backend)) {
-        const int index =
-            nativeBackend_->findData(static_cast<int>(nativePreferences_.backend));
-        if (index >= 0) {
-            nativeBackend_->setItemText(index,
-                                        privateUnavailableBackendCaption(nativePreferences_.backend));
-            nativeBackend_->setItemData(index, privateUnavailableBackendReason(),
-                                        Qt::ToolTipRole);
+    if (nativeBackend_ != nullptr) {
+        for (int i = 0; i < nativeBackend_->count(); ++i) {
+            const auto backend =
+                static_cast<mplayer::native::Backend>(nativeBackend_->itemData(i).toInt());
+            if (mplayer::native::privateNativeCarries(backend)) {
+                nativeBackend_->setItemText(i, backendLabel(backend));
+            } else {
+                nativeBackend_->setItemText(i, privateUnavailableBackendCaption(backend));
+                nativeBackend_->setItemData(i, privateUnavailableBackendReason(),
+                                            Qt::ToolTipRole);
+            }
         }
     }
     nativeRecipe_->setAccessibleName(tr("Native recipe"));
