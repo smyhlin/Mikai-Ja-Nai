@@ -13,6 +13,7 @@
 #include "state/NativePlaybackAssembly.hpp"
 #include "state/QualityCache.hpp"
 #include "state/SettingsKeys.hpp"
+#include "support/PlaybackLink.hpp"
 #include "theme/Metrics.hpp"
 #include "theme/Theme.hpp"
 #include "workers/Runner.hpp"
@@ -504,13 +505,25 @@ void MainWindow::chooseMediaUrl() {
             if (okButton != nullptr) okButton->setEnabled(false);
             return;
         }
-        const QUrl parsed = QUrl::fromUserInput(text);
-        const bool valid = parsed.isValid() && !parsed.scheme().isEmpty() && !parsed.host().isEmpty();
-        if (!valid) {
-            validationLabel->setText(tr("Enter a valid http:// or https:// stream URL."));
-            validationLabel->show();
+        bool valid = false;
+        if (isPlaybackLinkUrl(text)) {
+            QString linkErr;
+            valid = parsePlaybackLink(text, &linkErr).has_value();
+            if (!valid) {
+                validationLabel->setText(linkErr);
+                validationLabel->show();
+            } else {
+                validationLabel->hide();
+            }
         } else {
-            validationLabel->hide();
+            const QUrl parsed = QUrl::fromUserInput(text);
+            valid = parsed.isValid() && !parsed.scheme().isEmpty() && !parsed.host().isEmpty();
+            if (!valid) {
+                validationLabel->setText(tr("Enter a valid http:// or https:// stream URL."));
+                validationLabel->show();
+            } else {
+                validationLabel->hide();
+            }
         }
         if (okButton != nullptr) okButton->setEnabled(valid);
     };
@@ -518,7 +531,8 @@ void MainWindow::chooseMediaUrl() {
     if (const QClipboard* cb = QGuiApplication::clipboard()) {
         const QString clip = cb->text().trimmed();
         if (clip.startsWith(QLatin1String("http://"), Qt::CaseInsensitive) ||
-            clip.startsWith(QLatin1String("https://"), Qt::CaseInsensitive)) {
+            clip.startsWith(QLatin1String("https://"), Qt::CaseInsensitive) ||
+            isPlaybackLinkUrl(clip)) {
             combo->setEditText(clip);
             if (QLineEdit* edit = combo->lineEdit()) edit->selectAll();
             validateInput(clip);
@@ -562,6 +576,19 @@ void MainWindow::chooseMediaUrl() {
 }
 
 bool MainWindow::openMedia(const QString& source) {
+    if (isPlaybackLinkUrl(source)) {
+        QString linkErr;
+        const auto parsed = parsePlaybackLink(source, &linkErr);
+        if (!parsed.has_value()) {
+            qWarning().noquote() << "mikai: playback link refused:" << linkErr;
+            return false;
+        }
+        const bool opened = openTitle(parsed->ref, QString());
+        if (opened && title_ != nullptr) {
+            title_->setPendingPlaybackLink(*parsed);
+        }
+        return opened;
+    }
     const auto refuse = [this](const QString& detail) {
         qWarning().noquote() << "mikai: media open refused:" << detail;
         if (automaticSetupAllowed_) {

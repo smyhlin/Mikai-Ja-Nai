@@ -6,7 +6,9 @@
 #include <backend/Models.hpp>
 #include <native/bundle/NativeRuntimeSelection.hpp>
 
+#include <state/FavouriteTeams.hpp>
 #include <state/WatchHistory.hpp>
+#include <support/PlaybackLink.hpp>
 
 #include <QMap>
 #include <QPair>
@@ -94,6 +96,8 @@ public:
               const QString& ref, const QString& posterHint = {},
               const backend::AnimeDetail& detailHint = {}, QWidget* parent = nullptr);
     ~TitlePage() override;
+
+    void setPendingPlaybackLink(const PlaybackLink& link);
 
     /// Save the quality cache and close every open player. False when a player
     /// refused its close because native work is still stopping: nothing is
@@ -462,6 +466,8 @@ protected:
 
     QVector<backend::Release> releases_;
     WatchHistory watchHistory_;
+    FavouriteTeams favouriteTeams_;
+    std::optional<PlaybackLink> pendingPlaybackLink_;
     QVector<TabState> tabStates_;
     /// Owns every episode record ever built for this page; freed on shutdown.
     QVector<EpisodeEntry*> ownedEntries_;

@@ -1,7 +1,12 @@
 #include "pages/TitlePageInternal.hpp"
+#include "support/PlaybackSelection.hpp"
 
 namespace mikai::app {
 using namespace title_page_detail;
+
+void TitlePage::setPendingPlaybackLink(const PlaybackLink& link) {
+    pendingPlaybackLink_ = link;
+}
 
 TitlePage::TitlePage(Runner& runner, backend::MikaiClient& client, QualityCache& qualityCache,
                      const QString& ref, const QString& posterHint,
@@ -1118,11 +1123,33 @@ void TitlePage::onLoaded(const backend::AnimeDetail& detail, const backend::Play
         setStatusKind(playbackRestricted ? BaseStatus::Licensed : BaseStatus::NoReleases);
         return;
     }
-    // The release that carries the preferred source opens first, so the chip
-    // row and the provider tabs agree on one default; without it the first
-    // release keeps the old behaviour.
+    // Resolve opening release & provider deterministically:
+    // shared deep link > per-title favourite team > preferred provider > first available.
+    selection::SelectionInput selIn;
+    selIn.releases = releases_;
+    selIn.currentEpisode = watchHistory_.current(ref_);
+    selIn.defaultProvider = labels::preferredProvider();
+    if (const auto fav = favouriteTeams_.favourite(ref_)) {
+        selIn.favouriteProvider = fav->provider;
+        selIn.favouriteTeamSlug = fav->teamSlug;
+    }
+    if (pendingPlaybackLink_.has_value() && pendingPlaybackLink_->ref == ref_ &&
+        pendingPlaybackLink_->hasPlaybackTarget()) {
+        selIn.sharedProvider = pendingPlaybackLink_->provider;
+        selIn.sharedTeamSlug = pendingPlaybackLink_->teamSlug;
+        selIn.sharedEpisode = pendingPlaybackLink_->episode;
+        selIn.sharedTimeSec = pendingPlaybackLink_->timeSec;
+    }
+    pendingPlaybackLink_.reset();
+
+    const selection::SelectionResult resolved = selection::resolve(selIn);
     const int openingRelease =
-        labels::preferredReleaseIndex(releases_, labels::preferredProvider());
+        (resolved.valid && resolved.releaseIndex >= 0 && resolved.releaseIndex < releases_.size())
+            ? resolved.releaseIndex
+            : labels::preferredReleaseIndex(releases_, labels::preferredProvider());
+    if (resolved.valid && !resolved.provider.isEmpty()) {
+        chosenProvider_ = resolved.provider;
+    }
     releaseChips_.at(openingRelease)->setChecked(true);
     fillEpisodes(openingRelease);
 }

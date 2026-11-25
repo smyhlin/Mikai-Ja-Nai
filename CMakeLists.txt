@@ -551,8 +551,11 @@ set(APP_SOURCES
   src/app/state/Feeds.cpp
   src/app/state/NativeComponentProvisioner.cpp
   src/app/state/NativePlaybackAssembly.cpp
+  src/app/state/FavouriteTeams.cpp
   src/app/state/QualityCache.cpp
   src/app/state/WatchHistory.cpp
+  src/app/support/PlaybackLink.cpp
+  src/app/support/PlaybackSelection.cpp
   src/app/workers/Runner.cpp
   src/app/widgets/FailureView.cpp
   src/app/widgets/RangePager.cpp

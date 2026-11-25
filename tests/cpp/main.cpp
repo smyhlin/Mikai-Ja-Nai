@@ -13,6 +13,9 @@
 #include "TestThemeRoles.hpp"
 #include "TestLayering.hpp"
 #include "TestWatchHistory.hpp"
+#include "TestFavouriteTeams.hpp"
+#include "TestPlaybackLink.hpp"
+#include "TestPlaybackSelection.hpp"
 #include "TestWindowRaise.hpp"
 #ifdef Q_OS_WIN
 #include "TestWin32Support.hpp"
@@ -131,7 +134,8 @@ constexpr const char* kSuites[] = {
     "TestThemeIcons",
     "TestThemeRoles",
     "TestStreams", "TestPagers",
-    "TestQualityCache", "TestRateLimiter", "TestWatchHistory", "TestDownloads", "TestDiagnostics",
+    "TestQualityCache", "TestRateLimiter", "TestWatchHistory", "TestFavouriteTeams",
+    "TestPlaybackLink", "TestPlaybackSelection", "TestDownloads", "TestDiagnostics",
     "TestApiClient", "TestFeedRender", "TestUpdateFeed", "TestUpdateCheck", "TestPublicApiUi",
     "TestRunner",
     "TestLayering", "TestWindowRaise", "TestSystemIntegration", "TestCrashLog", "TestClipboard", "TestLiveOracle",
@@ -319,6 +323,9 @@ int main(int argc, char** argv) {
   TestPagers pagers;
   TestQualityCache qualityCache;
   TestWatchHistory watchHistory;
+  TestFavouriteTeams favouriteTeams;
+  TestPlaybackLink playbackLink;
+  TestPlaybackSelection playbackSelection;
   TestRateLimiter rateLimiter;
   TestLayering layering;
   TestWindowRaise windowRaise;
@@ -482,6 +489,9 @@ int main(int argc, char** argv) {
   run("TestPagers", &pagers, true);
   run("TestQualityCache", &qualityCache, true);
   run("TestWatchHistory", &watchHistory, true);
+  run("TestFavouriteTeams", &favouriteTeams, true);
+  run("TestPlaybackLink", &playbackLink, true);
+  run("TestPlaybackSelection", &playbackSelection, true);
   run("TestRateLimiter", &rateLimiter, true);
   run("TestLayering", &layering, true);
   run("TestSystemIntegration", &systemIntegration, true);

@@ -1640,6 +1640,44 @@ void TitlePage::episodeContextMenu(EpisodeEntry* entry, const QPoint& globalPos)
     QAction* copyUrl = copyMenu->addAction(tr("Page URL"));
     copyUrl->setToolTip(tr("Copy the episode page URL"));
     connect(copyUrl, &QAction::triggered, this, [this, entry] { copyEpisode(entry); });
+    const QString entryProvider =
+        (entry->stateIndex >= 0 && entry->stateIndex < tabStates_.size())
+            ? tabStates_.at(entry->stateIndex).provider
+            : chosenProvider_;
+    QAction* copyDeepLink = copyMenu->addAction(tr("Playback link"));
+    copyDeepLink->setToolTip(tr("Copy a Mikai Ja Nai deep link to this episode"));
+    connect(copyDeepLink, &QAction::triggered, this, [this, entry, entryProvider] {
+        PlaybackLink link;
+        link.ref = ref_;
+        link.provider = entryProvider;
+        link.episode = entry->number;
+        if (activeRelease_ >= 0 && activeRelease_ < releases_.size() &&
+            !releases_.at(activeRelease_).teams.isEmpty()) {
+            link.teamSlug = releases_.at(activeRelease_).teams.first().slug;
+        }
+        const QString formatted = formatPlaybackLink(link);
+        if (!formatted.isEmpty() && mikai::gui::copyText(formatted)) {
+            flashStatus(tr("URL copied"));
+        } else {
+            flashStatus(tr("Failed to copy episode URL"), true);
+        }
+    });
+    if (activeRelease_ >= 0 && activeRelease_ < releases_.size() &&
+        !releases_.at(activeRelease_).teams.isEmpty()) {
+        const QString teamSlug = releases_.at(activeRelease_).teams.first().slug;
+        const QString releaseId = releases_.at(activeRelease_).id;
+        const bool isFav = favouriteTeams_.isFavourite(ref_, entryProvider, teamSlug);
+        QAction* favAction = menu.addAction(
+            isFav ? tr("Remove favourite team") : tr("Set as favourite team"));
+        connect(favAction, &QAction::triggered, this,
+                [this, isFav, prov = entryProvider, teamSlug, releaseId] {
+                    if (isFav) {
+                        favouriteTeams_.clearFavourite(ref_);
+                    } else {
+                        favouriteTeams_.setFavourite(ref_, prov, teamSlug, releaseId);
+                    }
+                });
+    }
     copyMenu->addSeparator();
     const bool noSource = qualityCache_.isNoSource(entry->embedUrl);
     QPointer<QAction> loading = copyMenu->addAction(noSource ? tr("No video available")

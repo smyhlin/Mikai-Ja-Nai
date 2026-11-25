@@ -324,6 +324,12 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/app/TestRunner.cpp
     tests/cpp/app/TestWatchHistory.hpp
     tests/cpp/app/TestWatchHistory.cpp
+    tests/cpp/app/TestFavouriteTeams.hpp
+    tests/cpp/app/TestFavouriteTeams.cpp
+    tests/cpp/app/TestPlaybackLink.hpp
+    tests/cpp/app/TestPlaybackLink.cpp
+    tests/cpp/app/TestPlaybackSelection.hpp
+    tests/cpp/app/TestPlaybackSelection.cpp
     tests/cpp/app/TestSystemIntegration.hpp
     tests/cpp/app/TestSystemIntegration.cpp
     tests/cpp/app/TestCrashLog.hpp
@@ -526,6 +532,9 @@ if(MIKAI_BUILD_PROBES)
     TestQualityCache
     TestRateLimiter
     TestWatchHistory
+    TestFavouriteTeams
+    TestPlaybackLink
+    TestPlaybackSelection
     TestDownloads
     TestDiagnostics
     TestApiClient

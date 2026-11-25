@@ -47,8 +47,9 @@ inline constexpr std::string_view kAnimeJanaiBackend = "player/animejanai/backen
 inline constexpr std::string_view kHomeFeeds = "home/feeds";
 inline constexpr std::string_view kHomeRecentTitles = "home/recentTitles";
 
-// Watch history (WatchHistory.cpp).
+// Watch history (WatchHistory.cpp) and per-title favourite teams (FavouriteTeams.cpp).
 inline constexpr std::string_view kWatchHistoryKey = "title/watchHistory";
+inline constexpr std::string_view kFavouriteTeamsKey = "title/favouriteTeams";
 
 // Open video by URL history & file picker state (MainWindow.cpp).
 inline constexpr std::string_view kMediaOpenUrlHistory = "media/openUrlHistory";

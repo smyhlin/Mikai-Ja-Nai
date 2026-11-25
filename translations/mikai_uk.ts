@@ -10780,7 +10780,23 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 </context>
 <context>
     <name>mikai::app::TitlePage</name>
+        <message>
+        <source>Playback link</source>
+        <translation>Посилання на відтворення</translation>
+    </message>
     <message>
+        <source>Copy a Mikai Ja Nai deep link to this episode</source>
+        <translation>Скопіювати пряме посилання Mikai Ja Nai на цю серію</translation>
+    </message>
+    <message>
+        <source>Remove favourite team</source>
+        <translation>Прибрати улюблену команду</translation>
+    </message>
+    <message>
+        <source>Set as favourite team</source>
+        <translation>Зробити улюбленою командою</translation>
+    </message>
+<message>
         <location filename="../src/app/pages/TitlePage.cpp" line="150"/>
         <location filename="../src/app/pages/TitlePage.cpp" line="157"/>
         <location filename="../src/app/pages/TitlePage.cpp" line="1727"/>
