@@ -385,13 +385,22 @@ QString TitlePage::scoresText(const backend::AnimeDetail& detail) {
 
 QString TitlePage::releaseChipLabel(const backend::Release& release) const {
     QStringList teams;
+    bool isFavRelease = false;
+    const auto fav = favouriteTeams_.favourite(ref_);
     for (const backend::Team& team : release.teams) {
         if (!team.name.isEmpty()) {
             teams << team.name;
         }
+        if (fav.has_value() && !team.slug.trimmed().isEmpty() &&
+            team.slug.trimmed().compare(fav->teamSlug, Qt::CaseInsensitive) == 0) {
+            isFavRelease = true;
+        }
     }
     QString label = teams.isEmpty() ? labels::kind(release.kind)
                                     : teams.join(QLatin1String(", "));
+    if (isFavRelease) {
+        label = QStringLiteral("★ ") + label;
+    }
     if (release.is_collab) {
         label += tr(" (collab)");
     }
@@ -542,7 +551,20 @@ void TitlePage::rebuildReleaseChips() {
         auto* chips = new FlowLayout(theme::kSpacingSmall, theme::kSpacingXs);
         row->addLayout(chips, 1);
 
-        for (const int index : releasesByKind.value(kind)) {
+        QVector<int> orderedIndices = releasesByKind.value(kind);
+        if (const auto fav = favouriteTeams_.favourite(ref_); fav.has_value()) {
+            std::stable_partition(orderedIndices.begin(), orderedIndices.end(),
+                                  [this, favSlug = fav->teamSlug](int idx) {
+                                      for (const backend::Team& t : releases_.at(idx).teams) {
+                                          if (t.slug.trimmed().compare(
+                                                  favSlug, Qt::CaseInsensitive) == 0) {
+                                              return true;
+                                          }
+                                      }
+                                      return false;
+                                  });
+        }
+        for (const int index : orderedIndices) {
             auto* chip = new QPushButton(releaseChipLabel(releases_.at(index)), rowWidget);
             chip->setToolTip(releaseChipToolTip(releases_.at(index)));
             chip->setObjectName(QStringLiteral("releaseChip"));
@@ -662,6 +684,28 @@ void TitlePage::releaseContextMenu(QPushButton* chip, const QPoint& globalPos) {
     }
     QMenu menu(this);
     menu.setObjectName(QStringLiteral("titleContextMenu"));
+    if (!releases_.at(index).teams.isEmpty()) {
+        const QString teamSlug = releases_.at(index).teams.first().slug.trimmed();
+        const QString releaseId = releases_.at(index).id;
+        QString prov = chosenProvider_.isEmpty() ? labels::preferredProvider() : chosenProvider_;
+        if (!teamSlug.isEmpty()) {
+            const auto fav = favouriteTeams_.favourite(ref_);
+            const bool isFav =
+                fav.has_value() && fav->teamSlug.compare(teamSlug, Qt::CaseInsensitive) == 0;
+            QAction* favAction = menu.addAction(
+                isFav ? tr("Remove favourite team") : tr("Set as favourite team"));
+            connect(favAction, &QAction::triggered, this,
+                    [this, isFav, prov, teamSlug, releaseId] {
+                        if (isFav) {
+                            favouriteTeams_.clearFavourite(ref_);
+                        } else {
+                            favouriteTeams_.setFavourite(ref_, prov, teamSlug, releaseId);
+                        }
+                        applyResponsiveLayout();
+                    });
+            menu.addSeparator();
+        }
+    }
     for (const backend::Team& team : releases_.at(index).teams) {
         const QString teamRef = teamReference(team);
         if (teamRef.isEmpty()) {
@@ -1682,6 +1726,7 @@ void TitlePage::episodeContextMenu(EpisodeEntry* entry, const QPoint& globalPos)
                     } else {
                         favouriteTeams_.setFavourite(ref_, prov, teamSlug, releaseId);
                     }
+                    applyResponsiveLayout();
                 });
     }
     copyMenu->addSeparator();
