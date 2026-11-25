@@ -448,20 +448,6 @@ QString settingsStylesheet(const theme::Appearance& appearance) {
             border-color: rgba(%{accentRgb}, 0.42);
             color: %{textStrong};
         }
-        QCheckBox::indicator {
-            width: 16px;
-            height: 16px;
-            border-radius: 4px;
-            border: 1px solid rgba(%{hairlineRgb}, 0.30);
-            background-color: %{surfaceInput};
-        }
-        QCheckBox::indicator:hover {
-            border-color: %{accentFocus};
-        }
-        QCheckBox::indicator:checked {
-            background-color: %{accentSolid};
-            border-color: %{accentFocus};
-        }
 
         /* ── Preset Shortcut Rows ──────────────────────────────────────────── */
         QWidget#presetShortcutRow {
