@@ -308,6 +308,7 @@ public:
     Q_INVOKABLE void toggleMute();
     Q_INVOKABLE void setRate(double rate);
     Q_INVOKABLE void setVideoScaleMode(int mode);
+    Q_INVOKABLE void setDebandPreset(int preset);
     Q_INVOKABLE void makeDefaultVideoPlayer();
     Q_INVOKABLE QString formatTime(double seconds) const;
     Q_INVOKABLE QString formatRemaining(double seconds) const;
@@ -649,6 +650,7 @@ private:
     QVector<PlayerMenuModel::Row> enhancementRootRows() const;
     QVector<PlayerMenuModel::Row> enhancementLevelRows(const QString& levelId) const;
     QVector<PlayerMenuModel::Row> videoScaleModeRows() const;
+    QVector<PlayerMenuModel::Row> debandPresetRows() const;
     QVector<PlayerMenuModel::Row> keyHintRows() const;
     QVector<PlayerMenuModel::Row> remedyRows() const;
     PlayerMenuModel* ensureSubmenuModel(const QString& menuId);

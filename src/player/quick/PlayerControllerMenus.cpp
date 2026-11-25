@@ -240,6 +240,34 @@ QVector<PlayerMenuModel::Row> PlayerController::capturePictureRows() const {
     return rows;
 }
 
+QVector<PlayerMenuModel::Row> PlayerController::debandPresetRows() const {
+    using DebandPreset = VideoSession::DebandPreset;
+    const int active = static_cast<int>(VideoSession::debandPreset());
+    struct Entry {
+        DebandPreset preset;
+        QString label;
+    };
+    const Entry entries[] = {
+        {DebandPreset::Off, tr("Off")},
+        {DebandPreset::Light, tr("Light")},
+        {DebandPreset::Medium, tr("Medium")},
+        {DebandPreset::Strong, tr("Strong")},
+    };
+    QVector<Row> rows;
+    for (const Entry& entry : entries) {
+        Row row;
+        const int ordinal = static_cast<int>(entry.preset);
+        row.id = QStringLiteral("deband.") + QString::number(ordinal);
+        row.label = entry.label;
+        row.icon = QStringLiteral("sliders");
+        row.selected = active == ordinal;
+        row.action = Action::SetDebandPreset;
+        row.value = QString::number(ordinal);
+        rows.append(row);
+    }
+    return rows;
+}
+
 QVector<PlayerMenuModel::Row> PlayerController::videoScaleModeRows() const {
     QVector<Row> rows;
     const VideoScaleMode modes[] = {VideoScaleMode::Fit, VideoScaleMode::Fill,
@@ -970,6 +998,13 @@ void PlayerController::rebuildSettingsMenu() {
     rows.append(scaleHeading);
     for (const Row& row : videoScaleModeRows()) rows.append(row);
 
+    Row debandHeading;
+    debandHeading.id = QStringLiteral("settings.deband.heading");
+    debandHeading.label = tr("DEBANDING");
+    debandHeading.heading = true;
+    rows.append(debandHeading);
+    for (const Row& row : debandPresetRows()) rows.append(row);
+
     Row defaultPlayer;
     defaultPlayer.id = QStringLiteral("settings.defaultPlayer");
     defaultPlayer.label = tr("Make mikai the default video player");
@@ -1221,6 +1256,9 @@ void PlayerController::publishMenuAction(PlayerMenuModel::Action action, const Q
             return;
         case Action::SetVideoScaleMode:
             setVideoScaleMode(value.toInt());
+            return;
+        case Action::SetDebandPreset:
+            setDebandPreset(value.toInt());
             return;
         case Action::SelectTrack:
             return;  // dispatched with its menu kind by activateMenuRow()

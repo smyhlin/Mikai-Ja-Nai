@@ -12400,7 +12400,23 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 </context>
 <context>
     <name>mplayer::quick::PlayerController</name>
-        <message>
+                        <message>
+        <source>Strong</source>
+        <translation>Сильне</translation>
+    </message>
+<message>
+        <source>Medium</source>
+        <translation>Середнє</translation>
+    </message>
+<message>
+        <source>Light</source>
+        <translation>Легке</translation>
+    </message>
+<message>
+        <source>DEBANDING</source>
+        <translation>УСУНЕННЯ БАНДИНГУ</translation>
+    </message>
+<message>
         <source>2× speed</source>
         <translation>Швидкість 2×</translation>
     </message>

@@ -728,6 +728,16 @@ void PlayerController::setVideoScaleMode(int mode) {
     emit videoScaleModeChanged();
 }
 
+void PlayerController::setDebandPreset(int preset) {
+    using DebandPreset = VideoSession::DebandPreset;
+    if (preset < int(DebandPreset::Off) || preset > int(DebandPreset::Strong)) return;
+    const auto target = static_cast<DebandPreset>(preset);
+    if (VideoSession::debandPreset() == target) return;
+    VideoSession::setDebandPreset(target);
+    QSettings().setValue(QString::fromLatin1(VideoSession::kDebandPresetSettingKey), preset);
+    rebuildSettingsMenu();
+}
+
 void PlayerController::makeDefaultVideoPlayer() {
     QString error;
     if (!mikai::gui::requestSystemDefaultPlayer(&error)) {

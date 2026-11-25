@@ -37,6 +37,7 @@ public:
         ToggleMute,
         SetSpeed,           ///< value: playback rate multiplier.
         SetVideoScaleMode,  ///< value: VideoScaleMode ordinal, decimal.
+        SetDebandPreset,    ///< value: VideoSession::DebandPreset ordinal, decimal.
         SelectTrack,        ///< value: opaque track/embed token; subtitles use "off".
         LoadExternalTrack,  ///< value: "audio" or "sub".
         SetSubtitleDelay,   ///< value: absolute seconds.
