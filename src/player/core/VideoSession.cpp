@@ -87,7 +87,10 @@ auto hdrPolicyOptionList(VideoSession::HdrToneMappingPolicy policy) {
     // KB-29: disable 1-frame-delayed SSBO peak readback under vo=libmpv so
     // bright-to-dark scene cuts cannot flash black or pump dark frames.
     options.emplace_back("allow-delayed-peak-detect", "no");
-    options.emplace_back("hdr-peak-percentile", "99.995");
+    // In Stable mode, explicitly zero percentile & contrast-recovery so static
+    // file metadata drives tone-mapping with no residual dynamic peak pumping.
+    options.emplace_back("hdr-peak-percentile", stable ? "0" : "99.995");
+    if (stable) options.emplace_back("hdr-contrast-recovery", "0");
     options.emplace_back("gamut-mapping-mode", stable ? "clip" : "auto");
     return options;
 }
