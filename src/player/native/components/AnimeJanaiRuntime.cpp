@@ -1008,7 +1008,14 @@ AnimeJanaiPlan prepareMixedProfile(const QString& presetId, Backend backend,
     const bool selectedHasShader = std::any_of(
         selected->steps.cbegin(), selected->steps.cend(),
         [](const AnimeJanaiChainStep& step) { return step.kind == AnimeJanaiStepKind::Anime4K; });
-    if (selectedHasShader && selected->rifeEnabled && selected->rifeBeforeUpscale) {
+    if (effectiveChain.rifeEnabled &&
+        isLowGainRifeFactor(effectiveChain.rifeFactorNumerator,
+                            effectiveChain.rifeFactorDenominator)) {
+        effectiveChain.rifeEnabled = false;
+        appendPlanNote(plan, RuntimeText::tr(
+            "RIFE interpolation bypassed because the configured frame-rate gain is below 1.15x."));
+    }
+    if (selectedHasShader && effectiveChain.rifeEnabled && effectiveChain.rifeBeforeUpscale) {
         QVector<std::optional<int>> windows;
         const bool temporal = std::any_of(spatialItems.cbegin(), spatialItems.cend(),
                                           [](const SpatialItem& item) { return item.step.frames > 1; });
@@ -1816,6 +1823,19 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
 /// the former VideoSurfaceAnimeJanai.cpp copy (the CompareRenderer.cpp copy
 /// differed only in comments): glob the closure, skip resident sonames,
 /// preload the rest RTLD_GLOBAL.
+bool isLowGainRifeRatio(double sourceFps, double targetFps) {
+    if (!(sourceFps > 0.0) || !(targetFps > 0.0) || !std::isfinite(sourceFps) ||
+        !std::isfinite(targetFps)) {
+        return false;
+    }
+    return (targetFps / sourceFps) < kMinRifeGainRatio;
+}
+
+bool isLowGainRifeFactor(int numerator, int denominator) {
+    if (numerator <= 0 || denominator <= 0) return true;
+    return (static_cast<double>(numerator) / static_cast<double>(denominator)) < kMinRifeGainRatio;
+}
+
 void preloadAnimeJanaiBackendLibs(const QStringList& dirs) {
 #ifndef Q_OS_WIN
     for (const QString& dirPath : dirs) {

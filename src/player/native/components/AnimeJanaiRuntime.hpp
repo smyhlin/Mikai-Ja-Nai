@@ -162,6 +162,13 @@ struct AnimeJanaiPlan {
 /// each RTLD_GLOBAL, skipping sonames another core already loaded
 /// (RTLD_NOLOAD residency guard: a second TensorRT runtime image in one
 /// process corrupts the heap). No fixed soname list exists.
+inline constexpr double kMinRifeGainRatio = 1.15;
+
+/// True when RIFE interpolation would run at a ratio below kMinRifeGainRatio
+/// (e.g. 23.976->24 Hz or 60->60 Hz), burning GPU load for no smoothness gain.
+bool isLowGainRifeRatio(double sourceFps, double targetFps);
+bool isLowGainRifeFactor(int numerator, int denominator);
+
 void preloadAnimeJanaiBackendLibs(const QStringList& dirs);
 
 AnimeJanaiPlan prepareAnimeJanaiPlan(
