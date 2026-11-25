@@ -92,7 +92,7 @@ QWidget* SettingsDialog::buildPresetsTab() {
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
     auto* content = new QWidget(scroll);
-    content->setObjectName(QStringLiteral("presetsPage"));
+    content->setObjectName(QStringLiteral("presetsContent"));
     auto* list = new QVBoxLayout(content);
     list->setContentsMargins(0, 0, theme::kSpacingXs, 0);
     list->setSpacing(theme::kSpacingSmall);
