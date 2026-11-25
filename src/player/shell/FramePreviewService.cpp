@@ -648,7 +648,9 @@ void FramePreviewWorker::confirmLoad() {
                                 abandon();
                                 return;
                             }
-                            if (primReply.ok() && primReply.text == "bt.2020") {
+                            const bool hdrTonemapApplied =
+                                primReply.ok() && primReply.text == "bt.2020";
+                            if (hdrTonemapApplied) {
                                 core_->commandAsync(
                                     {"set", "vf",
                                      "zscale=transfer=linear,format=gbrpf32le,tonemap=hable,"
@@ -671,7 +673,10 @@ void FramePreviewWorker::confirmLoad() {
                             }
                             // Cold load already passed `start=<activeSeconds_>`: check if we
                             // landed close enough to capture immediately without a second seek.
-                            if (activeSeekMode_ == FramePreviewService::SeekMode::FastKeyframe) {
+                            // Skip the shortcut when HDR tone-mapping reconfigured `vf` so the
+                            // first capture waits for a frame filtered through Hable tone-map.
+                            if (!hdrTonemapApplied &&
+                                activeSeekMode_ == FramePreviewService::SeekMode::FastKeyframe) {
                                 phase_ = Phase::Seek;
                                 confirmSeek();
                                 return;
