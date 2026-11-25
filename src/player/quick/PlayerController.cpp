@@ -308,7 +308,7 @@ void PlayerController::connectSession() {
         cumulativeSeekDelta_ = 0.0;
         cumulativeSeekAnchor_ = -1.0;
         seekGateTimer_.invalidate();
-        seekGateTarget_ = -1.0;
+        seekGateTarget_.reset();
         endHoldSpeed();
         cancelPendingReferenceCapture(
             QStringLiteral("native.reference.sourceChanged"),
@@ -547,6 +547,8 @@ bool PlayerController::requestClose() {
     cumulativeSeekTimer_.stop();
     cumulativeSeekDelta_ = 0.0;
     cumulativeSeekAnchor_ = -1.0;
+    seekGateTimer_.invalidate();
+    seekGateTarget_.reset();
     if (hoverRefineTimer_) hoverRefineTimer_->stop();
     shuttingDown_ = true;
     closed_ = true;
