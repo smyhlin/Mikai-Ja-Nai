@@ -118,6 +118,10 @@ void PlayerController::refreshStoredSettings() {
     const int policyMode = static_cast<int>(scalePolicy.mode);
     const bool scaleModeChanged = (videoScaleMode_ != policyMode);
     videoScaleMode_ = policyMode;
+    const int storedDeband = std::clamp(
+        settings.value(QString::fromLatin1(VideoSession::kDebandPresetSettingKey), 0).toInt(), 0,
+        static_cast<int>(VideoSession::DebandPreset::Strong));
+    VideoSession::setDebandPreset(static_cast<VideoSession::DebandPreset>(storedDeband));
     if (scaleMenu_ != nullptr) scaleMenu_->setRows(videoScaleModeRows());
     rebuildSettingsMenu();
     if (scaleModeChanged) emit videoScaleModeChanged();
