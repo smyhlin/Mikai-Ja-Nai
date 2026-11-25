@@ -1074,6 +1074,10 @@ constexpr int kKeyCapPadY = 2;
 constexpr int kKeyCapMinWidth = 68;
 }  // namespace
 
+KeyHints::~KeyHints() {
+    if (qApp != nullptr) qApp->removeEventFilter(this);
+}
+
 KeyHints::KeyHints(QWidget* parent) : QFrame(parent) {
     setObjectName(QStringLiteral("playerKeyHints"));
     setProperty("chromePanel", true);
@@ -1126,6 +1130,37 @@ KeyHints::KeyHints(QWidget* parent) : QFrame(parent) {
         descriptions_.append(action);
         rowsLayout->addLayout(row);
     }
+}
+
+bool KeyHints::eventFilter(QObject* watched, QEvent* event) {
+    if (isVisible() && event != nullptr) {
+        if (event->type() == QEvent::MouseButtonPress) {
+            const auto* mouse = static_cast<const QMouseEvent*>(event);
+            const QPoint globalPos = mouse->globalPosition().toPoint();
+            const QRect globalBounds(mapToGlobal(QPoint(0, 0)), size());
+            if (!globalBounds.contains(globalPos)) {
+                close();
+            }
+        } else if (event->type() == QEvent::ApplicationDeactivate) {
+            close();
+        } else if (event->type() == QEvent::WindowDeactivate && watched == window()) {
+            close();
+        }
+    }
+    return QFrame::eventFilter(watched, event);
+}
+
+void KeyHints::showEvent(QShowEvent* event) {
+    QFrame::showEvent(event);
+    if (qApp != nullptr) {
+        qApp->removeEventFilter(this);
+        qApp->installEventFilter(this);
+    }
+}
+
+void KeyHints::hideEvent(QHideEvent* event) {
+    if (qApp != nullptr) qApp->removeEventFilter(this);
+    QFrame::hideEvent(event);
 }
 
 void KeyHints::changeEvent(QEvent* event) {

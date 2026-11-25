@@ -413,6 +413,7 @@ class KeyHints : public QFrame, public ChromePaint {
     Q_OBJECT
 public:
     explicit KeyHints(QWidget* parent = nullptr);
+    ~KeyHints() override;
 
     void popupNear(const QPoint& anchorGlobal);
 
@@ -422,6 +423,9 @@ public:
     void paintChrome(QPainter& painter) override;
 
 protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
+    void showEvent(QShowEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
     void changeEvent(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
