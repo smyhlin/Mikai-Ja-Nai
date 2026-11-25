@@ -1034,6 +1034,7 @@ void SearchPage::setResultsGridMode(bool grid) {
 void SearchPage::openRandomAnime(const QStringList& genres, const QStringList& formats) {
     backend::MikaiClient* client = &client_;
     const QPointer<SearchPage> self(this);
+    const bool hasFilters = !genres.isEmpty() || !formats.isEmpty();
     runner_.run(
         [client, genres, formats] {
             return QVariant::fromValue(client->getRandomAnime(genres, formats));
@@ -1048,8 +1049,12 @@ void SearchPage::openRandomAnime(const QStringList& genres, const QStringList& f
                 Q_EMIT self->openRequested(detail.ref, poster);
             }
         },
-        [self](const backend::Failure& failure) {
+        [self, hasFilters](const backend::Failure& failure) {
             if (self.isNull()) return;
+            if (hasFilters && failure.status == 404) {
+                self->openRandomAnime({}, {});
+                return;
+            }
             self->reportFailure(failure);
         });
 }
