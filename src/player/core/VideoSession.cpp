@@ -54,6 +54,8 @@ constexpr double kUnfilteredFramePositionToleranceSec = 0.5;
 VideoSession::HdrToneMappingPolicy g_hdrToneMappingPolicy =
     VideoSession::HdrToneMappingPolicy::Auto;
 int g_hdrToneMappingPolicyRevision = 1;
+VideoSession::DebandPreset g_debandPreset = VideoSession::DebandPreset::Off;
+int g_debandPresetRevision = 1;
 bool g_animeJanaiHdrOverride = false;
 int g_animeJanaiHdrOverrideRevision = 1;
 
@@ -63,6 +65,8 @@ VideoScalePolicy g_videoScalePolicy;
 int g_videoScalePolicyRevision = 1;
 
 int hdrToneMappingPolicyRevision() { return g_hdrToneMappingPolicyRevision; }
+
+int debandPresetRevision() { return g_debandPresetRevision; }
 
 int animeJanaiHdrOverrideRevision() { return g_animeJanaiHdrOverrideRevision; }
 
@@ -645,6 +649,7 @@ void VideoSession::ensureEngine() {
     mpv_ = std::make_shared<MpvHandle>(options);
     mpvApiVersion_ = MpvHandle::apiVersion();
     applyHdrPolicyToEngine();
+    applyDebandPresetToEngine();
     applyVideoScaleToEngine(/*queryCoreDefault=*/true);
     // A plan may have been selected before the core existed. Request its backend
     // reports before any source or official filter command reaches this core.
@@ -1570,6 +1575,60 @@ void VideoSession::applyHdrPolicyToEngine() {
                      "target-colorspace-hint-mode", false);
     issueCoreCommand({"set", "target-colorspace-hint", sourceColorProfile_.isHdr() ? "auto" : "no"},
                      "target-colorspace-hint", false);
+}
+
+std::vector<std::pair<const char*, const char*>> VideoSession::debandOptionList(
+    DebandPreset preset, bool hdrSource) {
+    using Option = std::pair<const char*, const char*>;
+    switch (preset) {
+        case DebandPreset::Off:
+            return {Option{"deband", "no"}};
+        case DebandPreset::Light:
+            return {
+                Option{"deband", "yes"},
+                Option{"deband-iterations", "2"},
+                Option{"deband-threshold", "30"},
+                Option{"deband-range", "10"},
+                Option{"deband-grain", hdrSource ? "4" : "10"},
+            };
+        case DebandPreset::Medium:
+            return {
+                Option{"deband", "yes"},
+                Option{"deband-iterations", "3"},
+                Option{"deband-threshold", "40"},
+                Option{"deband-range", "15"},
+                Option{"deband-grain", hdrSource ? "4" : "20"},
+            };
+        case DebandPreset::Strong:
+            return {
+                Option{"deband", "yes"},
+                Option{"deband-iterations", "4"},
+                Option{"deband-threshold", "60"},
+                Option{"deband-range", "25"},
+                Option{"deband-grain", hdrSource ? "4" : "40"},
+            };
+    }
+    return {Option{"deband", "no"}};
+}
+
+void VideoSession::setDebandPreset(DebandPreset preset) {
+    if (preset == g_debandPreset) return;
+    g_debandPreset = preset;
+    ++g_debandPresetRevision;
+}
+
+VideoSession::DebandPreset VideoSession::debandPreset() {
+    return g_debandPreset;
+}
+
+void VideoSession::applyDebandPresetToEngine() {
+    appliedDebandPresetRevision_ = debandPresetRevision();
+    appliedDebandHdrState_ = sourceColorProfile_.isHdr();
+    if (mpv_ == nullptr) return;
+    for (const auto& option : debandOptionList(debandPreset(), appliedDebandHdrState_)) {
+        issueCoreCommand({"set", option.first, option.second}, option.first,
+                         /*reportRefusal=*/false);
+    }
 }
 
 void VideoSession::setEngineFrameHold(bool active) {
@@ -2521,6 +2580,10 @@ void VideoSession::pumpEvents() {
     if (!mpv_) return;
     if (appliedHdrPolicyRevision_ != hdrToneMappingPolicyRevision()) {
         applyHdrPolicyToEngine();
+    }
+    if (appliedDebandPresetRevision_ != debandPresetRevision() ||
+        appliedDebandHdrState_ != sourceColorProfile_.isHdr()) {
+        applyDebandPresetToEngine();
     }
     if (appliedVideoScaleRevision_ != videoScalePolicyRevision()) {
         applyVideoScaleToEngine();

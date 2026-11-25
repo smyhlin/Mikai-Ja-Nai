@@ -296,6 +296,18 @@ public:
     inline static constexpr char kAnimeJanaiHdrOverrideSettingKey[] = "playback/nativeOnHdr";
     inline static constexpr char kAutoAdvanceSettingKey[] = "playback/autoAdvance";
 
+    enum class DebandPreset {
+        Off,
+        Light,
+        Medium,
+        Strong,
+    };
+    static void setDebandPreset(DebandPreset preset);
+    static DebandPreset debandPreset();
+    static std::vector<std::pair<const char*, const char*>> debandOptionList(
+        DebandPreset preset, bool hdrSource);
+    inline static constexpr char kDebandPresetSettingKey[] = "playback/debandPreset";
+
     // ── display scaling policy ────────────────────────────────────────────
     static void setVideoScalePolicy(const VideoScalePolicy& policy);
     static VideoScalePolicy videoScalePolicy();
@@ -724,6 +736,7 @@ private:
     void updateVideoMetadata();
     void enforceAnimeJanaiHdrGate();
     void applyHdrPolicyToEngine();
+    void applyDebandPresetToEngine();
     void applyVideoScaleToEngine(bool queryCoreDefault = false);
     std::optional<std::string> downscaleDefaultForCore();
     /// Announces enginePauseHeld() when it differs from what was last published.
@@ -918,6 +931,8 @@ private:
     double observedContainerFps_ = 0.0;
     QString shaderChain_;
     int appliedHdrPolicyRevision_ = 0;
+    int appliedDebandPresetRevision_ = 0;
+    bool appliedDebandHdrState_ = false;
     int appliedAnimeJanaiOverrideRevision_ = 0;
     friend class VideoScaleFitLock;
     int appliedVideoScaleRevision_ = 0;
