@@ -42,11 +42,17 @@ Item {
                                            || controller.compareLoading
 
     onInteractionHoldChanged: {
-        if (interactionHold) singleClickPlayTimer.stop()
+        if (interactionHold) {
+            singleClickPlayTimer.stop()
+            pictureInput.clearHoldSpeed()
+        }
         controller.setInteractionActive(interactionHold)
     }
     onLoadingVisibleChanged: {
-        if (loadingVisible) singleClickPlayTimer.stop()
+        if (loadingVisible) {
+            singleClickPlayTimer.stop()
+            pictureInput.clearHoldSpeed()
+        }
     }
     onPipModeChanged: controller.hideHoverPreview()
 

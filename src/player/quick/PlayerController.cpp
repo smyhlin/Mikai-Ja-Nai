@@ -191,6 +191,8 @@ PlayerController::PlayerController(const QString& caption, const QString& url,
 
 PlayerController::~PlayerController() {
     closed_ = true;
+    cumulativeSeekTimer_.stop();
+    preHoldSpeed_.reset();
     if (statusTimer_) statusTimer_->stop();
     if (notificationTimer_) notificationTimer_->stop();
     if (idleTimer_) idleTimer_->stop();
