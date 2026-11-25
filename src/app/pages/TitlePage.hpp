@@ -470,6 +470,7 @@ protected:
     FavouriteTeams favouriteTeams_;
     std::optional<PlaybackLink> pendingPlaybackLink_;
     QString resolvedOpeningEpisode_;
+    QString resolvedOpeningTimeEpisode_;
     std::optional<int> resolvedOpeningTimeSec_;
     QVector<TabState> tabStates_;
     /// Owns every episode record ever built for this page; freed on shutdown.

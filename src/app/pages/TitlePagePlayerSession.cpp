@@ -314,10 +314,11 @@ void TitlePage::openPlayer(EpisodeEntry* entry, const QMap<int, QString>& qualit
     // its resume point is handed over before startPlayer(). If a shared deep
     // link provided a timecode for this episode, use that once instead.
     double resumeSec = watchHistory_.offset(ref_, entry->number);
-    if (resolvedOpeningTimeSec_.has_value() && *resolvedOpeningTimeSec_ > 0 &&
-        entry->number == resolvedOpeningEpisode_) {
+    if (resolvedOpeningTimeSec_.has_value() && *resolvedOpeningTimeSec_ >= 0 &&
+        entry->number == resolvedOpeningTimeEpisode_) {
         resumeSec = static_cast<double>(*resolvedOpeningTimeSec_);
         resolvedOpeningTimeSec_.reset();
+        resolvedOpeningTimeEpisode_.clear();
     }
     session->controller->setEpisodeResumePoint(resumeSec);
     session->controller->showWindow();

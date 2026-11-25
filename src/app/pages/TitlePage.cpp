@@ -1152,6 +1152,8 @@ void TitlePage::onLoaded(const backend::AnimeDetail& detail, const backend::Play
         chosenProvider_ = resolved.provider;
     }
     resolvedOpeningEpisode_ = resolved.valid ? resolved.episodeNumber : QString();
+    resolvedOpeningTimeEpisode_ =
+        (resolved.valid && resolved.startTimeSec.has_value()) ? resolved.episodeNumber : QString();
     resolvedOpeningTimeSec_ = resolved.valid ? resolved.startTimeSec : std::nullopt;
     releaseChips_.at(openingRelease)->setChecked(true);
     fillEpisodes(openingRelease);
