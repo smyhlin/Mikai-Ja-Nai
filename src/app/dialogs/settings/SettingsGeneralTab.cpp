@@ -346,6 +346,24 @@ QWidget* SettingsDialog::buildGeneralTab() {
     hdrPolicy_->setAccessibleName(tr("HDR tone mapping"));
     hdrLayout->addWidget(hdrPolicy_);
 
+    debandCaption_ = new QLabel(tr("Debanding"), hdrCard);
+    styleMutedCaption(debandCaption_);
+    hdrLayout->addWidget(debandCaption_);
+
+    debandPreset_ = new QComboBox(hdrCard);
+    debandPreset_->setObjectName(QStringLiteral("debandPresetCombo"));
+    polishInteractiveControl(debandPreset_, theme::kSettingsControlSize);
+    debandPreset_->addItem(tr("Off"), 0);
+    debandPreset_->addItem(tr("Light"), 1);
+    debandPreset_->addItem(tr("Medium"), 2);
+    debandPreset_->addItem(tr("Strong"), 3);
+    const int storedDeband =
+        static_cast<int>(mplayer::VideoSession::debandPreset());
+    const int debandIndex = debandPreset_->findData(storedDeband);
+    debandPreset_->setCurrentIndex(debandIndex >= 0 ? debandIndex : 0);
+    debandPreset_->setAccessibleName(tr("Debanding"));
+    hdrLayout->addWidget(debandPreset_);
+
     nativeHdrOverride_ = new QCheckBox(tr("Native enhancement for HDR"), hdrCard);
     nativeHdrOverride_->setObjectName(QStringLiteral("nativeHdrOverrideCheck"));
     polishInteractiveControl(nativeHdrOverride_, theme::kSettingsControlSize);
@@ -898,6 +916,18 @@ void SettingsDialog::retranslateGeneralTab() {
     restatePolicy(1, tr("Stable - no per-frame adaptation"));
     restatePolicy(2, tr("Vivid - Mobius curve"));
     hdrPolicy_->setAccessibleName(tr("HDR tone mapping"));
+    if (debandCaption_ != nullptr) debandCaption_->setText(tr("Debanding"));
+    if (debandPreset_ != nullptr) {
+        const auto restateDeband = [this](int data, const QString& caption) {
+            const int idx = debandPreset_->findData(data);
+            if (idx >= 0) debandPreset_->setItemText(idx, caption);
+        };
+        restateDeband(0, tr("Off"));
+        restateDeband(1, tr("Light"));
+        restateDeband(2, tr("Medium"));
+        restateDeband(3, tr("Strong"));
+        debandPreset_->setAccessibleName(tr("Debanding"));
+    }
     nativeHdrOverride_->setText(tr("Native enhancement for HDR"));
     nativeHdrOverrideHint_->setText(
         tr("Native enhancement stages require 8-bit NV12 and are normally skipped for HDR "

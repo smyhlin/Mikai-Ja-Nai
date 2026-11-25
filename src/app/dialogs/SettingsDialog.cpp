@@ -667,6 +667,18 @@ void SettingsDialog::save() {
         default: mplayer::VideoSession::setHdrToneMappingPolicy(HdrPolicy::Auto); break;
     }
     mplayer::VideoSession::setAnimeJanaiHdrOverride(nativeHdrOverride_->isChecked());
+    if (debandPreset_ != nullptr) {
+        using DebandPreset = mplayer::VideoSession::DebandPreset;
+        const int committedDeband = debandPreset_->currentData().toInt();
+        settings.setValue(QString::fromLatin1(mplayer::VideoSession::kDebandPresetSettingKey),
+                          committedDeband);
+        switch (committedDeband) {
+            case 1: mplayer::VideoSession::setDebandPreset(DebandPreset::Light); break;
+            case 2: mplayer::VideoSession::setDebandPreset(DebandPreset::Medium); break;
+            case 3: mplayer::VideoSession::setDebandPreset(DebandPreset::Strong); break;
+            default: mplayer::VideoSession::setDebandPreset(DebandPreset::Off); break;
+        }
+    }
     // Display scaling is the same shape of policy: the four keys are what the
     // next startup reads, and VideoSession applies the live policy to open
     // playback without a restart.

@@ -9280,7 +9280,27 @@ This removes only work a cancelled or crashed build left behind; a proven artifa
 </context>
 <context>
     <name>mikai::app::SettingsDialog</name>
-    <message>
+                        <message>
+        <source>Strong</source>
+        <translation>Сильне</translation>
+    </message>
+<message>
+        <source>Medium</source>
+        <translation>Середнє</translation>
+    </message>
+<message>
+        <source>Light</source>
+        <translation>Легке</translation>
+    </message>
+<message>
+        <source>Off</source>
+        <translation>Вимкнено</translation>
+    </message>
+<message>
+        <source>Debanding</source>
+        <translation>Усунення бандингу (Deband)</translation>
+    </message>
+<message>
         <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="324"/>
         <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="887"/>
         <source>HDR playback</source>

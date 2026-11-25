@@ -368,6 +368,14 @@ int main(int argc, char** argv) {
         // viewer saved, not default to Fit and jump once a surface pumps.
         mplayer::VideoSession::setVideoScalePolicy(
             mplayer::videoScalePolicyFromSettings(settings));
+        using DebandPreset = mplayer::VideoSession::DebandPreset;
+        const int storedDeband = settings.value(
+            QString::fromLatin1(mplayer::VideoSession::kDebandPresetSettingKey),
+            static_cast<int>(DebandPreset::Off)).toInt();
+        if (storedDeband >= static_cast<int>(DebandPreset::Off) &&
+            storedDeband <= static_cast<int>(DebandPreset::Strong)) {
+            mplayer::VideoSession::setDebandPreset(static_cast<DebandPreset>(storedDeband));
+        }
     }
     if (!launch.frameTimingLog.isEmpty()) {
         // P1-08 (rung 6): the parent directory must exist and be writable

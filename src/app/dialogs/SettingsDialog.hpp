@@ -374,6 +374,8 @@ private:
     QLabel* playbackTitle_ = nullptr;
     QLabel* playbackHint_ = nullptr;
     QComboBox* hdrPolicy_ = nullptr;
+    QLabel* debandCaption_ = nullptr;
+    QComboBox* debandPreset_ = nullptr;
     QCheckBox* nativeHdrOverride_ = nullptr;
     QLabel* nativeHdrOverrideHint_ = nullptr;
     // P0-08: auto-advance to the next episode on EOF (default ON).
