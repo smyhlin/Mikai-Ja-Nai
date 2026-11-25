@@ -687,7 +687,39 @@ void TitlePage::releaseContextMenu(QPushButton* chip, const QPoint& globalPos) {
     if (!releases_.at(index).teams.isEmpty()) {
         const QString teamSlug = releases_.at(index).teams.first().slug.trimmed();
         const QString releaseId = releases_.at(index).id;
+        const auto providersMatch = [](const QString& a, const QString& b) {
+            const QString ka = labels::providerKey(a);
+            const QString kb = labels::providerKey(b);
+            if (ka == kb) return true;
+            const auto isMoon = [](const QString& k) {
+                return k == QLatin1String("moon") || k == QLatin1String("moonanime");
+            };
+            return isMoon(ka) && isMoon(kb);
+        };
         QString prov = chosenProvider_.isEmpty() ? labels::preferredProvider() : chosenProvider_;
+        QStringList releaseProviders;
+        for (const backend::Episode& ep : releases_.at(index).episodes) {
+            for (const backend::Source& src : ep.sources) {
+                if (src.embed_url.trimmed().isEmpty()) continue;
+                const QString pKey = labels::providerKey(labels::providerFor(src));
+                if (!pKey.isEmpty() && !releaseProviders.contains(pKey)) {
+                    releaseProviders.append(pKey);
+                }
+            }
+        }
+        bool provPresent = false;
+        for (const QString& rp : releaseProviders) {
+            if (providersMatch(rp, prov)) {
+                prov = rp;
+                provPresent = true;
+                break;
+            }
+        }
+        if (!provPresent && !releaseProviders.isEmpty()) {
+            const QStringList ordered =
+                labels::orderedProviders(releaseProviders, labels::preferredProvider());
+            if (!ordered.isEmpty()) prov = ordered.first();
+        }
         if (!teamSlug.isEmpty()) {
             const auto fav = favouriteTeams_.favourite(ref_);
             const bool isFav =
@@ -987,9 +1019,13 @@ void TitlePage::fillEpisodes(int index) {
         // insertTab() already selected index 0; restore intent under the signal blocker.
         const QString wanted = labels::providerKey(
             chosenProvider_.isEmpty() ? preferredProvider : chosenProvider_);
+        const auto isMoonKey = [](const QString& k) {
+            return k == QLatin1String("moon") || k == QLatin1String("moonanime");
+        };
         int index = 0;
         for (int i = 0; i < tabStates_.size(); ++i) {
-            if (labels::providerKey(tabStates_.at(i).provider) == wanted) {
+            const QString tabKey = labels::providerKey(tabStates_.at(i).provider);
+            if (tabKey == wanted || (isMoonKey(tabKey) && isMoonKey(wanted))) {
                 index = i;
                 break;
             }
@@ -1979,7 +2015,12 @@ int TitlePage::sessionProviderRank(const QString& provider) const {
     // sources only keep their payload order instead of Moon jumping back in
     // front of it. Without a click the configured preference (Moon) decides.
     if (!chosenProvider_.isEmpty()) {
-        return labels::providerKey(provider) == labels::providerKey(chosenProvider_) ? 0 : 1;
+        const QString kp = labels::providerKey(provider);
+        const QString kc = labels::providerKey(chosenProvider_);
+        const auto isMoon = [](const QString& k) {
+            return k == QLatin1String("moon") || k == QLatin1String("moonanime");
+        };
+        return (kp == kc || (isMoon(kp) && isMoon(kc))) ? 0 : 1;
     }
     return labels::preferredProviderRank(provider, labels::preferredProvider());
 }
