@@ -12,4 +12,5 @@ class TestPlaybackSelection : public QObject {
   void missingFavouriteProviderFallsBackCleanly();
   void watchesAdvanceToNextNumericOrSpecialEpisode();
   void episodeOrderingHandlesDecimalsAndOva();
+  void teamlessSharedLinkResolvesAcrossTeamBackedReleases();
 };

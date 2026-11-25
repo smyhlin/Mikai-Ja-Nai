@@ -239,25 +239,50 @@ SelectionResult resolve(const SelectionInput& input) {
         }
     }
 
-    // 1. Shared deep link (all three: provider, team, episode must be present;
-    //    empty teamSlug is allowed only if the release itself has no teams).
+    // 1. Shared deep link (provider and episode are required; when teamSlug is
+    //    provided it must match the release, and when omitted we prefer any
+    //    favourite-team release carrying sharedProv+sharedEp before falling back
+    //    to the first release carrying sharedProv+sharedEp).
     const QString sharedProv = labels::providerKey(input.sharedProvider);
+    const QString sharedTeam = input.sharedTeamSlug.trimmed();
     const QString sharedEp = input.sharedEpisode.trimmed();
+    const QString favTeam = input.favouriteTeamSlug.trimmed();
     if (!sharedProv.isEmpty() && !sharedEp.isEmpty()) {
-        for (int i = 0; i < input.releases.size(); ++i) {
-            if (!releaseMatchesTeam(input.releases[i], input.sharedTeamSlug)) continue;
-            if (!releaseHasProvider(input.releases[i], sharedProv)) continue;
-            SelectionResult res = buildForReleaseProvider(
-                input.releases, i, sharedProv, input.sharedTeamSlug, sharedEp,
-                input.currentEpisode, input.watchedEpisodes, input.sharedTimeSec,
-                SelectionReason::SharedLink);
-            if (res.valid) return res;
+        if (!sharedTeam.isEmpty()) {
+            for (int i = 0; i < input.releases.size(); ++i) {
+                if (!releaseMatchesTeam(input.releases[i], sharedTeam)) continue;
+                if (!releaseHasProvider(input.releases[i], sharedProv)) continue;
+                SelectionResult res = buildForReleaseProvider(
+                    input.releases, i, sharedProv, sharedTeam, sharedEp,
+                    input.currentEpisode, input.watchedEpisodes, input.sharedTimeSec,
+                    SelectionReason::SharedLink);
+                if (res.valid) return res;
+            }
+        } else {
+            if (!favTeam.isEmpty()) {
+                for (int i = 0; i < input.releases.size(); ++i) {
+                    if (!releaseMatchesTeam(input.releases[i], favTeam)) continue;
+                    if (!releaseHasProvider(input.releases[i], sharedProv)) continue;
+                    SelectionResult res = buildForReleaseProvider(
+                        input.releases, i, sharedProv, favTeam, sharedEp,
+                        input.currentEpisode, input.watchedEpisodes, input.sharedTimeSec,
+                        SelectionReason::SharedLink);
+                    if (res.valid) return res;
+                }
+            }
+            for (int i = 0; i < input.releases.size(); ++i) {
+                if (!releaseHasProvider(input.releases[i], sharedProv)) continue;
+                SelectionResult res = buildForReleaseProvider(
+                    input.releases, i, sharedProv, QString(), sharedEp,
+                    input.currentEpisode, input.watchedEpisodes, input.sharedTimeSec,
+                    SelectionReason::SharedLink);
+                if (res.valid) return res;
+            }
         }
     }
 
     // 2. Per-title favourite team (must verify provider & team actually exist!).
     const QString favProv = labels::providerKey(input.favouriteProvider);
-    const QString favTeam = input.favouriteTeamSlug.trimmed();
     if (!favProv.isEmpty() && !favTeam.isEmpty()) {
         for (int i = 0; i < input.releases.size(); ++i) {
             if (!releaseMatchesTeam(input.releases[i], favTeam)) continue;

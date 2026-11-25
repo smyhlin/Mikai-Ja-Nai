@@ -122,3 +122,26 @@ void TestPlaybackSelection::episodeOrderingHandlesDecimalsAndOva() {
   QVERIFY(compareEpisodeNumbers(QStringLiteral("12.5"), QStringLiteral("13")) < 0);
   QVERIFY(compareEpisodeNumbers(QStringLiteral("13"), QStringLiteral("OVA")) < 0);
 }
+
+void TestPlaybackSelection::teamlessSharedLinkResolvesAcrossTeamBackedReleases() {
+  SelectionInput in;
+  in.releases = {
+      makeRelease(QStringLiteral("r1"), QStringLiteral("team-a"), QStringLiteral("Team A"),
+                  QStringLiteral("moon"), {QStringLiteral("1"), QStringLiteral("2")}),
+      makeRelease(QStringLiteral("r2"), QStringLiteral("team-b"), QStringLiteral("Team B"),
+                  QStringLiteral("ashdi"), {QStringLiteral("1"), QStringLiteral("2"), QStringLiteral("3")}),
+  };
+  in.defaultProvider = QStringLiteral("moon");
+  in.sharedProvider = QStringLiteral("ashdi");
+  in.sharedEpisode = QStringLiteral("3");
+  in.sharedTimeSec = 95;
+
+  const SelectionResult res = resolve(in);
+  QVERIFY(res.valid);
+  QCOMPARE(res.reason, SelectionReason::SharedLink);
+  QCOMPARE(res.releaseIndex, 1);
+  QCOMPARE(res.provider, QStringLiteral("ashdi"));
+  QCOMPARE(res.teamSlug, QStringLiteral("team-b"));
+  QCOMPARE(res.episodeNumber, QStringLiteral("3"));
+  QCOMPARE(res.startTimeSec, std::optional<int>(95));
+}
