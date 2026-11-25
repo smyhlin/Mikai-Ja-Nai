@@ -543,6 +543,11 @@ bool PlayerController::requestClose() {
     const bool enginePreparationWasActive = enginePreparationActive_;
     const bool statusTimerWasActive = statusTimer_ != nullptr && statusTimer_->isActive();
 
+    endHoldSpeed();
+    cumulativeSeekTimer_.stop();
+    cumulativeSeekDelta_ = 0.0;
+    cumulativeSeekAnchor_ = -1.0;
+    if (hoverRefineTimer_) hoverRefineTimer_->stop();
     shuttingDown_ = true;
     closed_ = true;
     hideOpeningOverlay();
