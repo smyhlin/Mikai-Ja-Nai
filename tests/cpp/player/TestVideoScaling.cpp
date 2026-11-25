@@ -47,8 +47,10 @@ void TestVideoScaling::eachModeOwnsAllSevenOptions() {
     // A mode that wrote only its own option would keep the previous mode's
     // crop, aspect override or zoom alive.
     const VideoScaleMode modes[] = {
-        VideoScaleMode::Fit, VideoScaleMode::Fill, VideoScaleMode::Stretch,
-        VideoScaleMode::Aspect16x9, VideoScaleMode::Aspect4x3, VideoScaleMode::Original};
+        VideoScaleMode::Fit,        VideoScaleMode::Fill,
+        VideoScaleMode::Stretch,    VideoScaleMode::Aspect16x9,
+        VideoScaleMode::Aspect4x3,  VideoScaleMode::Original,
+        VideoScaleMode::NonLinearStretch};
     const char* owned[] = {"keepaspect",          "panscan", "video-aspect-override",
                            "video-unscaled",      "video-zoom", "scale"};
     for (const VideoScaleMode mode : modes) {
@@ -132,6 +134,7 @@ void TestVideoScaling::zoomIsClampedToTheCardRange() {
 void TestVideoScaling::stretchAndOriginalKeepTheStoredZoomOutOfMpv() {
     QCOMPARE(mplayer::effectiveVideoZoomPercent(VideoScaleMode::Stretch, 100), 0);
     QCOMPARE(mplayer::effectiveVideoZoomPercent(VideoScaleMode::Original, 100), 0);
+    QCOMPARE(mplayer::effectiveVideoZoomPercent(VideoScaleMode::NonLinearStretch, 100), 0);
     QCOMPARE(mplayer::effectiveVideoZoomPercent(VideoScaleMode::Fit, 100), 100);
     QCOMPARE(mplayer::effectiveVideoZoomPercent(VideoScaleMode::Fill, -50), -50);
 
@@ -140,6 +143,14 @@ void TestVideoScaling::stretchAndOriginalKeepTheStoredZoomOutOfMpv() {
     stretch.zoomPercent = 100;
     const auto options = mplayer::videoScaleOptions(stretch, std::string());
     QCOMPARE(valueOf(options, "video-zoom"), QStringLiteral("0.000000"));
+
+    VideoScalePolicy nls;
+    nls.mode = VideoScaleMode::NonLinearStretch;
+    nls.zoomPercent = 75;
+    const auto nlsOptions = mplayer::videoScaleOptions(nls, std::string());
+    QCOMPARE(valueOf(nlsOptions, "keepaspect"), QStringLiteral("no"));
+    QCOMPARE(valueOf(nlsOptions, "video-aspect-override"), QStringLiteral("16:9"));
+    QCOMPARE(valueOf(nlsOptions, "video-zoom"), QStringLiteral("0.000000"));
 }
 
 void TestVideoScaling::zoomFormattingIgnoresTheLocale() {
