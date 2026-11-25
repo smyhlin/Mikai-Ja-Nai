@@ -139,7 +139,7 @@ VideoDropTarget::~VideoDropTarget() {
 
 QString VideoDropTarget::classify(const QMimeData* mime, bool allowTracks, DropKind* kind) {
     if (kind != nullptr) *kind = DropKind::None;
-    if (mime == nullptr || !mime->hasUrls()) return {};
+    if (mime == nullptr) return {};
     static constexpr QStringView videoSuffixes[]{
         u"mp4", u"mkv", u"webm", u"avi", u"mov", u"m4v",
         u"ts", u"flv", u"m2ts", u"mpeg", u"mpg"};
@@ -147,8 +147,14 @@ QString VideoDropTarget::classify(const QMimeData* mime, bool allowTracks, DropK
         u"srt", u"ass", u"ssa", u"vtt", u"sub", u"sup"};
     static constexpr QStringView audioSuffixes[]{
         u"m4a", u"aac", u"mp3", u"opus", u"flac", u"wav", u"ac3", u"eac3", u"dts", u"ogg"};
-    for (const QUrl& url : mime->urls()) {
-        if (!url.isLocalFile()) continue;
+    if (mime->hasUrls()) {
+        for (const QUrl& url : mime->urls()) {
+            if (url.scheme().compare(QStringLiteral("mikai-janai"), Qt::CaseInsensitive) == 0 &&
+                url.host().compare(QStringLiteral("play"), Qt::CaseInsensitive) == 0) {
+                if (kind != nullptr) *kind = DropKind::Video;
+                return url.toString(QUrl::FullyEncoded);
+            }
+            if (!url.isLocalFile()) continue;
         const QString path = url.toLocalFile();
         const QStringView view(path);
         const qsizetype separator = std::max(view.lastIndexOf(u'/'), view.lastIndexOf(u'\\'));
@@ -170,9 +176,18 @@ QString VideoDropTarget::classify(const QMimeData* mime, bool allowTracks, DropK
             if (kind != nullptr) *kind = DropKind::Subtitle;
             return path;
         }
-        if (matches(audioSuffixes)) {
-            if (kind != nullptr) *kind = DropKind::Audio;
-            return path;
+            if (matches(audioSuffixes)) {
+                if (kind != nullptr) *kind = DropKind::Audio;
+                return path;
+            }
+        }
+    }
+    if (mime->hasText()) {
+        const QString text = mime->text().trimmed();
+        if (text.startsWith(QStringLiteral("mikai-janai://play"), Qt::CaseInsensitive) &&
+            !text.contains(u'\n') && !text.contains(u'\r')) {
+            if (kind != nullptr) *kind = DropKind::Video;
+            return text;
         }
     }
     return {};
@@ -233,7 +248,9 @@ void VideoDropTarget::beginIndicator(const QString& path, DropKind kind) {
     path_ = path;
     indicatorKind_ = kind;
     const qsizetype separator = std::max(path.lastIndexOf(u'/'), path.lastIndexOf(u'\\'));
-    fileName_ = path.sliced(separator + 1);
+    fileName_ = path.startsWith(QStringLiteral("mikai-janai://"), Qt::CaseInsensitive)
+                    ? path
+                    : path.sliced(separator + 1);
     refreshAppearance();
     if (!overlay_.isNull()) {
         overlay_->setGeometry(host_->rect());
