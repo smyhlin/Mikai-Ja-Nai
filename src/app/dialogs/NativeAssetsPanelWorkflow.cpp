@@ -1240,7 +1240,13 @@ void NativeAssetsPanel::submitPreparationJob(const QVector<mplayer::native::Fram
 #ifdef MIKAI_WITH_MODEL_INSPECTION
     const auto cancellation = prepareCancel_;
     auto result = std::make_shared<PrepareResult>();
-    result->scratch = std::make_unique<QTemporaryDir>();
+    const QString scratchRoot = mplayer::native::nativeSubdirectory(QStringLiteral("scratch"));
+    const bool useOwnedScratch =
+        !scratchRoot.isEmpty() && mplayer::native::ensureOwnedNativeDirectory(scratchRoot);
+    result->scratch = useOwnedScratch
+                          ? std::make_unique<QTemporaryDir>(
+                                QDir(scratchRoot).filePath(QStringLiteral("prepare-XXXXXX")))
+                          : std::make_unique<QTemporaryDir>();
     if (!result->scratch->isValid()) {
         prepareCancel_.reset();
         result->reasonKey = QStringLiteral("native.prepare.scratch");

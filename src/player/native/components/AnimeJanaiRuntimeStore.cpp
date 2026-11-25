@@ -340,7 +340,23 @@ ToolResult runTool(QStringList arguments, const QString& root,
                    const std::function<bool()>& cancelled) {
     const bool moving = arguments.first() == QLatin1String("move");
     arguments.append({QStringLiteral("--store"), root, QStringLiteral("--progress"), QStringLiteral("lines")});
+    // Confine aji-runtime's own temporary download/extraction buffers to the
+    // app-owned scratch tree beside the portable executable rather than system %TEMP%.
+    const QString scratchRoot = nativeSubdirectory(QStringLiteral("scratch"));
+    std::optional<QTemporaryDir> toolScratch;
+    if (!scratchRoot.isEmpty() && ensureOwnedNativeDirectory(scratchRoot)) {
+        toolScratch.emplace(QDir(scratchRoot).filePath(QStringLiteral("aji-tool-XXXXXX")));
+    }
     QProcess process;
+    if (toolScratch && toolScratch->isValid()) {
+        QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+        const QString nativeScratch = QDir::toNativeSeparators(toolScratch->path());
+        env.insert(QStringLiteral("TEMP"), nativeScratch);
+        env.insert(QStringLiteral("TMP"), nativeScratch);
+        env.insert(QStringLiteral("TMPDIR"), nativeScratch);
+        process.setProcessEnvironment(env);
+        process.setWorkingDirectory(toolScratch->path());
+    }
     process.setProcessChannelMode(QProcess::MergedChannels);
     process.start(toolPath(), arguments, QIODevice::ReadOnly);
     const bool started = moving ? process.waitForStarted(5000) :

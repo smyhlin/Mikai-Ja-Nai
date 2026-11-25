@@ -959,7 +959,16 @@ bool extractArchive(const QString& sevenZip, const QString& archive, const QStri
 #endif
     auto runSevenZip = [&](const QString& inputArchive, const QString& outDir) -> bool {
         QProcess process;
-        process.setProcessEnvironment(hostToolEnvironment());
+        QProcessEnvironment env = hostToolEnvironment();
+        const QString workDir = QFileInfo(outDir).absolutePath();
+        if (!workDir.isEmpty() && QFileInfo(workDir).isDir()) {
+            const QString nativeWorkDir = QDir::toNativeSeparators(workDir);
+            env.insert(QStringLiteral("TEMP"), nativeWorkDir);
+            env.insert(QStringLiteral("TMP"), nativeWorkDir);
+            env.insert(QStringLiteral("TMPDIR"), nativeWorkDir);
+            process.setWorkingDirectory(workDir);
+        }
+        process.setProcessEnvironment(env);
         QStringList args{QStringLiteral("x"),
                          QStringLiteral("-o%1").arg(QDir(outDir).absolutePath())};
         args << QStringLiteral("-y") << inputArchive;

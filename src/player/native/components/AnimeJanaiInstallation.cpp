@@ -549,7 +549,11 @@ bool validateSafeArchive(const QString& sevenZip, const QString& archive, QStrin
     // Decompress only to a private temporary tar and inspect that before either
     // tar or 7-Zip is allowed to extract its contents.
     const bool tarMembers = archive.endsWith(QLatin1String(".tar.zst"), Qt::CaseInsensitive);
-    QTemporaryDir temporary;
+    const QString scratchRoot = nativeSubdirectory(QStringLiteral("scratch"));
+    const bool useOwnedScratch = !scratchRoot.isEmpty() && ensureOwnedNativeDirectory(scratchRoot);
+    QTemporaryDir temporary(useOwnedScratch
+                                ? QDir(scratchRoot).filePath(QStringLiteral("aji-list-XXXXXX"))
+                                : QString());
     QString listingArchive = archive;
     if (tarMembers) {
         if (!temporary.isValid()) {
@@ -586,6 +590,14 @@ bool validateArchiveListing(const QString& sevenZip, const QString& archive, con
                             const QSet<QString>& expectedFiles, int expectedFileCount,
                             QString* error) {
     QProcess process;
+    QProcessEnvironment env = mikai::backend::hostToolEnvironment();
+    const QString archiveDir = QDir::toNativeSeparators(QFileInfo(archive).absolutePath());
+    if (!archiveDir.isEmpty()) {
+        env.insert(QStringLiteral("TEMP"), archiveDir);
+        env.insert(QStringLiteral("TMP"), archiveDir);
+        process.setWorkingDirectory(QFileInfo(archive).absolutePath());
+    }
+    process.setProcessEnvironment(env);
     process.start(sevenZip, {QStringLiteral("l"), QStringLiteral("-slt"), archive});
     if (!process.waitForStarted()) {
         *error = QStringLiteral("The verified runtime archive listing could not be read (%1).")

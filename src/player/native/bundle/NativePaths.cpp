@@ -389,7 +389,10 @@ namespace {
 /// an AppImage mount and a read-only bind mount both report a writable mode and
 /// still refuse every create, so the probe has to try.
 bool directoryAcceptsWrites(const QString& dir) {
-    if (dir.isEmpty() || !QFileInfo(dir).isDir() || !QFileInfo(dir).isWritable()) return false;
+    // Do not short-circuit on QFileInfo::isWritable(): on Windows NTFS, folders
+    // with FILE_ATTRIBUTE_READONLY or inherited ACL quirks can report false
+    // even when creating files succeeds. Let the real probe decide.
+    if (dir.isEmpty() || !QFileInfo(dir).isDir()) return false;
     QTemporaryDir probe(QDir(dir).filePath(QStringLiteral("mikai-write-probe-XXXXXX")));
     return probe.isValid();
 }
@@ -414,6 +417,10 @@ QString chooseNativeRoot() {
 }  // namespace
 
 QString nativeRoot() {
+    if (QCoreApplication::instance() == nullptr &&
+        qEnvironmentVariable("MIKAI_NATIVE_ROOT").trimmed().isEmpty()) {
+        return chooseNativeRoot();
+    }
     static const QString root = chooseNativeRoot();
     return root;
 }
