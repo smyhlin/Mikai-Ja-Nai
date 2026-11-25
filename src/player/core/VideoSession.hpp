@@ -78,7 +78,8 @@ enum class VideoScaleMode : int {
     Stretch = 2,
     Aspect16x9 = 3,
     Aspect4x3 = 4,
-    Original = 5
+    Original = 5,
+    NonLinearStretch = 6
 };
 
 struct VideoScalePolicy {

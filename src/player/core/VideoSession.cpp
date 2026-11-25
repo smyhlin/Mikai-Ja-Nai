@@ -70,6 +70,43 @@ int debandPresetRevision() { return g_debandPresetRevision; }
 
 int animeJanaiHdrOverrideRevision() { return g_animeJanaiHdrOverrideRevision; }
 
+/// Materialises the lightweight Non-Linear Stretch (NLS) GLSL output hook
+/// shader (horizontal Superview for narrow 4:3 sources, vertical Scope-fill for
+/// wide >= 2.0:1 sources) in the system temp directory on first use.
+QString ensureNonLinearStretchShaderPath(bool vertical) {
+    const QString fileName = vertical ? QStringLiteral("mikai-nls-scope.glsl")
+                                      : QStringLiteral("mikai-nls-superview.glsl");
+    const QString path = QDir::temp().filePath(fileName);
+    if (QFileInfo::exists(path)) return path;
+    const char* source = vertical
+        ? "//!PARAM strength\n//!TYPE float\n//!MINIMUM 1.0\n//!MAXIMUM 1.49\n1.15\n"
+          "//!PARAM falloff\n//!TYPE float\n//!MINIMUM 1.0\n//!MAXIMUM 8.0\n2.5\n"
+          "//!HOOK OUTPUT\n//!BIND HOOKED\n//!DESC NLS vertical (scope -> 16:9)\n"
+          "vec4 hook() {\n"
+          "  vec2 uv = HOOKED_pos;\n"
+          "  float t = uv.y * 2.0 - 1.0;\n"
+          "  float ts = t * (strength + (1.0 - strength) * pow(abs(t), falloff));\n"
+          "  uv.y = ts * 0.5 + 0.5;\n"
+          "  return HOOKED_tex(uv);\n"
+          "}\n"
+        : "//!PARAM strength\n//!TYPE float\n//!MINIMUM 1.0\n//!MAXIMUM 1.49\n1.15\n"
+          "//!PARAM falloff\n//!TYPE float\n//!MINIMUM 1.0\n//!MAXIMUM 8.0\n2.5\n"
+          "//!HOOK OUTPUT\n//!BIND HOOKED\n//!DESC NLS horizontal (4:3 -> 16:9)\n"
+          "vec4 hook() {\n"
+          "  vec2 uv = HOOKED_pos;\n"
+          "  float t = uv.x * 2.0 - 1.0;\n"
+          "  float ts = t * (strength + (1.0 - strength) * pow(abs(t), falloff));\n"
+          "  uv.x = ts * 0.5 + 0.5;\n"
+          "  return HOOKED_tex(uv);\n"
+          "}\n";
+    QFile file(path);
+    if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        file.write(source);
+        file.close();
+    }
+    return path;
+}
+
 bool hdrFixesEnabled() {
     static const bool disabled = qEnvironmentVariable("MIKAI_HDR_FIXES") == QStringLiteral("0");
     return !disabled;
@@ -197,7 +234,10 @@ QString videoZoomArgument(int zoomPercent) {
 }
 
 int effectiveVideoZoomPercent(VideoScaleMode mode, int zoomPercent) {
-    if (mode == VideoScaleMode::Stretch || mode == VideoScaleMode::Original) return 0;
+    if (mode == VideoScaleMode::Stretch || mode == VideoScaleMode::Original ||
+        mode == VideoScaleMode::NonLinearStretch) {
+        return 0;
+    }
     return clampedVideoZoomPercent(zoomPercent);
 }
 
@@ -205,10 +245,12 @@ std::vector<VideoScaleOption> videoScaleOptions(const VideoScalePolicy& policy,
                                                 const std::string& downscaleDefault) {
     // Every mode carries all seven: a mode that only wrote its own option would
     // leave the previous mode's crop or aspect override in place.
-    const bool stretch = policy.mode == VideoScaleMode::Stretch;
+    const bool stretch = policy.mode == VideoScaleMode::Stretch ||
+                         policy.mode == VideoScaleMode::NonLinearStretch;
     const bool original = policy.mode == VideoScaleMode::Original;
     const char* aspect = "no";
-    if (policy.mode == VideoScaleMode::Aspect16x9) {
+    if (policy.mode == VideoScaleMode::Aspect16x9 ||
+        policy.mode == VideoScaleMode::NonLinearStretch) {
         aspect = "16:9";
     } else if (policy.mode == VideoScaleMode::Aspect4x3) {
         aspect = "4:3";
@@ -248,6 +290,8 @@ QString videoScaleModeLabel(VideoScaleMode mode) {
             return QCoreApplication::translate("mplayer::videoscale", "4:3");
         case VideoScaleMode::Original:
             return QCoreApplication::translate("mplayer::videoscale", "Original size (1:1)");
+        case VideoScaleMode::NonLinearStretch:
+            return QCoreApplication::translate("mplayer::videoscale", "Non-linear stretch (NLS)");
     }
     return {};
 }
@@ -260,7 +304,7 @@ VideoScalePolicy videoScalePolicyFromSettings(const QSettings& settings) {
         QString::fromLatin1(VideoSession::kVideoScaleModeSettingKey),
         static_cast<int>(VideoScaleMode::Fit)).toInt();
     if (storedMode >= static_cast<int>(VideoScaleMode::Fit) &&
-        storedMode <= static_cast<int>(VideoScaleMode::Original)) {
+        storedMode <= static_cast<int>(VideoScaleMode::NonLinearStretch)) {
         policy.mode = static_cast<VideoScaleMode>(storedMode);
     }
     policy.zoomPercent =
@@ -2335,6 +2379,24 @@ void VideoSession::applyVideoScaleToEngine(bool queryCoreDefault) {
                "downscaler stays in effect; choose one explicitly or reopen the player.")
                 .arg(QString::fromStdString(
                     downscaleDefaultError_.value_or("no default value reported"))));
+    }
+    // Remove any previously appended NLS hook shader, and append the right
+    // axis (vertical for scope >= 2.0:1, horizontal Superview otherwise) when
+    // NonLinearStretch is active.
+    const QString nlsVert = ensureNonLinearStretchShaderPath(true);
+    const QString nlsHoriz = ensureNonLinearStretchShaderPath(false);
+    issueCoreCommand({"change-list", "glsl-shaders", "remove", nlsVert.toStdString()},
+                     "glsl-shaders", false);
+    issueCoreCommand({"change-list", "glsl-shaders", "remove", nlsHoriz.toStdString()},
+                     "glsl-shaders", false);
+    if (policy.mode == VideoScaleMode::NonLinearStretch) {
+        const bool isScope = (videoWidth_ > 0 && videoHeight_ > 0) &&
+                             (static_cast<double>(videoWidth_) / static_cast<double>(videoHeight_) >= 2.0);
+        const QString chosen = isScope ? nlsVert : nlsHoriz;
+        if (QFileInfo::exists(chosen)) {
+            issueCoreCommand({"change-list", "glsl-shaders", "append", chosen.toStdString()},
+                             "glsl-shaders", false);
+        }
     }
     const std::vector<VideoScaleOption> writes = videoScaleOptions(policy, downscaleDefault);
     // Redraw after all accepted writes reply; an older apply cannot complete a
