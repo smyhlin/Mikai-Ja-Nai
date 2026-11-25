@@ -12380,7 +12380,11 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 </context>
 <context>
     <name>mplayer::quick::PlayerController</name>
-    <message>
+        <message>
+        <source>2× speed</source>
+        <translation>Швидкість 2×</translation>
+    </message>
+<message>
         <location filename="../src/player/quick/PlayerController.cpp" line="296"/>
         <source>The media source changed before the reference frame could be captured.</source>
         <translation>Джерело медіа змінилося, перш ніж вдалося захопити опорний кадр.</translation>
@@ -14803,7 +14807,11 @@ Any other settings already saved remain saved, even if you cancel. Unsaved langu
 </context>
 <context>
     <name>mplayer::videoscale</name>
-    <message>
+        <message>
+        <source>Non-linear stretch (NLS)</source>
+        <translation>Нелінійне розтягування (NLS)</translation>
+    </message>
+<message>
         <location filename="../src/player/core/VideoSession.cpp" line="233"/>
         <source>Native (fit to window)</source>
         <translation>Оригінальні пропорції (вписати у вікно)</translation>

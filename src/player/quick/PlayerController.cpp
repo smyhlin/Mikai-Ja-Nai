@@ -256,6 +256,17 @@ void PlayerController::connectSession() {
     connect(session_, &VideoSession::mediaEnded, this, &PlayerController::onMediaEnded);
     connect(session_, &VideoSession::durationChanged, this, &PlayerController::onEngineDuration);
     connect(session_, &VideoSession::positionChanged, this, &PlayerController::onEnginePosition);
+    cumulativeSeekTimer_.setSingleShot(true);
+    cumulativeSeekTimer_.setInterval(180);
+    connect(&cumulativeSeekTimer_, &QTimer::timeout, this, [this] {
+        const double delta = cumulativeSeekDelta_;
+        const double anchor = cumulativeSeekAnchor_;
+        cumulativeSeekDelta_ = 0.0;
+        cumulativeSeekAnchor_ = -1.0;
+        if (closed_ || session_ == nullptr || !session_->hasVideo() || qFuzzyIsNull(delta)) return;
+        const double base = anchor >= 0.0 ? anchor : position_;
+        seekTo(base + delta);
+    });
     connect(session_, &VideoSession::playingChanged, this, &PlayerController::onEnginePlaying);
 
     connect(session_, &VideoSession::videoSizeChanged, this, [this](int width, int height) {
@@ -606,6 +617,8 @@ void PlayerController::seekTo(double seconds) {
     if (closed_ || session_ == nullptr || !session_->hasVideo()) return;
     const double limit = duration_ > 0.0 ? duration_ : session_->duration();
     const double target = std::clamp(std::isfinite(seconds) ? seconds : 0.0, 0.0, std::max(0.0, limit));
+    seekGateTarget_ = target;
+    seekGateTimer_.restart();
     session_->seek(target);
     if (std::abs(position_ - target) > 0.001) {
         position_ = target;
@@ -617,8 +630,41 @@ void PlayerController::seekTo(double seconds) {
 void PlayerController::seekBy(double seconds) {
     if (closed_ || session_ == nullptr || !session_->hasVideo()) return;
     if (!std::isfinite(seconds) || qFuzzyIsNull(seconds)) return;
-    session_->seekRelative(seconds);
+    if (!cumulativeSeekTimer_.isActive()) {
+        cumulativeSeekAnchor_ = position_;
+        cumulativeSeekDelta_ = 0.0;
+    }
+    cumulativeSeekDelta_ += seconds;
+    cumulativeSeekTimer_.start();
+    const int totalRounded = static_cast<int>(std::lround(cumulativeSeekDelta_));
+    flashStatus(totalRounded >= 0 ? QStringLiteral("+%1 s").arg(totalRounded)
+                                  : QStringLiteral("%1 s").arg(totalRounded));
     noteUserActivity();
+}
+
+void PlayerController::beginHoldSpeed() {
+    if (closed_ || session_ == nullptr || !session_->hasVideo()) return;
+    if (preHoldSpeed_.has_value()) return;
+    preHoldSpeed_ = speed_;
+    constexpr double kHoldRate = 2.0;
+    if (!qFuzzyCompare(speed_ + 1.0, kHoldRate + 1.0)) {
+        speed_ = kHoldRate;
+        session_->setSpeed(speed_);
+        emit rateChanged();
+    }
+    flashStatus(tr("2× speed"));
+    noteUserActivity();
+}
+
+void PlayerController::endHoldSpeed() {
+    if (!preHoldSpeed_.has_value()) return;
+    const double restore = *preHoldSpeed_;
+    preHoldSpeed_.reset();
+    if (!qFuzzyCompare(speed_ + 1.0, restore + 1.0)) {
+        speed_ = restore;
+        if (session_ != nullptr && !closed_) session_->setSpeed(speed_);
+        emit rateChanged();
+    }
 }
 
 int PlayerController::skipForwardSeconds() const {
@@ -673,7 +719,7 @@ void PlayerController::setRate(double rate) {
 }
 
 void PlayerController::setVideoScaleMode(int mode) {
-    if (mode < int(VideoScaleMode::Fit) || mode > int(VideoScaleMode::Original)) return;
+    if (mode < int(VideoScaleMode::Fit) || mode > int(VideoScaleMode::NonLinearStretch)) return;
     if (videoScaleMode_ == mode) return;
     videoScaleMode_ = mode;
     VideoSession::setVideoScaleMode(static_cast<VideoScaleMode>(mode));

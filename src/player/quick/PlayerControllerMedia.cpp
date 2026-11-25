@@ -515,6 +515,16 @@ void PlayerController::onEngineDuration(double seconds) {
 void PlayerController::onEnginePosition(double seconds) {
     if (closed_) return;
     if (resumePending_ || session_->duration() <= 0.0) return;
+    if (seekGateTarget_.has_value()) {
+        constexpr double kSeekGateToleranceSec = 0.5;
+        constexpr qint64 kSeekGateTimeoutMs = 1500;
+        if (std::abs(seconds - *seekGateTarget_) <= kSeekGateToleranceSec ||
+            seekGateTimer_.elapsed() >= kSeekGateTimeoutMs) {
+            seekGateTarget_.reset();
+        } else {
+            return;
+        }
+    }
     const bool changed = !qFuzzyCompare(position_ + 1.0, seconds + 1.0);
     position_ = seconds;
     if (changed) emit positionChanged();

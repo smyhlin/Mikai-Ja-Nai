@@ -7,7 +7,9 @@
 #include <QList>
 #include <QMetaObject>
 #include <QObject>
+#include <QElapsedTimer>
 #include <QPointer>
+#include <QTimer>
 #include <QString>
 #include <QStringList>
 #include <QUrl>
@@ -333,6 +335,8 @@ public:
     /// as consumed even though QML owns the visual stack.
     Q_INVOKABLE void setMenuStackVisible(bool visible);
     Q_INVOKABLE void noteUserActivity();
+    Q_INVOKABLE void beginHoldSpeed();
+    Q_INVOKABLE void endHoldSpeed();
 
     Q_INVOKABLE void selectEpisode(int playlistIndex);
     Q_INVOKABLE void goToNextEpisode();
@@ -875,10 +879,16 @@ private:
 
     double duration_ = 0.0;
     double position_ = 0.0;
+    std::optional<double> seekGateTarget_;
+    QElapsedTimer seekGateTimer_;
+    QTimer cumulativeSeekTimer_;
+    double cumulativeSeekDelta_ = 0.0;
+    double cumulativeSeekAnchor_ = -1.0;
     bool playing_ = false;
     double volume_ = 0.7;
     bool muted_ = false;
     double speed_ = 1.0;
+    std::optional<double> preHoldSpeed_;
     double aspectRatio_ = 0.0;
     int sourceWidth_ = 0;
     int sourceHeight_ = 0;

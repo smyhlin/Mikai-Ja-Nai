@@ -134,21 +134,74 @@ Item {
         }
     }
 
+    Timer {
+        id: holdSpeedTimer
+        interval: 500
+        repeat: false
+        onTriggered: {
+            if (root.loadingVisible || dialogs.modalVisible || overlay.anyMenuVisible
+                    || shortcutSheet.visible || !root.controller.hasMedia) {
+                return
+            }
+            pictureInput.holdSpeedActive = true
+            singleClickPlayTimer.stop()
+            root.controller.beginHoldSpeed()
+        }
+    }
+
     // Picture input sits under the chrome, so a click reaches a control first.
     MouseArea {
         id: pictureInput
+        property bool holdSpeedActive: false
+        property bool suppressNextClick: false
         anchors.fill: parent
         z: 1
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         hoverEnabled: true
 
-        onPressed: mouse => root.controller.noteUserActivity()
+        function clearHoldSpeed() {
+            holdSpeedTimer.stop()
+            if (holdSpeedActive) {
+                holdSpeedActive = false
+                root.controller.endHoldSpeed()
+                return true
+            }
+            return false
+        }
+
+        onPressed: mouse => {
+            root.controller.noteUserActivity()
+            suppressNextClick = false
+            if (mouse.button === Qt.LeftButton && root.controller.hasMedia
+                    && !root.loadingVisible && !dialogs.modalVisible
+                    && !overlay.anyMenuVisible && !shortcutSheet.visible) {
+                holdSpeedTimer.restart()
+            } else {
+                clearHoldSpeed()
+            }
+        }
+
+        onReleased: {
+            if (clearHoldSpeed()) {
+                suppressNextClick = true
+            }
+        }
+
+        onCanceled: {
+            clearHoldSpeed()
+            suppressNextClick = false
+        }
 
         onClicked: mouse => {
             if (mouse.button === Qt.RightButton) {
+                clearHoldSpeed()
                 singleClickPlayTimer.stop()
                 const scenePoint = pictureInput.mapToItem(null, mouse.x, mouse.y)
                 root.openMenuAt("picture", Qt.rect(scenePoint.x, scenePoint.y, 0, 0))
+                return
+            }
+            if (suppressNextClick) {
+                suppressNextClick = false
                 return
             }
             singleClickPlayTimer.restart()
@@ -156,6 +209,7 @@ Item {
 
         onDoubleClicked: mouse => {
             if (mouse.button !== Qt.LeftButton) return
+            clearHoldSpeed()
             singleClickPlayTimer.stop()
             root.forceActiveFocus()
             root.controller.toggleFullscreen()
