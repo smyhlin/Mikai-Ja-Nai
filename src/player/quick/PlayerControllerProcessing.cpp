@@ -113,7 +113,14 @@ void PlayerController::refreshStoredSettings() {
     // Display scaling is process-wide; reading the store keeps a player
     // refreshed from a store edited elsewhere in step. The setter applies only a
     // real change.
-    VideoSession::setVideoScalePolicy(videoScalePolicyFromSettings(settings));
+    const VideoScalePolicy scalePolicy = videoScalePolicyFromSettings(settings);
+    VideoSession::setVideoScalePolicy(scalePolicy);
+    const int policyMode = static_cast<int>(scalePolicy.mode);
+    const bool scaleModeChanged = (videoScaleMode_ != policyMode);
+    videoScaleMode_ = policyMode;
+    if (scaleMenu_ != nullptr) scaleMenu_->setRows(videoScaleModeRows());
+    rebuildSettingsMenu();
+    if (scaleModeChanged) emit videoScaleModeChanged();
 
     const QString anime4kId = settings.value(kAnime4KSettingKey, QStringLiteral("off")).toString();
     bool anime4kKnown = false;

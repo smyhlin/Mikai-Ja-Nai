@@ -1456,9 +1456,8 @@ void PlayerController::raiseAuxiliaryWindows() const {
         }
     };
     restack();
-    QPointer<const PlayerController> guard(this);
-    QTimer::singleShot(0, const_cast<PlayerController*>(this), [guard, restack] {
-        if (guard != nullptr) restack();
+    QTimer::singleShot(0, const_cast<PlayerController*>(this), [restack] {
+        restack();
     });
 }
 
