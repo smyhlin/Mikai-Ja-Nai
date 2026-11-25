@@ -272,7 +272,7 @@ QVector<PlayerMenuModel::Row> PlayerController::videoScaleModeRows() const {
     QVector<Row> rows;
     const VideoScaleMode modes[] = {VideoScaleMode::Fit, VideoScaleMode::Fill,
                                     VideoScaleMode::Stretch, VideoScaleMode::Aspect16x9,
-                                    VideoScaleMode::Aspect4x3,
+                                    VideoScaleMode::Aspect4x3, VideoScaleMode::Original,
                                     VideoScaleMode::NonLinearStretch};
     for (const VideoScaleMode mode : modes) {
         Row row;
