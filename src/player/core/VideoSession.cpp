@@ -1421,6 +1421,15 @@ void VideoSession::applyShaderChainRequest(const QString& shaders) {
     // mpv's own observed value, from the glsl-shaders observer.
     issueCoreCommand({"set", "glsl-shaders", shaders.toStdString()}, "glsl-shaders",
                      /*reportRefusal=*/true);
+    if (!compareFitActive_ && g_videoScalePolicy.mode == VideoScaleMode::NonLinearStretch) {
+        const bool isScope = (videoWidth_ > 0 && videoHeight_ > 0) &&
+                             (static_cast<double>(videoWidth_) / static_cast<double>(videoHeight_) >= 2.0);
+        const QString chosen = ensureNonLinearStretchShaderPath(isScope);
+        if (QFileInfo::exists(chosen)) {
+            issueCoreCommand({"change-list", "glsl-shaders", "append", chosen.toStdString()},
+                             "glsl-shaders", false);
+        }
+    }
 }
 
 void VideoSession::setAnime4KChain(const QString& candidateId) {
@@ -2774,6 +2783,9 @@ void VideoSession::handleState() {
         if (w != videoWidth_ || h != videoHeight_) {
             videoWidth_ = w;
             videoHeight_ = h;
+            if (!compareFitActive_ && g_videoScalePolicy.mode == VideoScaleMode::NonLinearStretch) {
+                applyVideoScaleToEngine();
+            }
             emit videoSizeChanged(w, h);
         }
     }
