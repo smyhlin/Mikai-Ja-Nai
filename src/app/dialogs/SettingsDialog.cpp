@@ -673,7 +673,7 @@ void SettingsDialog::save() {
     mplayer::VideoScalePolicy scalePolicy;
     const int committedScaleMode = scalingMode_->currentData().toInt();
     if (committedScaleMode >= static_cast<int>(mplayer::VideoScaleMode::Fit) &&
-        committedScaleMode <= static_cast<int>(mplayer::VideoScaleMode::Original)) {
+        committedScaleMode <= static_cast<int>(mplayer::VideoScaleMode::NonLinearStretch)) {
         scalePolicy.mode = static_cast<mplayer::VideoScaleMode>(committedScaleMode);
     }
     scalePolicy.zoomPercent = scalingZoom_->value();

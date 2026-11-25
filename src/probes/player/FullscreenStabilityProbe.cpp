@@ -240,7 +240,7 @@ QString foregroundProcessImage() {
 /// attach dance deliberately; these attaches are the probe's, not the app
 /// policy's, and are not counted in the shipping-policy metric.
 #else
-std::optional<quint64> dwmCompositionFramesDisplayed() { return std::nullopt; }
+[[maybe_unused]] std::optional<quint64> dwmCompositionFramesDisplayed() { return std::nullopt; }
 
 QJsonObject presentationMode() {
     return QJsonObject{{"directFlip", "unsupported"},
@@ -824,7 +824,8 @@ int runQuickFocusSwitchMode(mplayer::quick::PlayerController* controller, bool k
             bool presented=false; qint64 presentedNs=0;
             const auto connection=QObject::connect(window,
                 &mplayer::quick::PlayerWindow::framePresented,window,[&]{
-                    if(presented)return; presented=true;
+                    if (presented) return;
+                    presented = true;
                     presentedNs=mikai::gui::uiprofile::nowNs();
                 },Qt::DirectConnection);
             const qint64 requestNs=mikai::gui::uiprofile::nowNs();

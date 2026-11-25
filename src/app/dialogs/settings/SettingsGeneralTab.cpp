@@ -435,7 +435,8 @@ QWidget* SettingsDialog::buildGeneralTab() {
     for (const mplayer::VideoScaleMode mode :
          {mplayer::VideoScaleMode::Fit, mplayer::VideoScaleMode::Fill,
           mplayer::VideoScaleMode::Stretch, mplayer::VideoScaleMode::Aspect16x9,
-          mplayer::VideoScaleMode::Aspect4x3, mplayer::VideoScaleMode::Original}) {
+          mplayer::VideoScaleMode::Aspect4x3, mplayer::VideoScaleMode::Original,
+          mplayer::VideoScaleMode::NonLinearStretch}) {
         scalingMode_->addItem(mplayer::videoScaleModeLabel(mode), static_cast<int>(mode));
     }
     const int modeIndex =
